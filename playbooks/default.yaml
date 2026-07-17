@@ -1,0 +1,17 @@
+name: "Default Attack"
+target: "https://wks.agency"
+phases:
+  - name: "recon"
+    tools:
+      - tool: nmap
+        args: ["-sV", "-p-", "-T4"]
+      - tool: whatweb
+        args: ["-a", "3"]
+      - tool: gobuster
+        args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt"]
+    parallel: false
+  - name: "exploitation"
+    tools:
+      - tool: sqlmap
+        args: ["--batch", "--level=2"]
+    depends_on: ["recon"]
