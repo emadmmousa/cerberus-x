@@ -2,14 +2,419 @@
 <html>
 <head>
     <title>Cerberus-X Dashboard</title>
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
-        h1 { color: #f00; text-shadow: 0 0 10px #f00; }
+        h1, h2 { color: #f00; text-shadow: 0 0 10px #f00; }
+        h2 { margin-top: 28px; font-size: 1.1rem; }
+        .panel { background: #111; border: 1px solid #333; padding: 12px; margin: 12px 0; }
+        .log-container, .terminal, .list-box {
+            background: #111; border: 1px solid #333; padding: 10px;
+            height: 220px; overflow-y: scroll; white-space: pre-wrap;
+        }
+        .terminal { height: 280px; color: #0f0; }
+        .log-entry { padding: 2px 0; border-bottom: 1px solid #222; }
+        .log-entry.INFO { color: #0f0; }
+        .log-entry.WARNING { color: #ff0; }
+        .log-entry.ERROR { color: #f00; }
+        .row { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+        input, select, textarea, button {
+            background: #222; color: #0f0; border: 1px solid #0f0; padding: 8px;
+            font-family: inherit;
+        }
+        textarea { width: 100%; min-height: 80px; }
+        button { cursor: pointer; }
+        button:hover { background: #0f0; color: #000; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+        @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body>
-    <h1>⚡ CERBERUS-X DASHBOARD</h1>
-    <p>Submit a job via CLI: <code>python -m orchestrator.cli --target https://example.com --playbook playbooks/default.yaml</code></p>
-    <p>Check job status: <code>/status/&lt;task_id&gt;</code></p>
+    <h1>CERBERUS-X DASHBOARD</h1>
+
+    <div class="panel">
+        <div class="row">
+            <input type="text" id="targetInput" placeholder="https://target.com" value="https://wks.agency" size="40">
+            <button type="button" id="runScanBtn">Run Scan</button>
+            <button type="button" id="fetchResultsBtn">Fetch Results</button>
+            <button type="button" id="msfHealthBtn">MSF Health</button>
+        </div>
+        <div id="results" class="list-box"></div>
+    </div>
+
+    <h2>Metasploit Modules</h2>
+    <div class="panel">
+        <div class="row">
+            <input type="text" id="moduleQuery" placeholder="search modules" size="24">
+            <select id="moduleType">
+                <option value="">any type</option>
+                <option value="auxiliary">auxiliary</option>
+                <option value="exploit">exploit</option>
+                <option value="post">post</option>
+                <option value="payload">payload</option>
+                <option value="encoder">encoder</option>
+                <option value="nop">nop</option>
+                <option value="evasion">evasion</option>
+            </select>
+            <button type="button" id="searchModulesBtn">Search</button>
+        </div>
+        <div id="moduleSearchResults" class="list-box"></div>
+        <div class="row">
+            <input type="text" id="modulePath" placeholder="auxiliary/scanner/portscan/tcp" size="40">
+            <button type="button" id="loadModuleBtn">Load Options</button>
+            <button type="button" id="runModuleBtn">Run Module</button>
+        </div>
+        <textarea id="moduleOptions" placeholder='{"RHOSTS":"127.0.0.1","THREADS":10}'></textarea>
+        <div id="moduleDetail" class="list-box"></div>
+    </div>
+
+    <div class="grid">
+        <div>
+            <h2>Jobs</h2>
+            <div class="panel">
+                <div class="row">
+                    <button type="button" id="refreshJobsBtn">Refresh Jobs</button>
+                    <input type="text" id="jobIdInput" placeholder="job id" size="8">
+                    <button type="button" id="stopJobBtn">Stop Job</button>
+                </div>
+                <div id="jobsList" class="list-box"></div>
+            </div>
+        </div>
+        <div>
+            <h2>Sessions</h2>
+            <div class="panel">
+                <div class="row">
+                    <button type="button" id="refreshSessionsBtn">Refresh Sessions</button>
+                    <input type="text" id="sessionIdInput" placeholder="session id" size="8">
+                    <button type="button" id="closeSessionBtn">Close Session</button>
+                </div>
+                <div class="row">
+                    <input type="text" id="sessionCommandInput" placeholder="session command" size="28">
+                    <button type="button" id="sessionCommandBtn">Send Command</button>
+                </div>
+                <div id="sessionsList" class="list-box"></div>
+            </div>
+        </div>
+    </div>
+
+    <h2>Interactive Console</h2>
+    <div class="panel">
+        <div class="row">
+            <button type="button" id="consoleOpenBtn">Open Console</button>
+            <button type="button" id="consoleCloseBtn">Close Console</button>
+            <span id="consoleStatus">closed</span>
+        </div>
+        <div id="consoleOutput" class="terminal"></div>
+        <div class="row">
+            <input type="text" id="consoleCommandInput" placeholder="msf command" size="50">
+            <button type="button" id="consoleSendBtn">Send</button>
+        </div>
+    </div>
+
+    <h2>Event Log</h2>
+    <div class="log-container" id="logContainer"></div>
+
+    <script>
+        const socket = io();
+        const logContainer = document.getElementById('logContainer');
+        let consoleId = null;
+        let consolePollTimer = null;
+
+        function setText(el, text) {
+            el.textContent = text == null ? '' : String(text);
+        }
+
+        function setJson(el, value) {
+            setText(el, JSON.stringify(value, null, 2));
+        }
+
+        function addLog(message, level='INFO') {
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${level}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${level}: ${message}`;
+            logContainer.appendChild(entry);
+            logContainer.scrollTop = logContainer.scrollHeight;
+        }
+
+        function appendTerminal(text) {
+            const el = document.getElementById('consoleOutput');
+            el.textContent += text || '';
+            el.scrollTop = el.scrollHeight;
+        }
+
+        async function api(path, options={}) {
+            const response = await fetch(path, {
+                headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+                ...options,
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+                const message = data.error || `HTTP ${response.status}`;
+                throw new Error(message);
+            }
+            return data;
+        }
+
+        socket.on('connect', () => addLog('Connected to Cerberus-X', 'INFO'));
+        socket.on('log', (data) => addLog(data.message, data.level || 'INFO'));
+        socket.on('msf_console_created', (data) => {
+            consoleId = data && data.console ? data.console.id : null;
+            if (data && data.console && data.console.prompt) {
+                appendTerminal(data.console.prompt);
+            }
+            setText(document.getElementById('consoleStatus'), consoleId ? `open:${consoleId}` : 'closed');
+            addLog(`Console created: ${consoleId}`, 'INFO');
+            startConsolePolling();
+        });
+        socket.on('msf_console_output', (data) => {
+            const output = data && data.output ? data.output : {};
+            if (output.data) appendTerminal(output.data);
+            if (output.prompt) appendTerminal(output.prompt);
+        });
+        socket.on('msf_console_destroyed', (data) => {
+            if (!data || data.console_id === consoleId) {
+                stopConsolePolling();
+                consoleId = null;
+                setText(document.getElementById('consoleStatus'), 'closed');
+            }
+            addLog(`Console destroyed: ${data && data.console_id ? data.console_id : ''}`, 'INFO');
+        });
+        socket.on('msf_console_error', (data) => {
+            addLog((data && data.error) || 'Console error', 'ERROR');
+        });
+
+        function startConsolePolling() {
+            stopConsolePolling();
+            consolePollTimer = setInterval(() => {
+                if (!consoleId) return;
+                socket.emit('msf_console_read', { console_id: consoleId });
+            }, 1000);
+        }
+
+        function stopConsolePolling() {
+            if (consolePollTimer) {
+                clearInterval(consolePollTimer);
+                consolePollTimer = null;
+            }
+        }
+
+        function openConsole() {
+            if (consoleId) {
+                addLog('Console already open', 'WARNING');
+                return;
+            }
+            setText(document.getElementById('consoleOutput'), '');
+            socket.emit('msf_console_create', {});
+        }
+
+        function closeConsole() {
+            if (!consoleId) return;
+            const id = consoleId;
+            stopConsolePolling();
+            socket.emit('msf_console_destroy', { console_id: id });
+            consoleId = null;
+            setText(document.getElementById('consoleStatus'), 'closed');
+        }
+
+        function sendConsoleCommand() {
+            if (!consoleId) {
+                addLog('Open a console first', 'WARNING');
+                return;
+            }
+            const input = document.getElementById('consoleCommandInput');
+            const command = input.value;
+            if (!command.trim()) return;
+            socket.emit('msf_console_write', { console_id: consoleId, command });
+            input.value = '';
+        }
+
+        async function submitJob() {
+            const target = document.getElementById('targetInput').value;
+            if (!target) return;
+            addLog(`Submitting job for ${target}`, 'INFO');
+            try {
+                const data = await api(`/api/run?target=${encodeURIComponent(target)}`, { method: 'POST' });
+                addLog(`Job submitted: ${data.task_id}`, 'INFO');
+            } catch (err) {
+                addLog(`Error: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        async function fetchResults() {
+            const target = document.getElementById('targetInput').value;
+            const url = target ? `/results?target=${encodeURIComponent(target)}` : '/results';
+            try {
+                const data = await api(url);
+                setJson(document.getElementById('results'), data);
+            } catch (err) {
+                addLog(`Error fetching results: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        async function msfHealth() {
+            try {
+                const data = await api('/api/metasploit/health');
+                setJson(document.getElementById('results'), data);
+                addLog('Metasploit RPC healthy', 'INFO');
+            } catch (err) {
+                addLog(`MSF health failed: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        async function searchModules() {
+            const q = document.getElementById('moduleQuery').value;
+            const type = document.getElementById('moduleType').value;
+            const params = new URLSearchParams();
+            if (q) params.set('q', q);
+            if (type) params.set('type', type);
+            try {
+                const data = await api(`/api/metasploit/modules?${params.toString()}`);
+                setJson(document.getElementById('moduleSearchResults'), data.modules || data);
+            } catch (err) {
+                addLog(`Module search failed: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        async function loadModule() {
+            const path = document.getElementById('modulePath').value.trim();
+            if (!path.includes('/')) {
+                addLog('Module path must look like type/name', 'WARNING');
+                return;
+            }
+            const slash = path.indexOf('/');
+            const type = path.slice(0, slash);
+            const name = path.slice(slash + 1);
+            try {
+                const data = await api(`/api/metasploit/modules/${encodeURIComponent(type)}/${name}`);
+                setJson(document.getElementById('moduleDetail'), data);
+                if (data.options && !document.getElementById('moduleOptions').value.trim()) {
+                    const starter = {};
+                    Object.keys(data.options).forEach((key) => {
+                        const meta = data.options[key] || {};
+                        if (meta.required || meta.default != null) {
+                            starter[key] = meta.default == null ? '' : meta.default;
+                        }
+                    });
+                    document.getElementById('moduleOptions').value = JSON.stringify(starter, null, 2);
+                }
+            } catch (err) {
+                addLog(`Load module failed: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        async function runModule() {
+            const path = document.getElementById('modulePath').value.trim();
+            const slash = path.indexOf('/');
+            if (slash < 1) {
+                addLog('Module path must look like type/name', 'WARNING');
+                return;
+            }
+            let options;
+            try {
+                options = JSON.parse(document.getElementById('moduleOptions').value || '{}');
+            } catch (err) {
+                addLog('Module options must be valid JSON', 'ERROR');
+                return;
+            }
+            const type = path.slice(0, slash);
+            const name = path.slice(slash + 1);
+            try {
+                const data = await api('/api/metasploit/modules/run', {
+                    method: 'POST',
+                    body: JSON.stringify({ type, name, options }),
+                });
+                setJson(document.getElementById('moduleDetail'), data);
+                addLog(`Module started: ${data.module}`, 'INFO');
+                await refreshJobs();
+            } catch (err) {
+                addLog(`Run module failed: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        async function refreshJobs() {
+            try {
+                const data = await api('/api/metasploit/jobs');
+                setJson(document.getElementById('jobsList'), data.jobs || data);
+            } catch (err) {
+                addLog(`Jobs refresh failed: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        async function stopJob() {
+            const jobId = document.getElementById('jobIdInput').value.trim();
+            if (!jobId) return;
+            try {
+                const data = await api(`/api/metasploit/jobs/${encodeURIComponent(jobId)}`, {
+                    method: 'DELETE',
+                });
+                setJson(document.getElementById('jobsList'), data);
+                addLog(`Stopped job ${jobId}`, 'INFO');
+                await refreshJobs();
+            } catch (err) {
+                addLog(`Stop job failed: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        async function refreshSessions() {
+            try {
+                const data = await api('/api/metasploit/sessions');
+                setJson(document.getElementById('sessionsList'), data.sessions || data);
+            } catch (err) {
+                addLog(`Sessions refresh failed: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        async function sendSessionCommand() {
+            const sessionId = document.getElementById('sessionIdInput').value.trim();
+            const command = document.getElementById('sessionCommandInput').value;
+            if (!sessionId || !command.trim()) return;
+            try {
+                const data = await api(
+                    `/api/metasploit/sessions/${encodeURIComponent(sessionId)}/command`,
+                    {
+                        method: 'POST',
+                        body: JSON.stringify({ command }),
+                    }
+                );
+                setJson(document.getElementById('sessionsList'), data);
+                addLog(`Sent command to session ${sessionId}`, 'INFO');
+            } catch (err) {
+                addLog(`Session command failed: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        async function closeSession() {
+            const sessionId = document.getElementById('sessionIdInput').value.trim();
+            if (!sessionId) return;
+            try {
+                await api(`/api/metasploit/sessions/${encodeURIComponent(sessionId)}`, {
+                    method: 'DELETE',
+                });
+                addLog(`Closed session ${sessionId}`, 'INFO');
+                await refreshSessions();
+            } catch (err) {
+                addLog(`Close session failed: ${err.message || err}`, 'ERROR');
+            }
+        }
+
+        document.getElementById('runScanBtn').addEventListener('click', submitJob);
+        document.getElementById('fetchResultsBtn').addEventListener('click', fetchResults);
+        document.getElementById('msfHealthBtn').addEventListener('click', msfHealth);
+        document.getElementById('searchModulesBtn').addEventListener('click', searchModules);
+        document.getElementById('loadModuleBtn').addEventListener('click', loadModule);
+        document.getElementById('runModuleBtn').addEventListener('click', runModule);
+        document.getElementById('refreshJobsBtn').addEventListener('click', refreshJobs);
+        document.getElementById('stopJobBtn').addEventListener('click', stopJob);
+        document.getElementById('refreshSessionsBtn').addEventListener('click', refreshSessions);
+        document.getElementById('sessionCommandBtn').addEventListener('click', sendSessionCommand);
+        document.getElementById('closeSessionBtn').addEventListener('click', closeSession);
+        document.getElementById('consoleOpenBtn').addEventListener('click', openConsole);
+        document.getElementById('consoleCloseBtn').addEventListener('click', closeConsole);
+        document.getElementById('consoleSendBtn').addEventListener('click', sendConsoleCommand);
+        document.getElementById('consoleCommandInput').addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') sendConsoleCommand();
+        });
+        window.addEventListener('beforeunload', closeConsole);
+    </script>
 </body>
 </html>

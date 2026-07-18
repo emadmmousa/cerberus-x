@@ -1,3 +1,11 @@
+# Compose file intended for:
+#   docker compose -f docker/docker-compose.yml ...
+# (from the repository root or from docker/ with adjusted relative paths)
+#
+# Project directory defaults to docker/, so build/volume/env paths use `..`
+# to reach the repository root. Secrets come from `../.env` via env_file —
+# no Compose password URL interpolation is required for this file to parse.
+
 services:
   redis:
     image: redis:alpine
@@ -14,38 +22,131 @@ services:
     networks:
       - cerberus-net
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: cerberus-postgres
+    env_file:
+      - path: ../.env
+        required: true
+    # POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB come from ../.env
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Internal only: no host port published.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER:-msf}\" -d \"$${POSTGRES_DB:-msf}\""]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - cerberus-net
+
+  metasploit:
+    build:
+      # Repository root (parent of docker/)
+      context: ..
+      dockerfile: docker/metasploit.Dockerfile
+    container_name: cerberus-metasploit
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Keep msfconsole alive after loading msgrpc (interactive console needs a TTY).
+    tty: true
+    stdin_open: true
+    env_file:
+      - path: ../.env
+        required: true
+    environment:
+      # Non-secret wiring only. DB user/password/name and RPC credentials come
+      # from ../.env via env_file; the entrypoint URL-encodes DB credentials.
+      - MSF_DB_HOST=postgres
+      - MSF_DB_PORT=5432
+      - MSF_RPC_PORT=55553
+      - MSF_RPC_BIND_HOST=0.0.0.0
+    # Internal only: RPC port 55553 is never published to the host.
+    # Healthcheck: auth.login + core.version + db.status (postgresql + db name).
+    healthcheck:
+      test:
+        - CMD
+        - ruby
+        - -e
+        - |
+          require 'msgpack'; require 'net/http'
+          port = ENV['MSF_RPC_PORT'] || '55553'
+          u = URI("http://127.0.0.1:#{port}/api/")
+          def call(u, *a)
+            r = Net::HTTP::Post.new(u)
+            r['Content-Type'] = 'binary/message-pack'
+            r.body = MessagePack.pack(a)
+            MessagePack.unpack(Net::HTTP.start(u.host, u.port) { |h| h.request(r) }.body)
+          end
+          login = call(u, 'auth.login', ENV.fetch('MSF_RPC_USER'), ENV.fetch('MSF_RPC_PASSWORD'))
+          token = login.is_a?(Hash) ? login['token'] : nil
+          exit 1 unless login.is_a?(Hash) && login['result'] == 'success' && token
+          ver = call(u, 'core.version', token)
+          exit 1 unless ver.is_a?(Hash) && ver['version']
+          st = call(u, 'db.status', token)
+          exit 1 unless st.is_a?(Hash) && st['driver'].to_s == 'postgresql' && !st['db'].to_s.empty?
+          exit 0
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 240s
+    networks:
+      - cerberus-net
+
   orchestrator:
     build:
-      context: .
+      context: ..
       dockerfile: docker/orchestrator.Dockerfile
     container_name: cerberus-orchestrator
     depends_on:
       redis:
         condition: service_healthy
+      metasploit:
+        condition: service_healthy
+    env_file:
+      - path: ../.env
+        required: true
     environment:
       - REDIS_URL=redis://redis:6379
       - PYTHONPATH=/app/src
+      - MSF_RPC_HOST=metasploit
+      - MSF_RPC_PORT=55553
+      - MSF_RPC_SSL=false
+      - MSF_RPC_VERIFY_SSL=false
+      # MSF_RPC_USER / MSF_RPC_PASSWORD come from ../.env via env_file
     volumes:
-      - ./src:/app/src
-      - ./playbooks:/app/playbooks
+      - ../src:/app/src
+      - ../playbooks:/app/playbooks
+    # Dashboard is the only host-facing entry point; bind to localhost only.
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     command: ["python", "-m", "orchestrator.dashboard"]
     networks:
       - cerberus-net
 
   worker:
     build:
-      context: .
+      context: ..
       dockerfile: docker/worker.Dockerfile
     depends_on:
       redis:
         condition: service_healthy
+      metasploit:
+        condition: service_healthy
+    env_file:
+      - path: ../.env
+        required: true
     environment:
       - REDIS_URL=redis://redis:6379
       - PYTHONPATH=/app/src
+      - MSF_RPC_HOST=metasploit
+      - MSF_RPC_PORT=55553
+      - MSF_RPC_SSL=false
+      - MSF_RPC_VERIFY_SSL=false
+      # MSF_RPC_USER / MSF_RPC_PASSWORD come from ../.env via env_file
     volumes:
-      - ./src:/app/src
+      - ../src:/app/src
     deploy:
       replicas: 4
     command: ["celery", "-A", "orchestrator.tasks", "worker", "--concurrency=8", "--loglevel=info"]
@@ -54,6 +155,7 @@ services:
 
 volumes:
   redis_data:
+  postgres_data:
 
 networks:
   cerberus-net:

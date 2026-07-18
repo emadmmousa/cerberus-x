@@ -1,6 +1,6 @@
-from celery import chain
+from celery import chain, group
 from .celery_app import app
-from tools.wrappers import nmap, gobuster, whatweb, sqlmap
+from tools.wrappers import nmap, gobuster, whatweb, sqlmap, nuclei, metasploit
 
 @app.task(bind=True)
 def run_nmap_task(self, target, args=None):
@@ -22,10 +22,21 @@ def run_sqlmap_task(self, target, args=None):
     self.update_state(state='STARTED', meta={'status': 'SQLMap testing...'})
     return sqlmap.scan(target, args)
 
-def build_phase_workflow(phase_name, tools_list, target):
+@app.task(bind=True)
+def run_nuclei_task(self, target, args=None):
+    self.update_state(state='STARTED', meta={'status': 'Nuclei scanning...'})
+    return nuclei.scan(target, args)
+
+@app.task(bind=True)
+def run_metasploit_task(self, target, args=None):
+    self.update_state(state='STARTED', meta={'status': 'Metasploit module execution...'})
+    return metasploit.scan(target, args)
+
+def build_phase_workflow(phase_name, tools_list, target, parallel=False):
     """
-    Build a chain of immutable Celery tasks for a phase.
-    Uses .si() to avoid prepending previous results as positional arguments.
+    Build a workflow for a phase.
+    If parallel=True, use group() to run tools concurrently.
+    Otherwise, use chain() for sequential execution.
     """
     task_list = []
     for tool in tools_list:
@@ -42,7 +53,20 @@ def build_phase_workflow(phase_name, tools_list, target):
             task_list.append(run_whatweb_task.si(target, args))
         elif tool_name == 'sqlmap':
             task_list.append(run_sqlmap_task.si(target, args))
+        elif tool_name == 'nuclei':
+            task_list.append(run_nuclei_task.si(target, args))
+        elif tool_name == 'metasploit':
+            task_list.append(run_metasploit_task.si(target, args))
         else:
-            # Placeholder for unknown tools – extend as needed
+            # Placeholder – extend as needed
             pass
-    return chain(*task_list) if task_list else None
+
+    if not task_list:
+        return None
+
+    if parallel:
+        # Run all tools concurrently
+        return group(*task_list)
+    else:
+        # Run tools sequentially
+        return chain(*task_list)

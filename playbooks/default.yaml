@@ -1,4 +1,4 @@
-name: "Default Attack"
+name: "Full Spectrum Attack"
 target: "https://wks.agency"
 phases:
   - name: "recon"
@@ -9,9 +9,22 @@ phases:
         args: ["-a", "3"]
       - tool: gobuster
         args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt"]
-    parallel: false
+    parallel: true
+
+  - name: "vulnerability_scan"
+    tools:
+      - tool: nuclei
+        args: ["-t", "/root/nuclei-templates/http/cves/", "-severity", "critical,high", "-silent"]
+      - tool: metasploit
+        args:
+          - auxiliary/scanner/portscan/tcp
+          - RPORTS=80,443
+          - THREADS=10
+    parallel: true
+    depends_on: ["recon"]
+
   - name: "exploitation"
     tools:
       - tool: sqlmap
         args: ["--batch", "--level=2"]
-    depends_on: ["recon"]
+    depends_on: ["vulnerability_scan"]

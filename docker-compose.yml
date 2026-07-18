@@ -1,3 +1,7 @@
+# Compose file for the repository root.
+# Usage: docker compose up -d
+# Loads `.env` from the project directory (repo root).
+
 services:
   redis:
     image: redis:alpine
@@ -14,6 +18,84 @@ services:
     networks:
       - cerberus-net
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: cerberus-postgres
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-msf}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required (see .env.example)}
+      - POSTGRES_DB=${POSTGRES_DB:-msf}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    # Internal only: no host port published.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-msf} -d $${POSTGRES_DB:-msf}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - cerberus-net
+
+  metasploit:
+    build:
+      context: .
+      dockerfile: docker/metasploit.Dockerfile
+    container_name: cerberus-metasploit
+    depends_on:
+      postgres:
+        condition: service_healthy
+    # Keep msfconsole alive after loading msgrpc (interactive console needs a TTY).
+    tty: true
+    stdin_open: true
+    env_file:
+      - path: .env
+        required: true
+    environment:
+      # DB components only — entrypoint URL-encodes credentials into DATABASE_URL.
+      - MSF_DB_HOST=postgres
+      - MSF_DB_PORT=5432
+      - MSF_DB_USER=${POSTGRES_USER:-msf}
+      - MSF_DB_PASSWORD=${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required (see .env.example)}
+      - MSF_DB_NAME=${POSTGRES_DB:-msf}
+      - MSF_RPC_USER=${MSF_RPC_USER:-msf}
+      - MSF_RPC_PASSWORD=${MSF_RPC_PASSWORD:?MSF_RPC_PASSWORD is required (see .env.example)}
+      - MSF_RPC_PORT=55553
+      - MSF_RPC_BIND_HOST=0.0.0.0
+    # Internal only: RPC port 55553 is never published to the host.
+    # Healthcheck: auth.login + core.version + db.status (postgresql + db name).
+    healthcheck:
+      test:
+        - CMD
+        - ruby
+        - -e
+        - |
+          require 'msgpack'; require 'net/http'
+          port = ENV['MSF_RPC_PORT'] || '55553'
+          u = URI("http://127.0.0.1:#{port}/api/")
+          def call(u, *a)
+            r = Net::HTTP::Post.new(u)
+            r['Content-Type'] = 'binary/message-pack'
+            r.body = MessagePack.pack(a)
+            MessagePack.unpack(Net::HTTP.start(u.host, u.port) { |h| h.request(r) }.body)
+          end
+          login = call(u, 'auth.login', ENV.fetch('MSF_RPC_USER'), ENV.fetch('MSF_RPC_PASSWORD'))
+          token = login.is_a?(Hash) ? login['token'] : nil
+          exit 1 unless login.is_a?(Hash) && login['result'] == 'success' && token
+          ver = call(u, 'core.version', token)
+          exit 1 unless ver.is_a?(Hash) && ver['version']
+          st = call(u, 'db.status', token)
+          exit 1 unless st.is_a?(Hash) && st['driver'].to_s == 'postgresql' && !st['db'].to_s.empty?
+          exit 0
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 240s
+    networks:
+      - cerberus-net
+
   orchestrator:
     build:
       context: .
@@ -22,14 +104,26 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      metasploit:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: true
     environment:
       - REDIS_URL=redis://redis:6379
       - PYTHONPATH=/app/src
+      - MSF_RPC_HOST=metasploit
+      - MSF_RPC_PORT=55553
+      - MSF_RPC_USER=${MSF_RPC_USER:-msf}
+      - MSF_RPC_PASSWORD=${MSF_RPC_PASSWORD:?MSF_RPC_PASSWORD is required (see .env.example)}
+      - MSF_RPC_SSL=false
+      - MSF_RPC_VERIFY_SSL=false
     volumes:
       - ./src:/app/src
       - ./playbooks:/app/playbooks
+    # Dashboard is the only host-facing entry point; bind to localhost only.
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     command: ["python", "-m", "orchestrator.dashboard"]
     networks:
       - cerberus-net
@@ -41,9 +135,20 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      metasploit:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: true
     environment:
       - REDIS_URL=redis://redis:6379
       - PYTHONPATH=/app/src
+      - MSF_RPC_HOST=metasploit
+      - MSF_RPC_PORT=55553
+      - MSF_RPC_USER=${MSF_RPC_USER:-msf}
+      - MSF_RPC_PASSWORD=${MSF_RPC_PASSWORD:?MSF_RPC_PASSWORD is required (see .env.example)}
+      - MSF_RPC_SSL=false
+      - MSF_RPC_VERIFY_SSL=false
     volumes:
       - ./src:/app/src
     deploy:
@@ -54,6 +159,7 @@ services:
 
 volumes:
   redis_data:
+  postgres_data:
 
 networks:
   cerberus-net:

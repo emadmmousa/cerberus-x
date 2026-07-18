@@ -1,1 +1,1 @@
-from . import nmap, gobuster, whatweb, sqlmap
+from . import nmap, gobuster, whatweb, sqlmap, nuclei, metasploit
