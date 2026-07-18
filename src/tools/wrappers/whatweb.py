@@ -1,15 +1,21 @@
 import subprocess
-import json
-import re
+
+
+def _url(target: str) -> str:
+    if "://" in target:
+        return target
+    return f"https://{target}"
+
 
 def scan(target, args=None):
+    url = _url(target)
     if args is None:
-        args = ['-a', '3']
-    cmd = ['whatweb'] + args + [target]
+        args = ["-a", "3"]
+    cmd = ["whatweb", *args, url]
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
-        return {'tool': 'whatweb', 'target': target, 'raw_output': output}
+        return {"tool": "whatweb", "target": url, "raw_output": output}
     except FileNotFoundError:
-        return {'tool': 'whatweb', 'target': target, 'error': 'whatweb binary not found'}
+        return {"tool": "whatweb", "target": url, "error": "whatweb binary not found"}
     except subprocess.CalledProcessError as e:
-        return {'tool': 'whatweb', 'target': target, 'error': str(e.output)}
+        return {"tool": "whatweb", "target": url, "error": str(e.output)}

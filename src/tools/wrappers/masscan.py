@@ -33,8 +33,9 @@ def _resolve_target(host: str) -> str:
 
 
 def scan(target, args=None):
+    # Full-port defaults are extremely slow inside Compose; keep common ports.
     if args is None:
-        args = ["-p1-65535", "--rate=1000", "--wait=0"]
+        args = ["-p80,443,22", "--rate=1000", "--wait=2"]
 
     host = _extract_host(target)
     try:
@@ -42,14 +43,16 @@ def scan(target, args=None):
     except ValueError as exc:
         return {"tool": "masscan", "target": host, "error": str(exc)}
 
-    cmd = ["masscan"] + list(args) + [address]
+    cmd = ["masscan", *list(args), address]
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
         ports = []
         for line in output.split("\n"):
-            if "open port" not in line:
+            if "open port" not in line.lower() and "Discovered open port" not in line:
                 continue
-            parts = line.split()
+            # "Discovered open port 443/tcp on 1.2.3.4"
+            # "open port 443/tcp on ..."
+            parts = line.replace("Discovered ", "").split()
             for part in parts:
                 if "/" not in part:
                     continue

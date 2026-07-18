@@ -1,6 +1,5 @@
 import re
 import subprocess
-from urllib.parse import urlparse
 
 
 def _url(target: str) -> str:
@@ -43,5 +42,5 @@ def scan(target, args=None):
         "tool": "nuclei",
         "target": url,
         "findings": findings,
-        "raw_output": output,
+        "raw_output": output if output.strip() else "no findings",
     }

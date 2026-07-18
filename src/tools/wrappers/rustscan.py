@@ -10,13 +10,32 @@ def _host(target: str) -> str:
 
 def scan(target, args=None):
     host = _host(target)
-    # -a requires the address value immediately after it.
+    # Rustscan 2.x: -p is comma ports, -r is ranges, --top is top 1000.
+    # -a must be followed immediately by the address value.
     if args is None:
-        args = ["-a", host, "--ulimit", "5000", "-g", "--no-banner"]
+        args = [
+            "-a",
+            host,
+            "--ulimit",
+            "5000",
+            "--top",
+            "-g",
+            "--no-banner",
+            "-t",
+            "3000",
+        ]
     else:
         args = list(args)
         if "-a" not in args and "--addresses" not in args:
             args = ["-a", host, *args]
+        if (
+            "-p" not in args
+            and "--ports" not in args
+            and "-r" not in args
+            and "--range" not in args
+            and "--top" not in args
+        ):
+            args = [*args, "--top"]
 
     cmd = ["rustscan", *args]
     try:
@@ -34,12 +53,18 @@ def scan(target, args=None):
                 for part in line.split("Open ", 1)[1].replace(",", ".").split("."):
                     if part.strip().isdigit():
                         ports.append({"port": part.strip(), "state": "open"})
-        return {
+        result = {
             "tool": "rustscan",
             "target": host,
             "ports": ports,
             "raw_output": output,
         }
+        if not ports and not output.strip():
+            result["raw_output"] = (
+                "rustscan completed with no open ports "
+                "(SYN scan may be filtered; try nmap)"
+            )
+        return result
     except FileNotFoundError:
         return {"tool": "rustscan", "target": host, "error": "rustscan binary not found"}
     except subprocess.CalledProcessError as e:

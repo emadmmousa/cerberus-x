@@ -124,6 +124,10 @@ services:
     # Dashboard is the only host-facing entry point; bind to localhost only.
     ports:
       - "127.0.0.1:5000:5000"
+    # Raw sockets for masscan/rustscan SYN scans.
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     command: ["python", "-m", "orchestrator.dashboard"]
     networks:
       - cerberus-net
@@ -151,6 +155,10 @@ services:
       - MSF_RPC_VERIFY_SSL=false
     volumes:
       - ./src:/app/src
+    # Raw sockets for masscan/rustscan SYN scans.
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     deploy:
       replicas: 4
     command: ["celery", "-A", "orchestrator.tasks", "worker", "--concurrency=8", "--loglevel=info"]

@@ -121,6 +121,9 @@ services:
     # Dashboard is the only host-facing entry point; bind to localhost only.
     ports:
       - "127.0.0.1:5000:5000"
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     command: ["python", "-m", "orchestrator.dashboard"]
     networks:
       - cerberus-net
@@ -147,6 +150,9 @@ services:
       # MSF_RPC_USER / MSF_RPC_PASSWORD come from ../.env via env_file
     volumes:
       - ../src:/app/src
+    cap_add:
+      - NET_RAW
+      - NET_ADMIN
     deploy:
       replicas: 4
     command: ["celery", "-A", "orchestrator.tasks", "worker", "--concurrency=8", "--loglevel=info"]

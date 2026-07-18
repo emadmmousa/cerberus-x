@@ -23,12 +23,15 @@ def scan(target, args=None):
             "20",
             "-maxtime",
             "60",
+            "-ac",
         ]
     else:
         args = [
             arg.replace("{{target}}", url) if isinstance(arg, str) else arg
             for arg in args
         ]
+        if "-ac" not in args and "--auto-calibrate" not in args:
+            args = [*args, "-ac"]
 
     cmd = ["ffuf", *args]
     try:

@@ -71,6 +71,7 @@ def test_scan_parses_full_module_path_and_coerces_options(monkeypatch):
         "job_id": 7,
         "uuid": "run-abc",
         "response": {"job_id": 7, "uuid": "run-abc"},
+        "raw_output": "module=auxiliary/scanner/portscan/tcp job_id=7 uuid=run-abc",
     }
 
 

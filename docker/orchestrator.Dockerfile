@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
     gobuster \
     sqlmap \
     dirb \
+    hydra \
     john \
     hashcat \
     curl \

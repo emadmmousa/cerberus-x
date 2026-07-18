@@ -6,17 +6,17 @@ phases:
       - tool: masscan
         args: ["-p80,443,22", "--rate=1000", "--wait=0"]
       - tool: rustscan
-        args: ["--ulimit", "5000", "-g", "--no-banner"]
+        args: ["--ulimit", "5000", "--top", "-g", "--no-banner", "-t", "3000"]
       - tool: nmap
         args: ["-sV", "-p80,443,22", "-T4"]
       - tool: whatweb
         args: ["-a", "3"]
       - tool: gobuster
-        args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt", "-q"]
+        args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt", "-q", "-b", "404"]
       - tool: theharvester
         args: ["-d", "wks.agency", "-l", "50", "-b", "crtsh"]
       - tool: ffuf
-        args: ["-u", "{{target}}/FUZZ", "-w", "/usr/share/dirb/wordlists/common.txt", "-mc", "200,301,302,401,403", "-maxtime", "60"]
+        args: ["-u", "{{target}}/FUZZ", "-w", "/usr/share/dirb/wordlists/common.txt", "-mc", "200,301,302,401,403", "-maxtime", "60", "-ac"]
     parallel: true
 
   - name: "vulnerability_scan"
