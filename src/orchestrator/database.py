@@ -3,6 +3,8 @@ import json
 import os
 from datetime import datetime
 
+from .reporting import export_target_reports
+
 DB_PATH = os.environ.get(
     'CERBERUS_DB_PATH',
     os.path.join(os.path.dirname(__file__), '..', '..', 'results.db'),
@@ -44,6 +46,7 @@ def save_phase_result(target, phase_name, phase_outputs):
                     (target, phase_name, item.get('tool'), json.dumps(item))
                 )
         conn.commit()
+    export_target_reports(target, get_results(target, limit=10000))
 
 def get_results(target=None, limit=100):
     """Retrieve results, optionally filtered by target."""

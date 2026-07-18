@@ -6,29 +6,28 @@ phases:
       - tool: masscan
         args: ["-p80,443,22", "--rate=1000", "--wait=0"]
       - tool: rustscan
-        args: ["--ulimit", "5000", "--top", "-g", "--no-banner", "-t", "3000"]
+        args: ["-a", "--ulimit", "5000"]
       - tool: nmap
-        args: ["-sV", "-p80,443,22", "-T4"]
+        args: ["-sV", "-p-", "-T4"]
       - tool: whatweb
         args: ["-a", "3"]
       - tool: gobuster
-        args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt", "-q", "-b", "404"]
+        args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt"]
       - tool: theharvester
-        args: ["-d", "wks.agency", "-l", "50", "-b", "crtsh"]
+        args: ["-d", "wks.agency", "-l", "100", "-b", "google"]
       - tool: ffuf
-        args: ["-u", "{{target}}/FUZZ", "-w", "/usr/share/dirb/wordlists/common.txt", "-mc", "200,301,302,401,403", "-maxtime", "60", "-ac"]
+        args: ["-u", "{{target}}/FUZZ", "-w", "/usr/share/wordlists/dirb/common.txt"]
     parallel: true
 
   - name: "vulnerability_scan"
     tools:
       - tool: nuclei
-        args: ["-t", "/root/nuclei-templates/http/cves/", "-severity", "critical,high", "-silent"]
-      - tool: metasploit
-        args:
-          - auxiliary/scanner/portscan/tcp
-          - RPORTS=80,443
-          - THREADS=10
-    parallel: true
+        args: ["-t", "cves/", "-severity", "critical,high"]
+      - tool: nikto
+        args: ["-ssl", "-port", "443"]
+      - tool: xsstrike
+        args: ["--level", "3"]
+    parallel: false
     depends_on: ["recon"]
 
   - name: "exploitation"
@@ -36,3 +35,14 @@ phases:
       - tool: sqlmap
         args: ["--batch", "--level=2"]
     depends_on: ["vulnerability_scan"]
+
+  - name: "credential"
+    tools:
+      - tool: hydra
+        args: ["-l", "admin", "-P", "/usr/share/nmap/nselib/data/passwords.lst", "ssh://{{target}}"]
+      - tool: john
+        args: ["--wordlist=/usr/share/john/password.lst", "--format=nt"]
+      - tool: crackmapexec
+        args: ["smb", "{{target}}", "-u", "admin", "-p", "password"]
+    parallel: false
+    depends_on: ["recon"]

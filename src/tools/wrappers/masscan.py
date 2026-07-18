@@ -1,7 +1,17 @@
 import ipaddress
+import os
+import re
+import signal
 import socket
 import subprocess
+import tempfile
+import time
 from urllib.parse import urlparse
+
+# Hard ceiling so a broken wait-loop can never block the orchestrator.
+DEFAULT_TIMEOUT_SECONDS = 45
+_DONE_RE = re.compile(r"100\.00%\s+done", re.IGNORECASE)
+_PORT_ARG_RE = re.compile(r"^-p(.+)$")
 
 
 def _extract_host(target: str) -> str:
@@ -32,10 +42,196 @@ def _resolve_target(host: str) -> str:
     raise ValueError(f"Unable to resolve host: {host}")
 
 
-def scan(target, args=None):
-    # Full-port defaults are extremely slow inside Compose; keep common ports.
+def _expand_port_token(token: str) -> list[int]:
+    token = token.strip()
+    if not token:
+        return []
+    if "-" in token:
+        start_s, end_s = token.split("-", 1)
+        if start_s.isdigit() and end_s.isdigit():
+            start, end = int(start_s), int(end_s)
+            if start > end or end - start > 1024:
+                return []
+            return list(range(start, end + 1))
+        return []
+    return [int(token)] if token.isdigit() else []
+
+
+def _ports_from_args(args: list[str]) -> list[int]:
+    ports: list[int] = []
+    skip_next = False
+    for i, arg in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "-p" and i + 1 < len(args):
+            for part in str(args[i + 1]).split(","):
+                ports.extend(_expand_port_token(part))
+            skip_next = True
+            continue
+        match = _PORT_ARG_RE.match(arg)
+        if match:
+            for part in match.group(1).split(","):
+                ports.extend(_expand_port_token(part))
+    # Deduplicate while preserving order.
+    seen = set()
+    unique = []
+    for port in ports:
+        if port not in seen:
+            seen.add(port)
+            unique.append(port)
+    return unique
+
+
+def _force_wait_zero(args: list[str]) -> list[str]:
+    cleaned = []
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg == "--wait":
+            skip_next = True
+            continue
+        if arg.startswith("--wait="):
+            continue
+        cleaned.append(arg)
+    return [*cleaned, "--wait=0"]
+
+
+def _parse_ports(output: str) -> list[dict]:
+    ports = []
+    seen = set()
+    for line in (output or "").splitlines():
+        lower = line.lower()
+        if "open port" not in lower and "discovered open port" not in lower:
+            # list output: "open tcp 443 1.2.3.4 timestamps..."
+            parts = line.split()
+            if len(parts) >= 4 and parts[0] == "open" and parts[2].isdigit():
+                key = (parts[2], parts[1])
+                if key not in seen:
+                    seen.add(key)
+                    ports.append({"port": parts[2], "protocol": parts[1]})
+            continue
+        parts = line.replace("Discovered ", "").split()
+        for part in parts:
+            if "/" not in part:
+                continue
+            port, proto = part.split("/", 1)
+            if port.isdigit():
+                key = (port, proto)
+                if key not in seen:
+                    seen.add(key)
+                    ports.append({"port": port, "protocol": proto})
+    return ports
+
+
+def _tcp_connect_ports(
+    address: str, ports: list[int], timeout: float = 2.0
+) -> list[dict]:
+    open_ports = []
+    for port in ports:
+        try:
+            with socket.create_connection((address, port), timeout=timeout):
+                open_ports.append({"port": str(port), "protocol": "tcp"})
+        except OSError:
+            continue
+    return open_ports
+
+
+def _kill_process_group(proc: subprocess.Popen) -> None:
+    if proc.poll() is not None:
+        return
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    try:
+        proc.kill()
+    except ProcessLookupError:
+        pass
+
+
+def _run_masscan_syn(
+    address: str, args: list[str], timeout: int
+) -> tuple[str, list[dict]]:
+    """
+    Run masscan and guarantee exit.
+
+    Docker Desktop often leaves masscan stuck after '100.00% done' in the wait
+    loop. We watch for completion, then force-kill if it does not exit.
+    """
+    args = _force_wait_zero(list(args))
+    with tempfile.NamedTemporaryFile(prefix="masscan-", suffix=".list", delete=False) as handle:
+        list_path = handle.name
+
+    cmd = ["masscan", *args, "-oL", list_path, address]
+    output_chunks: list[str] = []
+    done_at: float | None = None
+    proc = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        start_new_session=True,
+        bufsize=1,
+    )
+
+    deadline = time.monotonic() + timeout
+    try:
+        assert proc.stdout is not None
+        while True:
+            if time.monotonic() > deadline:
+                break
+            line = proc.stdout.readline()
+            if line:
+                output_chunks.append(line)
+                if _DONE_RE.search(line) and done_at is None:
+                    # Allow a brief drain window, then stop waiting forever.
+                    done_at = time.monotonic()
+            elif proc.poll() is not None:
+                break
+            else:
+                time.sleep(0.05)
+
+            if done_at is not None and time.monotonic() - done_at >= 1.5:
+                break
+
+            if proc.poll() is not None:
+                rest = proc.stdout.read()
+                if rest:
+                    output_chunks.append(rest)
+                break
+    finally:
+        _kill_process_group(proc)
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            _kill_process_group(proc)
+
+    list_text = ""
+    try:
+        with open(list_path, encoding="utf-8", errors="replace") as handle:
+            list_text = handle.read()
+    except OSError:
+        list_text = ""
+    finally:
+        try:
+            os.unlink(list_path)
+        except OSError:
+            pass
+
+    combined = "".join(output_chunks)
+    if list_text:
+        combined = f"{combined}\n{list_text}" if combined else list_text
+    return combined, _parse_ports(combined)
+
+
+def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
     if args is None:
-        args = ["-p80,443,22", "--rate=1000", "--wait=2"]
+        args = ["-p80,443,22", "--rate=1000", "--wait=0"]
+    else:
+        args = list(args)
 
     host = _extract_host(target)
     try:
@@ -43,30 +239,36 @@ def scan(target, args=None):
     except ValueError as exc:
         return {"tool": "masscan", "target": host, "error": str(exc)}
 
-    cmd = ["masscan", *list(args), address]
+    requested_ports = _ports_from_args(args) or [80, 443, 22]
+
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
-        ports = []
-        for line in output.split("\n"):
-            if "open port" not in line.lower() and "Discovered open port" not in line:
-                continue
-            # "Discovered open port 443/tcp on 1.2.3.4"
-            # "open port 443/tcp on ..."
-            parts = line.replace("Discovered ", "").split()
-            for part in parts:
-                if "/" not in part:
-                    continue
-                port, proto = part.split("/", 1)
-                if port.isdigit():
-                    ports.append({"port": port, "protocol": proto})
+        syn_output, syn_ports = _run_masscan_syn(address, args, timeout=timeout)
+    except FileNotFoundError:
+        return {"tool": "masscan", "target": host, "error": "masscan binary not found"}
+
+    if syn_ports:
         return {
             "tool": "masscan",
             "target": host,
             "resolved": address,
-            "ports": ports,
-            "raw_output": output,
+            "ports": syn_ports,
+            "method": "syn",
+            "raw_output": syn_output,
         }
-    except FileNotFoundError:
-        return {"tool": "masscan", "target": host, "error": "masscan binary not found"}
-    except subprocess.CalledProcessError as e:
-        return {"tool": "masscan", "target": host, "error": str(e.output)}
+
+    # Docker Desktop frequently drops/blackholes masscan SYN replies.
+    # Fall back to TCP connect against the requested ports so scans stay useful.
+    fallback_ports = _tcp_connect_ports(address, requested_ports)
+    note = (
+        "masscan SYN returned no open ports; "
+        "used TCP connect fallback (common under Docker Desktop networking)"
+    )
+    raw = f"{syn_output.rstrip()}\n{note}".strip()
+    return {
+        "tool": "masscan",
+        "target": host,
+        "resolved": address,
+        "ports": fallback_ports,
+        "method": "tcp-connect-fallback",
+        "raw_output": raw,
+    }

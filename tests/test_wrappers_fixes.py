@@ -42,6 +42,65 @@ def test_masscan_extract_host():
     assert masscan._extract_host("https://wks.agency:443/x") == "wks.agency"
 
 
+def test_masscan_parse_port_list():
+    assert masscan._ports_from_args(["-p80,443,22", "--rate=1000"]) == [80, 443, 22]
+    assert masscan._ports_from_args(["-p", "80,443"]) == [80, 443]
+    assert masscan._ports_from_args(["-p1-3"]) == [1, 2, 3]
+
+
+def test_masscan_tcp_connect_fallback(monkeypatch):
+    monkeypatch.setattr(masscan, "_resolve_target", lambda host: "1.2.3.4")
+    monkeypatch.setattr(
+        masscan,
+        "_run_masscan_syn",
+        lambda *a, **k: ("", []),
+    )
+    monkeypatch.setattr(
+        masscan,
+        "_tcp_connect_ports",
+        lambda address, ports, timeout=2.0: [
+            {"port": "80", "protocol": "tcp"},
+            {"port": "443", "protocol": "tcp"},
+        ],
+    )
+
+    result = masscan.scan("example.com", ["-p80,443", "--rate=1000"])
+
+    assert "error" not in result
+    assert result["ports"] == [
+        {"port": "80", "protocol": "tcp"},
+        {"port": "443", "protocol": "tcp"},
+    ]
+    assert result["method"] == "tcp-connect-fallback"
+    assert "fallback" in result["raw_output"].lower()
+
+
+def test_masscan_prefers_syn_results(monkeypatch):
+    monkeypatch.setattr(masscan, "_resolve_target", lambda host: "1.2.3.4")
+    monkeypatch.setattr(
+        masscan,
+        "_run_masscan_syn",
+        lambda *a, **k: (
+            "Discovered open port 443/tcp on 1.2.3.4\n",
+            [{"port": "443", "protocol": "tcp"}],
+        ),
+    )
+
+    called = {"fallback": False}
+
+    def boom(*a, **k):
+        called["fallback"] = True
+        return []
+
+    monkeypatch.setattr(masscan, "_tcp_connect_ports", boom)
+
+    result = masscan.scan("example.com", ["-p443", "--rate=1000"])
+
+    assert called["fallback"] is False
+    assert result["method"] == "syn"
+    assert result["ports"] == [{"port": "443", "protocol": "tcp"}]
+
+
 def test_nmap_sqlmap_nuclei_ffuf_url_helpers():
     assert nmap._host("https://wks.agency/x") == "wks.agency"
     assert sqlmap._url("wks.agency") == "https://wks.agency"
@@ -49,20 +108,45 @@ def test_nmap_sqlmap_nuclei_ffuf_url_helpers():
     assert ffuf._url("wks.agency") == "https://wks.agency"
 
 
-def test_hydra_requires_explicit_service_and_arguments():
+def test_hydra_default_args_target_only(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = "[DATA] attacking ssh://lab.example:22/\n"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(hydra, "_default_wordlist", lambda: "/tmp/passes.txt")
+
     result = hydra.scan("lab.example")
 
-    assert result["error"] == "hydra requires an explicit service and arguments"
+    assert "error" not in result
+    assert result["service"] == "ssh"
+    assert calls[0][:3] == ["hydra", "-l", "admin"]
+    assert calls[0][-2:] == ["lab.example", "ssh"]
+    assert "-P" in calls[0]
 
 
 def test_hydra_builds_command_with_normalized_target(monkeypatch):
     calls = []
 
-    def fake_check_output(command, **kwargs):
-        calls.append((command, kwargs))
-        return "Hydra finished"
+    def fake_run(command, **kwargs):
+        calls.append(command)
 
-    monkeypatch.setattr(subprocess, "check_output", fake_check_output)
+        class Result:
+            returncode = 0
+            stdout = "Hydra finished"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
 
     result = hydra.scan(
         "ssh://lab.example:22/path",
@@ -70,35 +154,81 @@ def test_hydra_builds_command_with_normalized_target(monkeypatch):
     )
 
     assert calls == [
-        (
-            [
-                "hydra",
-                "-l",
-                "operator",
-                "-P",
-                "/tmp/lab-passwords.txt",
-                "-t",
-                "1",
-                "lab.example",
-                "ssh",
-            ],
-            {"stderr": subprocess.STDOUT, "text": True},
-        )
+        [
+            "hydra",
+            "-l",
+            "operator",
+            "-P",
+            "/tmp/lab-passwords.txt",
+            "-t",
+            "1",
+            "lab.example",
+            "ssh",
+        ]
     ]
-    assert result == {
-        "tool": "hydra",
-        "target": "lab.example",
-        "service": "ssh",
-        "raw_output": "Hydra finished",
-    }
+    assert result["raw_output"] == "Hydra finished"
+    assert "error" not in result
+
+
+def test_hydra_accepts_native_service_url_args(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = "ok"
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+
+    result = hydra.scan(
+        "takwene.com",
+        ["-l", "admin", "-P", "/tmp/passes.txt", "ssh://takwene.com"],
+    )
+
+    assert calls[0] == [
+        "hydra",
+        "-l",
+        "admin",
+        "-P",
+        "/tmp/passes.txt",
+        "ssh://takwene.com",
+    ]
+    assert result["service"] == "ssh"
 
 
 def test_hydra_reports_missing_binary(monkeypatch):
     def missing_binary(*args, **kwargs):
         raise FileNotFoundError
 
-    monkeypatch.setattr(subprocess, "check_output", missing_binary)
+    monkeypatch.setattr(subprocess, "run", missing_binary)
 
     result = hydra.scan("lab.example", ["ssh", "-l", "operator", "-p", "test"])
 
     assert result["error"] == "hydra binary not found"
+
+
+def test_zmap_host_and_ports():
+    from tools.wrappers import zmap
+
+    assert zmap._host("https://takwene.com/x") == "takwene.com"
+    assert zmap._ports_from_args(["-p", "80,443"]) == [80, 443]
+
+
+def test_nikto_and_xsstrike_url_helpers():
+    from tools.wrappers import nikto, xsstrike
+
+    assert nikto._url("takwene.com") == "https://takwene.com"
+    assert xsstrike._url("takwene.com").startswith("https://takwene.com")
+    assert "?q=test" in xsstrike._url("takwene.com")
+
+
+def test_impacket_and_cme_host_helpers():
+    from tools.wrappers import impacket, crackmapexec
+
+    assert impacket._host("smb://lab.example/share") == "lab.example"
+    assert crackmapexec._host("https://lab.example") == "lab.example"

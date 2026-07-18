@@ -118,9 +118,12 @@ services:
       - MSF_RPC_PASSWORD=${MSF_RPC_PASSWORD:?MSF_RPC_PASSWORD is required (see .env.example)}
       - MSF_RPC_SSL=false
       - MSF_RPC_VERIFY_SSL=false
+      - CERBERUS_OUTPUT_DIR=/app/output
+      - CERBERUS_DB_PATH=/app/output/results.db
     volumes:
       - ./src:/app/src
       - ./playbooks:/app/playbooks
+      - ./output:/app/output
     # Dashboard is the only host-facing entry point; bind to localhost only.
     ports:
       - "127.0.0.1:5000:5000"
@@ -153,8 +156,10 @@ services:
       - MSF_RPC_PASSWORD=${MSF_RPC_PASSWORD:?MSF_RPC_PASSWORD is required (see .env.example)}
       - MSF_RPC_SSL=false
       - MSF_RPC_VERIFY_SSL=false
+      - CERBERUS_OUTPUT_DIR=/app/output
     volumes:
       - ./src:/app/src
+      - ./output:/app/output
     # Raw sockets for masscan/rustscan SYN scans.
     cap_add:
       - NET_RAW

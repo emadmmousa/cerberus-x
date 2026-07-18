@@ -114,10 +114,13 @@ services:
       - MSF_RPC_PORT=55553
       - MSF_RPC_SSL=false
       - MSF_RPC_VERIFY_SSL=false
+      - CERBERUS_OUTPUT_DIR=/app/output
+      - CERBERUS_DB_PATH=/app/output/results.db
       # MSF_RPC_USER / MSF_RPC_PASSWORD come from ../.env via env_file
     volumes:
       - ../src:/app/src
       - ../playbooks:/app/playbooks
+      - ../output:/app/output
     # Dashboard is the only host-facing entry point; bind to localhost only.
     ports:
       - "127.0.0.1:5000:5000"
@@ -147,9 +150,11 @@ services:
       - MSF_RPC_PORT=55553
       - MSF_RPC_SSL=false
       - MSF_RPC_VERIFY_SSL=false
+      - CERBERUS_OUTPUT_DIR=/app/output
       # MSF_RPC_USER / MSF_RPC_PASSWORD come from ../.env via env_file
     volumes:
       - ../src:/app/src
+      - ../output:/app/output
     cap_add:
       - NET_RAW
       - NET_ADMIN

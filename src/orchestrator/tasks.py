@@ -1,158 +1,188 @@
 from celery import chain, group
 from .celery_app import app
 from tools.wrappers import (
-    nmap,
-    gobuster,
-    whatweb,
-    sqlmap,
-    nuclei,
-    metasploit,
-    masscan,
-    rustscan,
-    theharvester,
-    ffuf,
-    hydra,
-    john,
-    hashcat,
-    winpeas,
-    linpeas,
+    nmap, gobuster, whatweb, sqlmap, nuclei, metasploit,
+    masscan, rustscan, theharvester, ffuf, hydra, john, hashcat, winpeas, linpeas,
+    zmap, nikto, xsstrike, impacket, crackmapexec, responder, bloodhound, sliver
 )
-
 
 @app.task(bind=True)
 def run_nmap_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "Nmap scanning..."})
+    self.update_state(state='STARTED', meta={'status': 'Nmap scanning...'})
     return nmap.scan(target, args)
-
 
 @app.task(bind=True)
 def run_gobuster_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "Gobuster brute-forcing..."})
+    self.update_state(state='STARTED', meta={'status': 'Gobuster brute-forcing...'})
     return gobuster.scan(target, args)
-
 
 @app.task(bind=True)
 def run_whatweb_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "WhatWeb fingerprinting..."})
+    self.update_state(state='STARTED', meta={'status': 'WhatWeb fingerprinting...'})
     return whatweb.scan(target, args)
-
 
 @app.task(bind=True)
 def run_sqlmap_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "SQLMap testing..."})
+    self.update_state(state='STARTED', meta={'status': 'SQLMap testing...'})
     return sqlmap.scan(target, args)
-
 
 @app.task(bind=True)
 def run_nuclei_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "Nuclei scanning..."})
+    self.update_state(state='STARTED', meta={'status': 'Nuclei scanning...'})
     return nuclei.scan(target, args)
-
 
 @app.task(bind=True)
 def run_metasploit_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "Metasploit module execution..."})
+    self.update_state(state='STARTED', meta={'status': 'Metasploit auxiliary scan...'})
     return metasploit.scan(target, args)
-
 
 @app.task(bind=True)
 def run_masscan_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "Masscan scanning..."})
+    self.update_state(state='STARTED', meta={'status': 'Masscan scanning...'})
     return masscan.scan(target, args)
-
 
 @app.task(bind=True)
 def run_rustscan_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "RustScan scanning..."})
+    self.update_state(state='STARTED', meta={'status': 'RustScan scanning...'})
     return rustscan.scan(target, args)
-
 
 @app.task(bind=True)
 def run_theharvester_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "theHarvester harvesting..."})
+    self.update_state(state='STARTED', meta={'status': 'theHarvester harvesting...'})
     return theharvester.scan(target, args)
-
 
 @app.task(bind=True)
 def run_ffuf_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "FFUF fuzzing..."})
+    self.update_state(state='STARTED', meta={'status': 'FFUF fuzzing...'})
     return ffuf.scan(target, args)
-
 
 @app.task(bind=True)
 def run_hydra_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "Hydra unavailable..."})
+    self.update_state(state='STARTED', meta={'status': 'Hydra brute-forcing...'})
     return hydra.scan(target, args)
-
 
 @app.task(bind=True)
 def run_john_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "John the Ripper cracking..."})
+    self.update_state(state='STARTED', meta={'status': 'John the Ripper cracking...'})
     return john.scan(target, args)
-
 
 @app.task(bind=True)
 def run_hashcat_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "Hashcat cracking..."})
+    self.update_state(state='STARTED', meta={'status': 'Hashcat cracking...'})
     return hashcat.scan(target, args)
-
 
 @app.task(bind=True)
 def run_winpeas_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "WinPEAS preparation..."})
+    self.update_state(state='STARTED', meta={'status': 'WinPEAS preparation...'})
     return winpeas.scan(target, args)
-
 
 @app.task(bind=True)
 def run_linpeas_task(self, target, args=None):
-    self.update_state(state="STARTED", meta={"status": "LinPEAS preparation..."})
+    self.update_state(state='STARTED', meta={'status': 'LinPEAS preparation...'})
     return linpeas.scan(target, args)
 
+@app.task(bind=True)
+def run_zmap_task(self, target, args=None):
+    self.update_state(state='STARTED', meta={'status': 'ZMap scanning...'})
+    return zmap.scan(target, args)
+
+@app.task(bind=True)
+def run_nikto_task(self, target, args=None):
+    self.update_state(state='STARTED', meta={'status': 'Nikto scanning...'})
+    return nikto.scan(target, args)
+
+@app.task(bind=True)
+def run_xsstrike_task(self, target, args=None):
+    self.update_state(state='STARTED', meta={'status': 'XSStrike scanning...'})
+    return xsstrike.scan(target, args)
+
+@app.task(bind=True)
+def run_impacket_task(self, target, args=None):
+    self.update_state(state='STARTED', meta={'status': 'Impacket secretsdump...'})
+    return impacket.scan(target, args)
+
+@app.task(bind=True)
+def run_crackmapexec_task(self, target, args=None):
+    self.update_state(state='STARTED', meta={'status': 'CrackMapExec scanning...'})
+    return crackmapexec.scan(target, args)
+
+@app.task(bind=True)
+def run_responder_task(self, target, args=None):
+    self.update_state(state='STARTED', meta={'status': 'Responder poisoning...'})
+    return responder.scan(target, args)
+
+@app.task(bind=True)
+def run_bloodhound_task(self, target, args=None):
+    self.update_state(state='STARTED', meta={'status': 'BloodHound data collection...'})
+    return bloodhound.scan(target, args)
+
+@app.task(bind=True)
+def run_sliver_task(self, target, args=None):
+    self.update_state(state='STARTED', meta={'status': 'Sliver payload generation...'})
+    return sliver.scan(target, args)
 
 def build_phase_workflow(phase_name, tools_list, target, parallel=False):
     """
     Build a workflow for a phase.
     If parallel=True, use group() to run tools concurrently.
     Otherwise, use chain() for sequential execution.
+    Substitutes {{target}} in argument strings.
     """
     task_list = []
     for tool in tools_list:
-        tool_name = tool.get("tool")
+        tool_name = tool.get('tool')
         args = [
-            arg.replace("{{target}}", target) if isinstance(arg, str) else arg
-            for arg in tool.get("args", [])
+            arg.replace('{{target}}', target) if isinstance(arg, str) else arg
+            for arg in tool.get('args', [])
         ]
-        if tool_name == "nmap":
+        if tool_name == 'nmap':
             task_list.append(run_nmap_task.si(target, args))
-        elif tool_name == "gobuster":
+        elif tool_name == 'gobuster':
             task_list.append(run_gobuster_task.si(target, args))
-        elif tool_name == "whatweb":
+        elif tool_name == 'whatweb':
             task_list.append(run_whatweb_task.si(target, args))
-        elif tool_name == "sqlmap":
+        elif tool_name == 'sqlmap':
             task_list.append(run_sqlmap_task.si(target, args))
-        elif tool_name == "nuclei":
+        elif tool_name == 'nuclei':
             task_list.append(run_nuclei_task.si(target, args))
-        elif tool_name == "metasploit":
+        elif tool_name == 'metasploit':
             task_list.append(run_metasploit_task.si(target, args))
-        elif tool_name == "masscan":
+        elif tool_name == 'masscan':
             task_list.append(run_masscan_task.si(target, args))
-        elif tool_name == "rustscan":
+        elif tool_name == 'rustscan':
             task_list.append(run_rustscan_task.si(target, args))
-        elif tool_name == "theharvester":
+        elif tool_name == 'theharvester':
             task_list.append(run_theharvester_task.si(target, args))
-        elif tool_name == "ffuf":
+        elif tool_name == 'ffuf':
             task_list.append(run_ffuf_task.si(target, args))
-        elif tool_name == "hydra":
+        elif tool_name == 'hydra':
             task_list.append(run_hydra_task.si(target, args))
-        elif tool_name == "john":
+        elif tool_name == 'john':
             task_list.append(run_john_task.si(target, args))
-        elif tool_name == "hashcat":
+        elif tool_name == 'hashcat':
             task_list.append(run_hashcat_task.si(target, args))
-        elif tool_name == "winpeas":
+        elif tool_name == 'winpeas':
             task_list.append(run_winpeas_task.si(target, args))
-        elif tool_name == "linpeas":
+        elif tool_name == 'linpeas':
             task_list.append(run_linpeas_task.si(target, args))
+        elif tool_name == 'zmap':
+            task_list.append(run_zmap_task.si(target, args))
+        elif tool_name == 'nikto':
+            task_list.append(run_nikto_task.si(target, args))
+        elif tool_name == 'xsstrike':
+            task_list.append(run_xsstrike_task.si(target, args))
+        elif tool_name == 'impacket':
+            task_list.append(run_impacket_task.si(target, args))
+        elif tool_name == 'crackmapexec':
+            task_list.append(run_crackmapexec_task.si(target, args))
+        elif tool_name == 'responder':
+            task_list.append(run_responder_task.si(target, args))
+        elif tool_name == 'bloodhound':
+            task_list.append(run_bloodhound_task.si(target, args))
+        elif tool_name == 'sliver':
+            task_list.append(run_sliver_task.si(target, args))
         else:
+            # Unknown tool – ignore
             pass
 
     if not task_list:
@@ -160,4 +190,5 @@ def build_phase_workflow(phase_name, tools_list, target, parallel=False):
 
     if parallel:
         return group(*task_list)
-    return chain(*task_list)
+    else:
+        return chain(*task_list)

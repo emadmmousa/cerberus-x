@@ -3,6 +3,7 @@ FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
     nmap \
     masscan \
+    zmap \
     whatweb \
     gobuster \
     sqlmap \
@@ -13,6 +14,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
     curl \
     unzip \
     ca-certificates \
+    git \
+    perl \
+    libnet-ssleay-perl \
+    libio-socket-ssl-perl \
     && rm -rf /var/lib/apt/lists/*
 
 # Arch-aware GitHub release helpers (amd64 / arm64)
@@ -49,7 +54,7 @@ RUN set -eux; \
     chmod +x /usr/local/bin/ffuf; \
     rm -f /tmp/ffuf.tar.gz; \
     \
-    # nuclei (versioned asset name)
+    # nuclei
     NUCLEI_VERSION="$(python -c "import json,urllib.request; print(json.load(urllib.request.urlopen('https://api.github.com/repos/projectdiscovery/nuclei/releases/latest'))['tag_name'].lstrip('v'))")"; \
     curl -fsSL -o /tmp/nuclei.zip \
       "https://github.com/projectdiscovery/nuclei/releases/download/v${NUCLEI_VERSION}/nuclei_${NUCLEI_VERSION}_linux_${ARCH}.zip"; \
@@ -59,13 +64,38 @@ RUN set -eux; \
     rm -rf /tmp/nuclei /tmp/nuclei.zip; \
     nuclei -update-templates
 
-RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
-    git \
-    && pip install --no-cache-dir \
+# Nikto (not in Debian 13) + XSStrike from upstream
+RUN set -eux; \
+    git clone --depth 1 https://github.com/sullo/nikto.git /opt/nikto; \
+    ln -sf /opt/nikto/program/nikto.pl /usr/local/bin/nikto; \
+    chmod +x /opt/nikto/program/nikto.pl; \
+    git clone --depth 1 https://github.com/s0md3v/XSStrike.git /opt/XSStrike; \
+    pip install --no-cache-dir -r /opt/XSStrike/requirements.txt; \
+    printf '%s\n' '#!/bin/sh' 'exec python /opt/XSStrike/xsstrike.py "$@"' > /usr/local/bin/xsstrike; \
+    chmod +x /usr/local/bin/xsstrike
+
+# theHarvester + Impacket (system Python)
+RUN pip install --no-cache-dir \
       "git+https://github.com/laramies/theHarvester.git" \
-    && apt-get purge -y git \
+      "impacket"
+
+# NetExec/CrackMapExec in an isolated venv (dnspython conflicts with theHarvester)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential \
+      python3-dev \
+      libffi-dev \
+      libssl-dev \
+      rustc \
+      cargo \
+    && python -m venv /opt/netexec \
+    && /opt/netexec/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/netexec/bin/pip install --no-cache-dir "git+https://github.com/Pennyw0rth/NetExec.git" \
+    && ln -sf /opt/netexec/bin/nxc /usr/local/bin/nxc \
+    && ln -sf /opt/netexec/bin/nxc /usr/local/bin/crackmapexec \
+    && ln -sf /opt/netexec/bin/nxc /usr/local/bin/cme \
+    && apt-get purge -y build-essential python3-dev libffi-dev libssl-dev rustc cargo \
     && apt-get autoremove -y \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /root/.cargo /root/.rustup
 
 RUN mkdir -p /app/tools && \
     curl -fsSL -o /app/tools/winPEASx64.exe \
