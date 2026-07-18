@@ -166,6 +166,10 @@ def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
             "job_id": response.get("job_id"),
             "uuid": response.get("uuid"),
             "response": response,
+            "raw_output": (
+                f"module={module} job_id={response.get('job_id')} "
+                f"uuid={response.get('uuid')}"
+            ),
         }
     except MetasploitRpcError as exc:
         return _error(target, "rpc_error", str(exc), module=module)

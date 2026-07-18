@@ -3,12 +3,20 @@ target: "https://wks.agency"
 phases:
   - name: "recon"
     tools:
+      - tool: masscan
+        args: ["-p80,443,22", "--rate=1000", "--wait=0"]
+      - tool: rustscan
+        args: ["--ulimit", "5000", "-g", "--no-banner"]
       - tool: nmap
-        args: ["-sV", "-p-", "-T4"]
+        args: ["-sV", "-p80,443,22", "-T4"]
       - tool: whatweb
         args: ["-a", "3"]
       - tool: gobuster
-        args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt"]
+        args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt", "-q"]
+      - tool: theharvester
+        args: ["-d", "wks.agency", "-l", "50", "-b", "crtsh"]
+      - tool: ffuf
+        args: ["-u", "{{target}}/FUZZ", "-w", "/usr/share/dirb/wordlists/common.txt", "-mc", "200,301,302,401,403", "-maxtime", "60"]
     parallel: true
 
   - name: "vulnerability_scan"
