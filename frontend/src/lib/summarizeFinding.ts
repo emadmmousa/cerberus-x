@@ -18,6 +18,10 @@ export type MissionSummaryData = {
   possibleIssues: number;
   confirmedVulns: number;
   failedTools: number;
+  impactProven: boolean;
+  sessions: number;
+  postExSucceeded: number;
+  postExFailed: number;
   sentence: string;
 };
 
@@ -26,6 +30,9 @@ export const PHASE_LABELS: Record<string, string> = {
   vulnerability_scan: "Vulnerability checks",
   exploitation: "Exploitation checks",
   credential: "Credential checks",
+  proof_of_impact: "Proof of impact",
+  access_gained: "Access gained",
+  post_exploitation: "Post-exploitation",
 };
 
 const TOOL_TITLES: Record<string, string> = {
@@ -43,6 +50,7 @@ const TOOL_TITLES: Record<string, string> = {
   hydra: "Login guessing (hydra)",
   john: "Password cracking (john)",
   crackmapexec: "Network auth check (crackmapexec)",
+  metasploit: "Impact check (Metasploit)",
 };
 
 const BANNER_EMAILS = new Set([
@@ -366,6 +374,60 @@ function summarizeCred(tool: string, result: unknown): FindingSummary {
   };
 }
 
+function extractSessions(result: unknown): unknown[] {
+  const obj = asObj(result);
+  return Array.isArray(obj.sessions) ? obj.sessions : [];
+}
+
+function isPostModule(module: string): boolean {
+  return module.toLowerCase().includes("/post/") || module.toLowerCase().startsWith("post/");
+}
+
+function postModuleWording(module: string): string | null {
+  const lower = module.toLowerCase();
+  if (lower.includes("hashdump") || lower.includes("mimikatz")) {
+    return "Credential harvesting attempted.";
+  }
+  if (lower.includes("persistence")) {
+    return "Persistence mechanism attempted.";
+  }
+  return null;
+}
+
+function summarizeMetasploit(result: unknown): FindingSummary {
+  const obj = asObj(result);
+  const module = typeof obj.module === "string" ? obj.module : "";
+  const sessions = extractSessions(result);
+  const code = typeof obj.code === "string" ? obj.code : "";
+
+  if (code === "rpc_error" || (typeof obj.error === "string" && obj.error.trim())) {
+    const bullets =
+      code === "rpc_error"
+        ? ["Exploitation service unavailable."]
+        : ["Exploitation could not finish successfully."];
+    return {
+      title: titleFor("metasploit"),
+      status: "failed",
+      bullets,
+    };
+  }
+
+  const bullets: string[] = [];
+  if (sessions.length > 0) {
+    bullets.push("Access gained — session opened.");
+    const postWording = module ? postModuleWording(module) : null;
+    if (postWording) bullets.push(postWording);
+  } else {
+    bullets.push("Could not prove impact.");
+  }
+
+  return {
+    title: titleFor("metasploit"),
+    status: sessions.length > 0 ? "ok" : "partial",
+    bullets,
+  };
+}
+
 export function summarizeFinding(tool: string, result: unknown): FindingSummary {
   const normalized = tool === "theharvester" ? "theHarvester" : tool;
 
@@ -377,6 +439,9 @@ export function summarizeFinding(tool: string, result: unknown): FindingSummary 
   }
   if (["hydra", "john", "crackmapexec"].includes(normalized)) {
     return summarizeCred(normalized, result);
+  }
+  if (normalized === "metasploit") {
+    return summarizeMetasploit(result);
   }
   if (
     [
@@ -428,6 +493,10 @@ export function summarizeMission(
   let possibleIssues = 0;
   let confirmedVulns = 0;
   let failedTools = 0;
+  let impactProven = false;
+  let sessions = 0;
+  let postExSucceeded = 0;
+  let postExFailed = 0;
 
   for (const row of rows) {
     const s = summarizeFinding(row.tool, row.result);
@@ -435,6 +504,23 @@ export function summarizeMission(
     possibleIssues += s.possibleIssues ?? 0;
     confirmedVulns += s.confirmedVulns ?? 0;
     if (s.status === "failed") failedTools += 1;
+
+    if (row.tool === "metasploit") {
+      const obj = asObj(row.result);
+      const rowSessions = extractSessions(row.result);
+      if (rowSessions.length > 0) {
+        impactProven = true;
+        sessions = Math.max(sessions, rowSessions.length);
+      } else if (obj.vulnerable === true && rowSessions.length > 0) {
+        impactProven = true;
+      }
+
+      const module = typeof obj.module === "string" ? obj.module : "";
+      if (isPostModule(module)) {
+        if (s.status === "failed") postExFailed += 1;
+        else if (s.status === "ok") postExSucceeded += 1;
+      }
+    }
   }
 
   const openPorts = [...portSet].sort((a, b) => Number(a) - Number(b) || a.localeCompare(b));
@@ -456,6 +542,16 @@ export function summarizeMission(
       `${failedTools} tool${failedTools === 1 ? "" : "s"} failed (often proxy or connectivity)`,
     );
   }
+  if (impactProven) {
+    parts.push(
+      `access gained (${sessions} session${sessions === 1 ? "" : "s"})`,
+    );
+  }
+  if (postExSucceeded || postExFailed) {
+    parts.push(
+      `post-exploitation: ${postExSucceeded} succeeded, ${postExFailed} failed`,
+    );
+  }
 
   let sentence = parts.join("; ") + ".";
   sentence = sentence.charAt(0).toUpperCase() + sentence.slice(1);
@@ -467,6 +563,10 @@ export function summarizeMission(
     possibleIssues,
     confirmedVulns,
     failedTools,
+    impactProven,
+    sessions,
+    postExSucceeded,
+    postExFailed,
     sentence,
   };
 }

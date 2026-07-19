@@ -27,6 +27,20 @@ export function MissionSummary({ summary, proxyLabel, progress }: Props) {
 
       <p className="mission-summary__sentence">{summary.sentence}</p>
 
+      {(summary.impactProven ||
+        summary.postExSucceeded > 0 ||
+        summary.postExFailed > 0) && (
+        <p className="mission-summary__exploit-line">
+          {summary.impactProven &&
+            `Access proven (${summary.sessions} session${summary.sessions === 1 ? "" : "s"})`}
+          {summary.impactProven &&
+            (summary.postExSucceeded > 0 || summary.postExFailed > 0) &&
+            " · "}
+          {(summary.postExSucceeded > 0 || summary.postExFailed > 0) &&
+            `Post-ex: ${summary.postExSucceeded} ok, ${summary.postExFailed} failed`}
+        </p>
+      )}
+
       <div className="mission-summary__stats">
         <div className="mission-stat">
           <span className="mission-stat__value">
