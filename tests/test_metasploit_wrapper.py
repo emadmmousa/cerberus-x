@@ -36,19 +36,33 @@ class FakeClient:
 
 
 class WaitingFakeClient(FakeClient):
-    def __init__(self, *args, jobs=None, sessions=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        jobs=None,
+        sessions=None,
+        session_snapshots=None,
+        persistent_jobs=False,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self._jobs = list(jobs or [])
         self._sessions = sessions or {}
+        self._session_snapshots = list(session_snapshots or [])
+        self._persistent_jobs = persistent_jobs
         self.list_job_calls = 0
 
     def list_jobs(self):
         self.list_job_calls += 1
+        if self._persistent_jobs and self._jobs:
+            return self._jobs[0]
         if self._jobs:
             return self._jobs.pop(0)
         return {}
 
     def list_sessions(self):
+        if self._session_snapshots:
+            return self._session_snapshots.pop(0)
         return self._sessions
 
 
@@ -99,6 +113,7 @@ def test_scan_parses_full_module_path_and_coerces_options(monkeypatch):
         "uuid": "run-abc",
         "response": {"job_id": 7, "uuid": "run-abc"},
         "sessions": [],
+        "status": "completed",
         "raw_output": "module=auxiliary/scanner/portscan/tcp job_id=7 uuid=run-abc",
     }
 
@@ -108,7 +123,10 @@ def test_scan_waits_for_job_and_returns_sessions(monkeypatch):
         module_options={"RHOSTS": {"required": True}},
         execution_result={"job_id": 9, "uuid": "u-1"},
         jobs=[{"9": "exploit/multi/http/apache_path_traversal"}, {}],
-        sessions={"42": {"type": "meterpreter", "target_host": "scanner.example.test"}},
+        session_snapshots=[
+            {},
+            {"42": {"type": "meterpreter", "target_host": "scanner.example.test"}},
+        ],
     )
     install_client(monkeypatch, client)
     monkeypatch.setattr(metasploit.time, "sleep", lambda *_: None)
@@ -121,6 +139,71 @@ def test_scan_waits_for_job_and_returns_sessions(monkeypatch):
     assert result["sessions"] == [{"id": "42", "type": "meterpreter"}]
     assert result["vulnerable"] is True
     assert client.list_job_calls >= 1
+
+
+def test_scan_returns_only_sessions_created_by_exploit_job(monkeypatch):
+    client = WaitingFakeClient(
+        module_options={"RHOSTS": {"required": True}},
+        execution_result={"job_id": 9, "uuid": "u-1"},
+        jobs=[{}],
+        session_snapshots=[
+            {"1": {"type": "meterpreter", "target_host": "scanner.example.test"}},
+            {
+                "1": {"type": "meterpreter", "target_host": "scanner.example.test"},
+                "2": {"type": "meterpreter", "target_host": "scanner.example.test"},
+            },
+        ],
+    )
+    install_client(monkeypatch, client)
+
+    result = metasploit.scan(
+        "https://scanner.example.test",
+        ["exploit/multi/http/apache_path_traversal"],
+    )
+
+    assert result["sessions"] == [{"id": "2", "type": "meterpreter"}]
+
+
+def test_scan_reports_job_timeout_when_job_never_completes(monkeypatch):
+    client = WaitingFakeClient(
+        module_options={"RHOSTS": {"required": True}},
+        execution_result={"job_id": 9, "uuid": "u-1"},
+        jobs=[{"9": "exploit/multi/http/apache_path_traversal"}],
+        persistent_jobs=True,
+    )
+    install_client(monkeypatch, client)
+    monotonic_values = iter([0.0, 100.0])
+    monkeypatch.setattr(metasploit.time, "monotonic", lambda: next(monotonic_values))
+
+    result = metasploit.scan(
+        "https://scanner.example.test",
+        ["exploit/multi/http/apache_path_traversal"],
+    )
+
+    assert result["code"] == "job_timeout"
+    assert "timed out" in result["error"].lower()
+
+
+def test_scan_marks_completed_post_module_without_reusing_existing_session(monkeypatch):
+    client = WaitingFakeClient(
+        module_options={"SESSION": {"required": True}},
+        execution_result={"job_id": 9, "uuid": "u-1"},
+        jobs=[{}],
+        session_snapshots=[
+            {"42": {"type": "meterpreter", "target_host": "scanner.example.test"}},
+            {"42": {"type": "meterpreter", "target_host": "scanner.example.test"}},
+        ],
+    )
+    install_client(monkeypatch, client)
+
+    result = metasploit.scan(
+        "https://scanner.example.test",
+        ["post/windows/gather/hashdump", "SESSION=42"],
+    )
+
+    assert result["status"] == "completed"
+    assert result["sessions"] == []
+    assert "vulnerable" not in result
 
 
 def test_scan_preserves_explicit_rhosts_and_coerces_false_and_negative_int(

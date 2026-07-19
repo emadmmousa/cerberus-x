@@ -132,6 +132,15 @@ describe("summarizeFinding", () => {
     expect(s.bullets.join(" ")).toMatch(/unavailable|could not|failed/i);
   });
 
+  it("summarizes metasploit job timeout as failure", () => {
+    const s = summarizeFinding("metasploit", {
+      error: "Metasploit job timed out",
+      code: "job_timeout",
+    });
+    expect(s.status).toBe("failed");
+    expect(s.bullets.join(" ")).toMatch(/timed out|could not|failed/i);
+  });
+
   it("summarizes metasploit with no impact proof", () => {
     const s = summarizeFinding("metasploit", {
       module: "exploit/multi/http/apache_path_traversal",
@@ -145,8 +154,9 @@ describe("summarizeFinding", () => {
     const s = summarizeFinding("metasploit", {
       module: "post/windows/gather/hashdump",
       sessions: [{ id: "42", type: "meterpreter" }],
-      vulnerable: true,
+      status: "completed",
     });
+    expect(s.status).toBe("ok");
     expect(s.bullets.join(" ")).toMatch(/credential|hash/i);
   });
 
@@ -154,9 +164,18 @@ describe("summarizeFinding", () => {
     const s = summarizeFinding("metasploit", {
       module: "post/windows/manage/persistence_exe",
       sessions: [{ id: "42", type: "meterpreter" }],
-      vulnerable: true,
+      status: "completed",
     });
+    expect(s.status).toBe("ok");
     expect(s.bullets.join(" ")).toMatch(/persistence/i);
+  });
+
+  it("does not treat a retained post session as post-ex success", () => {
+    const s = summarizeFinding("metasploit", {
+      module: "post/windows/gather/hashdump",
+      sessions: [{ id: "42", type: "meterpreter" }],
+    });
+    expect(s.status).toBe("partial");
   });
 });
 
@@ -204,8 +223,8 @@ describe("summarizeMission", () => {
         timestamp: "2",
         result: {
           module: "post/windows/gather/hashdump",
-          sessions: [{ id: "42", type: "meterpreter" }],
-          vulnerable: true,
+          sessions: [],
+          status: "completed",
         },
       },
       {

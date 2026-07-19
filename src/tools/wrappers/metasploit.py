@@ -128,25 +128,37 @@ def _wait_for_job(
     client: MetasploitRpcClient,
     job_id: str | int | None,
     timeout: float = DEFAULT_JOB_WAIT_SECONDS,
-) -> None:
+) -> bool:
     if job_id is None:
-        return
+        return True
 
     deadline = time.monotonic() + timeout
     job_key = str(job_id)
     while time.monotonic() < deadline:
         jobs = client.list_jobs() or {}
         if isinstance(jobs, dict) and job_key not in {str(key) for key in jobs}:
-            return
+            return True
         time.sleep(DEFAULT_JOB_POLL_INTERVAL)
+    return False
 
 
-def _sessions_for_target(sessions: Any, host: str) -> list[dict[str, str]]:
+def _new_sessions_for_target(
+    sessions: Any,
+    existing_sessions: Any,
+    host: str,
+) -> list[dict[str, str]]:
     result = []
     if not isinstance(sessions, dict):
         return result
+    existing_ids = (
+        {str(session_id) for session_id in existing_sessions}
+        if isinstance(existing_sessions, dict)
+        else set()
+    )
 
     for session_id, metadata in sessions.items():
+        if str(session_id) in existing_ids:
+            continue
         if not isinstance(metadata, dict):
             continue
         target_host = str(
@@ -198,6 +210,7 @@ def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
                 module=module,
             )
 
+        existing_sessions = client.list_sessions()
         response = client.execute_module(module_type, module_name, options)
         if not isinstance(response, dict):
             return _error(
@@ -206,8 +219,18 @@ def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
                 "Metasploit RPC returned an invalid execution response",
                 module=module,
             )
-        _wait_for_job(client, response.get("job_id"))
-        sessions = _sessions_for_target(client.list_sessions(), _host(target))
+        if not _wait_for_job(client, response.get("job_id")):
+            return _error(
+                target,
+                "job_timeout",
+                "Metasploit job timed out before completion",
+                module=module,
+            )
+        sessions = _new_sessions_for_target(
+            client.list_sessions(),
+            existing_sessions,
+            _host(target),
+        )
         result = {
             "tool": "metasploit",
             "target": target,
@@ -216,12 +239,13 @@ def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
             "uuid": response.get("uuid"),
             "response": response,
             "sessions": sessions,
+            "status": "completed",
             "raw_output": (
                 f"module={module} job_id={response.get('job_id')} "
                 f"uuid={response.get('uuid')}"
             ),
         }
-        if sessions and module_type in {"exploit", "post"}:
+        if sessions and module_type == "exploit":
             result["vulnerable"] = True
         return result
     except MetasploitRpcError as exc:

@@ -399,6 +399,8 @@ function summarizeMetasploit(result: unknown): FindingSummary {
   const module = typeof obj.module === "string" ? obj.module : "";
   const sessions = extractSessions(result);
   const code = typeof obj.code === "string" ? obj.code : "";
+  const status = typeof obj.status === "string" ? obj.status : "";
+  const isPost = isPostModule(module);
 
   if (code === "rpc_error" || (typeof obj.error === "string" && obj.error.trim())) {
     const bullets =
@@ -412,11 +414,25 @@ function summarizeMetasploit(result: unknown): FindingSummary {
     };
   }
 
+  if (isPost) {
+    const postWording = postModuleWording(module);
+    if (status === "completed") {
+      return {
+        title: titleFor("metasploit"),
+        status: "ok",
+        bullets: [postWording ?? "Post-exploitation module completed."],
+      };
+    }
+    return {
+      title: titleFor("metasploit"),
+      status: "partial",
+      bullets: ["Could not confirm the post-exploitation outcome."],
+    };
+  }
+
   const bullets: string[] = [];
   if (sessions.length > 0) {
     bullets.push("Access gained — session opened.");
-    const postWording = module ? postModuleWording(module) : null;
-    if (postWording) bullets.push(postWording);
   } else {
     bullets.push("Could not prove impact.");
   }
