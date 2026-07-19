@@ -36,6 +36,13 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
         if skip_next:
             skip_next = False
             continue
+        if arg in {"-u", "--url"} and index + 1 < len(normalized):
+            target_url = str(normalized[index + 1])
+            if "://" not in target_url:
+                target_url = f"https://{target_url.lstrip('/')}"
+            fixed.extend([arg, target_url])
+            skip_next = True
+            continue
         if arg in {"-w", "--wordlist"} and index + 1 < len(normalized):
             wordlist = str(normalized[index + 1])
             fixed.extend([arg, _WORDLIST_ALIASES.get(wordlist, wordlist)])
@@ -46,11 +53,15 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
             continue
         fixed.append(arg)
 
+    if "-u" not in fixed and "--url" not in fixed:
+        fixed.extend(["-u", f"{url}/FUZZ"])
     if "-w" not in fixed and "--wordlist" not in fixed:
         if os.path.isfile(WORDLIST):
             fixed.extend(["-w", WORDLIST])
     if "-ac" not in fixed and "--auto-calibrate" not in fixed:
         fixed.append("-ac")
+    if "-maxtime" not in fixed:
+        fixed.extend(["-maxtime", "60"])
     if evasion.get("random_headers", False):
         headers = random_headers()
         for key, value in headers.items():

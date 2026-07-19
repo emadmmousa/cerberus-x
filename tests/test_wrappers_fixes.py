@@ -328,6 +328,14 @@ def test_ffuf_rewrites_common_wordlist_aliases():
     assert "-ac" in args
 
 
+def test_ffuf_custom_args_receive_a_runtime_limit():
+    args = ffuf._normalize_args(
+        ["-u", "{{target}}/FUZZ", "-w", "/tmp/words.txt"],
+        "https://takwene.com",
+    )
+    assert args[args.index("-maxtime") + 1] == "60"
+
+
 def test_crackmapexec_strips_url_target_args():
     from tools.wrappers import crackmapexec
 
