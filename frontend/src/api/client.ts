@@ -35,6 +35,31 @@ export type ProxyStatus = {
   configured: boolean;
 };
 
+export type ProxySettings = {
+  configured: boolean;
+  source: "redis" | "env" | "none" | string;
+  username: string;
+  password_set: boolean;
+  host: string;
+  port: number | null;
+  protocol: "http" | "https" | "socks5h" | string;
+  proxy_url_redacted: string;
+  ok?: boolean;
+  redis?: { ok: boolean; error?: string };
+  env?: { ok: boolean; error?: string };
+  k8s?: { ok: boolean; error?: string };
+  error?: string;
+};
+
+export type ProxySettingsPut = {
+  proxy_url?: string;
+  username?: string;
+  password?: string;
+  host?: string;
+  port?: number;
+  protocol?: "http" | "https" | "socks5h";
+};
+
 export type PlaybookPhase = {
   name: string;
   tools: string[];
@@ -85,6 +110,24 @@ export async function getProxyStatus(): Promise<ProxyStatus> {
   const res = await fetch("/api/proxy/status");
   if (!res.ok) throw new Error(await parseError(res));
   return res.json() as Promise<ProxyStatus>;
+}
+
+export async function getProxySettings(): Promise<ProxySettings> {
+  const res = await fetch("/api/proxy/settings");
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json() as Promise<ProxySettings>;
+}
+
+export async function putProxySettings(
+  body: ProxySettingsPut,
+): Promise<ProxySettings> {
+  const res = await fetch("/api/proxy/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json() as Promise<ProxySettings>;
 }
 
 export async function getPlaybook(): Promise<PlaybookSummary> {

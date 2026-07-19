@@ -12,6 +12,21 @@ function mockFetch() {
     if (url === "/api/proxy/status") {
       return Promise.resolve({ ok: true, json: async () => ({ configured: true }) });
     }
+    if (url === "/api/proxy/settings") {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          configured: true,
+          source: "env",
+          username: "u",
+          password_set: true,
+          host: "pr.oxylabs.io",
+          port: 7777,
+          protocol: "http",
+          proxy_url_redacted: "http://u:***@pr.oxylabs.io:7777",
+        }),
+      });
+    }
     if (url === "/api/playbook") {
       return Promise.resolve({
         ok: true,

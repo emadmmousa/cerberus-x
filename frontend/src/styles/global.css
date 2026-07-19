@@ -162,6 +162,7 @@ a {
 
 input[type="text"],
 input[type="search"],
+input[type="password"],
 select,
 textarea {
   background: var(--bg-0);
@@ -259,6 +260,31 @@ textarea {
   color: var(--red);
   border-color: var(--red);
   background: var(--red-dim);
+}
+
+.proxy-settings {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.proxy-settings__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.proxy-settings__msg {
+  font-size: 0.75rem;
+  color: var(--cyan);
+  margin: 0;
+}
+
+.proxy-settings__msg.muted {
+  color: var(--muted);
 }
 
 .scroll-box {
