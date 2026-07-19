@@ -14,7 +14,6 @@ def get_db():
     return sqlite3.connect(DB_PATH)
 
 def init_db():
-    """Create the results table if it doesn't exist."""
     with get_db() as conn:
         conn.execute('''
             CREATE TABLE IF NOT EXISTS results (
@@ -26,30 +25,38 @@ def init_db():
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS state (
+                target TEXT PRIMARY KEY,
+                state_json TEXT,
+                updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
         conn.commit()
 
 def save_phase_result(target, phase_name, phase_outputs):
-    """
-    Save each tool's result from a phase to the database.
-    phase_outputs is a list of tool result dicts (chain or group).
-    """
     with get_db() as conn:
-        items = phase_outputs
-        if isinstance(phase_outputs, dict):
-            items = list(phase_outputs.values())
-        if not isinstance(items, list):
-            items = [items]
-        for item in items:
-            if isinstance(item, dict) and 'tool' in item:
+        if isinstance(phase_outputs, list):
+            for item in phase_outputs:
+                if isinstance(item, dict) and 'tool' in item:
+                    conn.execute(
+                        'INSERT INTO results (target, phase, tool, result_json) VALUES (?, ?, ?, ?)',
+                        (target, phase_name, item.get('tool'), json.dumps(item))
+                    )
+        elif isinstance(phase_outputs, dict):
+            for tool_name, result_data in phase_outputs.items():
                 conn.execute(
                     'INSERT INTO results (target, phase, tool, result_json) VALUES (?, ?, ?, ?)',
-                    (target, phase_name, item.get('tool'), json.dumps(item))
+                    (target, phase_name, tool_name, json.dumps(result_data))
                 )
         conn.commit()
-    export_target_reports(target, get_results(target, limit=10000))
+    paths = export_target_reports(target, get_results(target, limit=10000))
+    print(
+        f"[+] Wrote reports for {target}: "
+        f"{paths['json']} | {paths['html']}"
+    )
 
 def get_results(target=None, limit=100):
-    """Retrieve results, optionally filtered by target."""
     with get_db() as conn:
         if target:
             cursor = conn.execute(
@@ -72,3 +79,19 @@ def get_results(target=None, limit=100):
             }
             for row in rows
         ]
+
+def save_state(target: str, state: dict):
+    with get_db() as conn:
+        conn.execute(
+            'REPLACE INTO state (target, state_json) VALUES (?, ?)',
+            (target, json.dumps(state))
+        )
+        conn.commit()
+
+def load_state(target: str) -> dict:
+    with get_db() as conn:
+        cursor = conn.execute('SELECT state_json FROM state WHERE target = ?', (target,))
+        row = cursor.fetchone()
+        if row:
+            return json.loads(row[0])
+        return {}

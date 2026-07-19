@@ -11,6 +11,10 @@ def scan(target, args=None):
     url = _url(target)
     if args is None:
         args = ["--batch", "--level=2"]
+    else:
+        args = list(args)
+        if "--batch" not in args and "-b" not in args:
+            args = ["--batch", *args]
     cmd = ["sqlmap", "-u", url, *args]
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)

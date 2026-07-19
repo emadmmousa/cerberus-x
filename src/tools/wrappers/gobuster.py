@@ -7,6 +7,7 @@ from urllib.request import Request, urlopen
 
 WORDLIST = "/usr/share/dirb/wordlists/common.txt"
 _WILDCARD_LENGTH_RE = re.compile(r"Length:\s*(\d+)", re.IGNORECASE)
+_WILDCARD_STATUS_RE = re.compile(r"=>\s*(\d{3})\s*\(Length:", re.IGNORECASE)
 
 
 def _url(target: str) -> str:
@@ -75,6 +76,35 @@ def _length_from_error(message: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
+def _status_from_error(message: str) -> str | None:
+    match = _WILDCARD_STATUS_RE.search(message or "")
+    return match.group(1) if match else None
+
+
+def _with_blacklist_status(args: list[str], status: str) -> list[str]:
+    cleaned: list[str] = []
+    skip_next = False
+    existing: list[str] = []
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            existing = [part for part in str(arg).split(",") if part]
+            continue
+        if arg in {"-b", "--status-codes-blacklist"}:
+            skip_next = True
+            continue
+        if arg.startswith("--status-codes-blacklist="):
+            existing = [
+                part
+                for part in arg.split("=", 1)[1].split(",")
+                if part
+            ]
+            continue
+        cleaned.append(arg)
+    codes = sorted(set([*existing, "404", status]), key=lambda value: (len(value), value))
+    return [*cleaned, "-b", ",".join(codes)]
+
+
 def _run(args: list[str]) -> str:
     return subprocess.check_output(["gobuster", *args], stderr=subprocess.STDOUT, text=True)
 
@@ -110,17 +140,27 @@ def scan(target, args=None):
     except subprocess.CalledProcessError as exc:
         message = str(exc.output or exc)
         reported = _length_from_error(message)
-        if reported is None:
+        status = _status_from_error(message)
+        retry_args = list(args)
+        if reported is not None:
+            retry_args = _with_exclude_length(retry_args, reported)
+        if status is not None:
+            retry_args = _with_blacklist_status(retry_args, status)
+        if reported is None and status is None:
             return {"tool": "gobuster", "target": url, "error": message}
         try:
-            output = _run(_with_exclude_length(args, reported))
-            return {
+            output = _run(retry_args)
+            result = {
                 "tool": "gobuster",
                 "target": url,
                 "directories": _parse_directories(output),
                 "raw_output": output,
-                "exclude_length": reported,
             }
+            if reported is not None:
+                result["exclude_length"] = reported
+            if status is not None:
+                result["exclude_status"] = status
+            return result
         except subprocess.CalledProcessError as retry_exc:
             return {
                 "tool": "gobuster",

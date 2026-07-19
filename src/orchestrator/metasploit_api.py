@@ -168,7 +168,7 @@ def create_metasploit_blueprint(
 ) -> Blueprint:
     """Create the Metasploit API blueprint with an injectable RPC client."""
     blueprint = Blueprint(
-        "metasploit_api",
+        "metasploit",
         __name__,
         url_prefix="/api/metasploit",
     )
@@ -319,4 +319,6 @@ def create_metasploit_blueprint(
     return blueprint
 
 
-metasploit_blueprint = create_metasploit_blueprint()
+msf_bp = create_metasploit_blueprint()
+# Backward-compatible export for existing integrations.
+metasploit_blueprint = msf_bp

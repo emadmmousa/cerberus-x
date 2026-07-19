@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 import argparse
 import yaml
+import sys
 import json
+from celery.result import AsyncResult
 from .tasks import build_phase_workflow
-from .database import init_db, save_phase_result
+from .celery_app import app
+from .database import init_db, save_phase_result, get_results
+from .decision_engine import DecisionEngine
 
 def collect_chain_results(async_result, timeout=600):
-    """Traverse a Celery chain result and collect all individual task results."""
     final_result = async_result.get(timeout=timeout)
     if not async_result.parent:
         return [final_result]
@@ -15,8 +18,8 @@ def collect_chain_results(async_result, timeout=600):
     return parent_results
 
 def collect_group_results(async_result, timeout=600):
-    """Collect results from a group of tasks."""
-    return async_result.get(timeout=timeout)
+    results = async_result.get(timeout=timeout)
+    return results
 
 def main():
     parser = argparse.ArgumentParser(description='Cerberus-X orchestrator')
@@ -35,6 +38,8 @@ def main():
 
     if not args.no_persist:
         init_db()
+
+    decision_engine = DecisionEngine(target)
 
     for phase in phases:
         phase_name = phase.get('name')
@@ -57,6 +62,22 @@ def main():
             results[phase_name] = phase_outputs
             if not args.no_persist:
                 save_phase_result(target, phase_name, phase_outputs)
+                decision_engine.evaluate_phase(phase_name, phase_outputs)
+
+            # Check for post‑phase actions
+            actions = decision_engine.generate_post_phase_actions(phase_name, phase_outputs)
+            if actions:
+                print(f"[*] Generating post‑phase actions for {phase_name}")
+                for action in actions:
+                    action_phase_name = f"auto_{action['tool']}_{phase_name}"
+                    action_tools = [{'tool': action['tool'], 'args': action['args']}]
+                    action_workflow = build_phase_workflow(action_phase_name, action_tools, target, parallel=False)
+                    if action_workflow:
+                        action_result = action_workflow.apply_async()
+                        action_output = action_result.get(timeout=300)
+                        if not args.no_persist:
+                            save_phase_result(target, action_phase_name, action_output)
+                        print(f"[+] Action {action['tool']} completed")
         else:
             print(f"[+] Phase submitted: {async_result.id}")
             results[phase_name] = {'task_id': async_result.id}

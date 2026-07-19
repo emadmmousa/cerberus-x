@@ -232,3 +232,106 @@ def test_impacket_and_cme_host_helpers():
 
     assert impacket._host("smb://lab.example/share") == "lab.example"
     assert crackmapexec._host("https://lab.example") == "lab.example"
+
+
+def test_rustscan_ensures_address_after_flag():
+    assert rustscan._ensure_address(["-a", "--ulimit", "5000"], "takwene.com") == [
+        "-a",
+        "takwene.com",
+        "--ulimit",
+        "5000",
+    ]
+    assert rustscan._ensure_address(["--ulimit", "5000", "--top"], "takwene.com") == [
+        "-a",
+        "takwene.com",
+        "--ulimit",
+        "5000",
+        "--top",
+    ]
+
+
+def test_rustscan_parses_open_host_port_lines():
+    output = "Open 34.72.42.51:80\nOpen 34.72.42.51:443\nOpen 34.72.42.51:22\n"
+    assert rustscan._parse_ports(output) == [
+        {"port": "80", "state": "open"},
+        {"port": "443", "state": "open"},
+        {"port": "22", "state": "open"},
+    ]
+
+
+def test_ffuf_parses_status_lines_with_spaces():
+    output = (
+        "Documents and Settings  [Status: 301, Size: 168, Words: 11, Lines: 2]\n"
+        "Program Files           [Status: 301, Size: 159, Words: 10, Lines: 2]\n"
+    )
+    assert ffuf._parse_results(output) == [
+        {"path": "Documents and Settings", "status": "301", "size": "168"},
+        {"path": "Program Files", "status": "301", "size": "159"},
+    ]
+
+
+def test_nikto_drops_port_when_url_host_used():
+    from tools.wrappers import nikto
+
+    assert nikto._normalize_args(
+        "https://takwene.com",
+        ["-ssl", "-port", "443", "-maxtime", "60"],
+    ) == ["-maxtime", "60"]
+
+
+def test_hydra_normalizes_nested_target_url():
+    host, service, command = hydra._build_command(
+        "https://takwene.com",
+        ["-l", "admin", "-P", "/tmp/pass.txt", "ssh://https://takwene.com"],
+    )
+    assert host == "takwene.com"
+    assert service == "ssh"
+    assert command[-1] == "ssh://takwene.com"
+
+
+def test_gobuster_status_from_error_and_blacklist():
+    msg = (
+        "Error: the server returns a status code that matches the provided options "
+        "for non existing urls. https://example.com/uuid => 301 (Length: 182). "
+        "To continue please exclude the status code or the length"
+    )
+    assert gobuster._status_from_error(msg) == "301"
+    assert gobuster._with_blacklist_status(["dir", "-u", "https://x", "-b", "404"], "301") == [
+        "dir",
+        "-u",
+        "https://x",
+        "-b",
+        "301,404",
+    ]
+
+
+def test_nuclei_resolves_short_template_paths(tmp_path, monkeypatch):
+    root = tmp_path / "nuclei-templates"
+    (root / "http" / "cves").mkdir(parents=True)
+    monkeypatch.setattr(nuclei, "TEMPLATE_ROOTS", (str(root),))
+    assert nuclei._resolve_template_arg("cves/").rstrip("/") == str(root / "http" / "cves")
+    assert nuclei._normalize_args(["-t", "cves/", "-severity", "high"]) == [
+        "-t",
+        nuclei._resolve_template_arg("cves/"),
+        "-severity",
+        "high",
+    ]
+
+
+def test_ffuf_rewrites_common_wordlist_aliases():
+    args = ffuf._normalize_args(
+        ["-u", "{{target}}/FUZZ", "-w", "/usr/share/wordlists/dirb/common.txt"],
+        "https://takwene.com",
+    )
+    assert args[1] == "https://takwene.com/FUZZ"
+    assert args[3] == "/usr/share/dirb/wordlists/common.txt"
+    assert "-ac" in args
+
+
+def test_crackmapexec_strips_url_target_args():
+    from tools.wrappers import crackmapexec
+
+    assert crackmapexec._normalize_args(
+        ["smb", "https://takwene.com", "-u", "admin", "-p", "password"],
+        "takwene.com",
+    ) == ["smb", "takwene.com", "-u", "admin", "-p", "password"]

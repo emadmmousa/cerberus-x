@@ -6,25 +6,25 @@ phases:
       - tool: masscan
         args: ["-p80,443,22", "--rate=1000", "--wait=0"]
       - tool: rustscan
-        args: ["-a", "--ulimit", "5000"]
+        args: ["--ulimit", "5000", "--top"]
       - tool: nmap
         args: ["-sV", "-p-", "-T4"]
       - tool: whatweb
         args: ["-a", "3"]
       - tool: gobuster
-        args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt"]
+        args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt", "-b", "404,301"]
       - tool: theharvester
-        args: ["-d", "wks.agency", "-l", "100", "-b", "google"]
+        args: ["-d", "{{target}}", "-l", "100", "-b", "crtsh"]
       - tool: ffuf
-        args: ["-u", "{{target}}/FUZZ", "-w", "/usr/share/wordlists/dirb/common.txt"]
+        args: ["-u", "{{target}}/FUZZ", "-w", "/usr/share/dirb/wordlists/common.txt", "-ac"]
     parallel: true
 
   - name: "vulnerability_scan"
     tools:
       - tool: nuclei
-        args: ["-t", "cves/", "-severity", "critical,high"]
+        args: ["-t", "http/cves/", "-severity", "critical,high", "-silent"]
       - tool: nikto
-        args: ["-ssl", "-port", "443"]
+        args: ["-maxtime", "60"]
       - tool: xsstrike
         args: ["--level", "3"]
     parallel: false
@@ -33,16 +33,18 @@ phases:
   - name: "exploitation"
     tools:
       - tool: sqlmap
-        args: ["--batch", "--level=2"]
+        args: ["--batch", "--level=2", "--risk=1"]
     depends_on: ["vulnerability_scan"]
+    when: "vuln_found == True"
 
   - name: "credential"
     tools:
       - tool: hydra
-        args: ["-l", "admin", "-P", "/usr/share/nmap/nselib/data/passwords.lst", "ssh://{{target}}"]
+        args: ["-l", "admin", "-P", "/usr/share/nmap/nselib/data/passwords.lst", "-t", "4", "ssh://{{target}}"]
       - tool: john
         args: ["--wordlist=/usr/share/john/password.lst", "--format=nt"]
       - tool: crackmapexec
         args: ["smb", "{{target}}", "-u", "admin", "-p", "password"]
     parallel: false
     depends_on: ["recon"]
+    when: "vuln_found == True"

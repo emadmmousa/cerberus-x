@@ -30,7 +30,25 @@ def scan(target, args=None):
         if "-d" in args:
             idx = args.index("-d")
             if idx + 1 < len(args):
-                args[idx + 1] = _domain(str(args[idx + 1]))
+                args[idx + 1] = _domain(str(args[idx + 1]).replace("{{target}}", domain))
+        else:
+            args = ["-d", domain, *args]
+        if "-b" in args:
+            idx = args.index("-b")
+            if idx + 1 < len(args) and str(args[idx + 1]).lower() in {
+                "google",
+                "bing",
+                "yahoo",
+            }:
+                args[idx + 1] = "crtsh"
+        elif "--source" in args:
+            idx = args.index("--source")
+            if idx + 1 < len(args) and str(args[idx + 1]).lower() in {
+                "google",
+                "bing",
+                "yahoo",
+            }:
+                args[idx + 1] = "crtsh"
 
     cmd = [*_command(), *args]
     try:

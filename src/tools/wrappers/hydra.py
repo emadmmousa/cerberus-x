@@ -52,17 +52,20 @@ def _normalize_service_url(arg: str, host: str) -> str:
         return arg
     service = match.group(1)
     rest = arg.split("://", 1)[1]
-    # Keep explicit port/path if present after the original host segment.
-    if "/" in rest:
-        _, path = rest.split("/", 1)
-        suffix = f"/{path}"
-    else:
-        suffix = ""
-    if ":" in rest.split("/", 1)[0]:
-        port = rest.split("/", 1)[0].rsplit(":", 1)[1]
-        if port.isdigit():
-            return f"{service}://{host}:{port}{suffix}"
-    return f"{service}://{host}{suffix}"
+    # Playbooks often expand {{target}} to a full URL, producing ssh://https://host.
+    while "://" in rest:
+        rest = rest.split("://", 1)[1]
+    host_part = rest.split("/", 1)[0].split("?", 1)[0]
+    port = ""
+    if host_part.startswith("[") and "]" in host_part:
+        after = host_part.split("]", 1)[1]
+        if after.startswith(":") and after[1:].isdigit():
+            port = after
+    elif host_part.count(":") == 1:
+        maybe_host, maybe_port = host_part.rsplit(":", 1)
+        if maybe_port.isdigit():
+            port = f":{maybe_port}"
+    return f"{service}://{host}{port}"
 
 
 def _build_command(target: str, args: list[str] | None) -> tuple[str, str, list[str]]:

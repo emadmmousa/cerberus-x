@@ -5,7 +5,7 @@ from .celery_app import app as celery_app
 from .database import get_results, init_db, save_phase_result
 from .tasks import build_phase_workflow
 from .cli import collect_chain_results, collect_group_results
-from .metasploit_api import metasploit_blueprint
+from .metasploit_api import msf_bp
 from .metasploit_socketio import register_metasploit_socketio
 import yaml
 import time
@@ -15,7 +15,7 @@ import threading
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'cerberus-x-secret'
-app.register_blueprint(metasploit_blueprint)
+app.register_blueprint(msf_bp)
 socketio = SocketIO(app, cors_allowed_origins="*")
 register_metasploit_socketio(socketio)
 

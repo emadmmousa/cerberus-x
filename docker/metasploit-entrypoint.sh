@@ -42,8 +42,8 @@ DB_PORT="${MSF_DB_PORT}"
 WAIT_RETRIES="${MSF_DB_WAIT_RETRIES:-60}"
 WAIT_DELAY="${MSF_DB_WAIT_DELAY:-2}"
 RC_FILE="${MSF_RC_FILE:-/tmp/msf_rpc.rc}"
+DB_CONFIG_FILE="${MSF_DB_CONFIG_FILE:-/tmp/msf_database.yml}"
 
-export MSF_DATABASE_CONFIG="${MSF_DATABASE_CONFIG:-${APP_HOME}/config/database.yml}"
 export MSF_RPC_BIND_HOST="${RPC_BIND_HOST}"
 export MSF_RPC_PORT="${RPC_PORT}"
 
@@ -62,27 +62,30 @@ done
 exec 3<&- 3>&- || true
 echo "[*] PostgreSQL is reachable"
 
-# Build a safely URL-encoded DATABASE_URL and a resource file. Passwords are
-# never interpolated into Compose YAML URLs; encoding happens here.
-echo "[*] Preparing Metasploit database URL and msgrpc resource file..."
-DATABASE_URL="$(
-  MSF_DB_PORT="${DB_PORT}" MSF_RC_FILE="${RC_FILE}" \
+# Build a private database YAML and resource file. Metasploit's db_connect URL
+# parser does not URL-decode credentials, so a YAML file is required for
+# passwords containing reserved URL characters.
+echo "[*] Preparing Metasploit database config and msgrpc resource file..."
+MSF_DB_PORT="${DB_PORT}" MSF_RC_FILE="${RC_FILE}" \
+  MSF_DB_CONFIG_FILE="${DB_CONFIG_FILE}" \
   MSF_RPC_BIND_HOST="${RPC_BIND_HOST}" MSF_RPC_PORT="${RPC_PORT}" \
   ruby -e '
-    require "uri"
-    user = ENV.fetch("MSF_DB_USER")
-    pass = ENV.fetch("MSF_DB_PASSWORD")
-    host = ENV.fetch("MSF_DB_HOST")
-    port = ENV.fetch("MSF_DB_PORT", "5432")
-    name = ENV.fetch("MSF_DB_NAME")
-    url = format(
-      "postgres://%s:%s@%s:%s/%s",
-      URI.encode_www_form_component(user),
-      URI.encode_www_form_component(pass),
-      host,
-      port,
-      URI.encode_www_form_component(name)
-    )
+    require "yaml"
+
+    database = {
+      "adapter" => "postgresql",
+      "database" => ENV.fetch("MSF_DB_NAME"),
+      "username" => ENV.fetch("MSF_DB_USER"),
+      "password" => ENV.fetch("MSF_DB_PASSWORD"),
+      "host" => ENV.fetch("MSF_DB_HOST"),
+      "port" => ENV.fetch("MSF_DB_PORT", "5432"),
+      "pool" => 75,
+      "timeout" => 5
+    }
+    File.open(ENV.fetch("MSF_DB_CONFIG_FILE"), "w", 0o600) do |file|
+      file.write({ "production" => database }.to_yaml)
+    end
+
     def msf_quote(value)
       if value.match?(/[\s"\\#]/)
         "\"#{value.gsub("\\", "\\\\\\\\").gsub("\"", "\\\\\"")}\""
@@ -91,21 +94,18 @@ DATABASE_URL="$(
       end
     end
     rc = <<~RC
-      db_connect #{url}
+      db_connect -y #{msf_quote(ENV.fetch("MSF_DB_CONFIG_FILE"))}
       db_status
       load msgrpc ServerHost=#{ENV.fetch("MSF_RPC_BIND_HOST")} ServerPort=#{ENV.fetch("MSF_RPC_PORT")} User=#{msf_quote(ENV.fetch("MSF_RPC_USER"))} Pass=#{msf_quote(ENV.fetch("MSF_RPC_PASSWORD"))} SSL=false
     RC
     File.open(ENV.fetch("MSF_RC_FILE"), "w", 0o600) { |f| f.write(rc) }
-    print url
   '
-)"
-export DATABASE_URL
 
 echo "[*] Verifying database connect + schema provisioning (hard fail on error)..."
 # Capture to a file (msfconsole can exit 0 even when db_connect fails).
 provision_log="$(mktemp)"
 set +e
-./msfconsole -q -x "db_connect ${DATABASE_URL}; db_status; exit -y" \
+./msfconsole -q -x "db_connect -y ${DB_CONFIG_FILE}; db_status; exit -y" \
   >"${provision_log}" 2>&1
 provision_rc=$?
 set -e

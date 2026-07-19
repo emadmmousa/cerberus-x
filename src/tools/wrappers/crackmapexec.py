@@ -19,6 +19,32 @@ def _command() -> str | None:
     return None
 
 
+def _normalize_args(args: list[str], host: str) -> list[str]:
+    normalized = [
+        arg.replace("{{target}}", host) if isinstance(arg, str) else arg
+        for arg in args
+    ]
+    fixed: list[str] = []
+    for arg in normalized:
+        text = str(arg)
+        if "://" in text:
+            parsed = urlparse(text)
+            candidate = parsed.hostname or _host(text)
+            fixed.append(candidate)
+        else:
+            fixed.append(arg)
+
+    # Playbook style often omits inserting host; ensure host is present.
+    if host not in {str(arg) for arg in fixed} and f"//{host}" not in " ".join(
+        str(arg) for arg in fixed
+    ):
+        if fixed and not str(fixed[0]).startswith("-"):
+            fixed = [fixed[0], host, *fixed[1:]]
+        else:
+            fixed = [host, *fixed]
+    return fixed
+
+
 def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
     host = _host(target)
     binary = _command()
@@ -33,17 +59,7 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
         # Lightweight SMB probe; guest/empty often fails but proves the tool runs.
         args = ["smb", host, "-u", "guest", "-p", "", "--shares"]
     else:
-        args = [
-            arg.replace("{{target}}", host) if isinstance(arg, str) else arg
-            for arg in args
-        ]
-        # Playbook style often omits inserting host; ensure host is present.
-        if host not in args and f"//{host}" not in " ".join(str(a) for a in args):
-            # Insert host after protocol if first token is a protocol module.
-            if args and not str(args[0]).startswith("-"):
-                args = [args[0], host, *args[1:]]
-            else:
-                args = [host, *args]
+        args = _normalize_args(list(args), host)
 
     cmd = [binary, *args]
     try:
@@ -55,10 +71,29 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             start_new_session=True,
         )
         output = (completed.stdout or "") + (completed.stderr or "")
+        # NetExec/CME exits after first-time workspace bootstrap; run once more.
+        if "First time use detected" in output or "Creating home directory structure" in output:
+            retry = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                start_new_session=True,
+            )
+            output = (
+                output
+                + "\n"
+                + ((retry.stdout or "") + (retry.stderr or ""))
+            )
+            completed = retry
         results = [
             line.strip()
             for line in output.splitlines()
-            if "Pwn3d!" in line or "Status:" in line or "SMB" in line
+            if "Pwn3d!" in line
+            or "Status:" in line
+            or "[*]" in line and "SMB" in line
+            or "[+]" in line
+            or "[-]" in line
         ]
         result = {
             "tool": "crackmapexec",

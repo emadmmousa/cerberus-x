@@ -18,6 +18,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
     perl \
     libnet-ssleay-perl \
     libio-socket-ssl-perl \
+    libjson-perl \
+    libxml-writer-perl \
     && rm -rf /var/lib/apt/lists/*
 
 # Arch-aware GitHub release helpers (amd64 / arm64)

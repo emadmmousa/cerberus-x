@@ -1,11 +1,66 @@
+import re
 import subprocess
 from urllib.parse import urlparse
+
+_OPEN_HOST_PORT_RE = re.compile(
+    r"Open\s+(?:\[[^\]]+\]|[\w.-]+):(\d+)\b",
+    re.IGNORECASE,
+)
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _host(target: str) -> str:
     parsed = urlparse(target if "://" in target else f"//{target}", scheme="")
     host = parsed.hostname or parsed.path.split("/")[0] or target
     return host.strip("[]")
+
+
+def _ensure_address(args: list[str], host: str) -> list[str]:
+    """Ensure `-a/--addresses` is present and followed by a host value."""
+    normalized = list(args)
+
+    def _needs_value(flag: str) -> bool:
+        if flag not in normalized:
+            return False
+        idx = normalized.index(flag)
+        return idx + 1 >= len(normalized) or str(normalized[idx + 1]).startswith("-")
+
+    if _needs_value("-a"):
+        idx = normalized.index("-a")
+        normalized.insert(idx + 1, host)
+    elif _needs_value("--addresses"):
+        idx = normalized.index("--addresses")
+        normalized.insert(idx + 1, host)
+    elif "-a" not in normalized and "--addresses" not in normalized:
+        normalized = ["-a", host, *normalized]
+    return normalized
+
+
+def _ensure_quiet_flags(args: list[str]) -> list[str]:
+    normalized = list(args)
+    if "-g" not in normalized and "--greppable" not in normalized:
+        normalized.append("-g")
+    if "--no-banner" not in normalized:
+        normalized.append("--no-banner")
+    return normalized
+
+
+def _parse_ports(output: str) -> list[dict]:
+    ports: list[dict] = []
+    seen: set[str] = set()
+    clean = _ANSI_RE.sub("", output or "")
+    for line in clean.splitlines():
+        text = line.strip()
+        if "->" in text and "[" in text:
+            bracket = text.split("[", 1)[1].split("]", 1)[0]
+            candidates = [part.strip() for part in bracket.split(",")]
+        else:
+            candidates = _OPEN_HOST_PORT_RE.findall(text)
+        for port in candidates:
+            if port.isdigit() and port not in seen:
+                seen.add(port)
+                ports.append({"port": port, "state": "open"})
+    return ports
 
 
 def scan(target, args=None):
@@ -25,9 +80,7 @@ def scan(target, args=None):
             "3000",
         ]
     else:
-        args = list(args)
-        if "-a" not in args and "--addresses" not in args:
-            args = ["-a", host, *args]
+        args = _ensure_quiet_flags(_ensure_address(list(args), host))
         if (
             "-p" not in args
             and "--ports" not in args
@@ -40,19 +93,7 @@ def scan(target, args=None):
     cmd = ["rustscan", *args]
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
-        ports = []
-        for line in output.split("\n"):
-            # greppable: "127.0.0.1 -> [80,443]"
-            if "->" in line and "[" in line:
-                bracket = line.split("[", 1)[1].split("]", 1)[0]
-                for part in bracket.split(","):
-                    port = part.strip()
-                    if port.isdigit():
-                        ports.append({"port": port, "state": "open"})
-            elif "Open " in line:
-                for part in line.split("Open ", 1)[1].replace(",", ".").split("."):
-                    if part.strip().isdigit():
-                        ports.append({"port": part.strip(), "state": "open"})
+        ports = _parse_ports(output)
         result = {
             "tool": "rustscan",
             "target": host,

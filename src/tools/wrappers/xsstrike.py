@@ -42,8 +42,17 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             "findings": findings,
             "raw_output": output,
         }
-        if completed.returncode != 0 and not output.strip():
-            result["error"] = f"xsstrike exited with code {completed.returncode}"
+        if (
+            completed.returncode != 0
+            or "Unable to connect to the target" in output
+            or "Traceback (most recent call last)" in output
+        ):
+            if not findings:
+                result["error"] = (
+                    "xsstrike failed to connect or crashed while probing the target"
+                )
+            elif completed.returncode != 0 and not output.strip():
+                result["error"] = f"xsstrike exited with code {completed.returncode}"
         return result
     except FileNotFoundError:
         return {"tool": "xsstrike", "target": url, "error": "xsstrike binary not found"}
