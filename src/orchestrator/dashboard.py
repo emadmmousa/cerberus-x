@@ -118,24 +118,11 @@ def _run_playbook_job(job_id, target, playbook, use_proxy=False, proxy_protocol=
     job["use_proxy"] = use_proxy
     job["proxy_protocol"] = proxy_protocol
     try:
-        if use_proxy:
-            from tools.local_proxy import ProxyForwardError, ensure_local_proxy
-
-            try:
-                proxy = ensure_local_proxy()
-                if not proxy.healthy():
-                    raise ProxyForwardError("local proxy forwarder unhealthy")
-                add_log(f"Local proxy ready on {proxy.address[0]}:{proxy.address[1]}")
-            except ProxyForwardError as exc:
-                job["state"] = "FAILURE"
-                job["error"] = str(exc)
-                add_log(f"Proxy setup failed: {exc}", level="ERROR")
-                return
-            except Exception as exc:
-                job["state"] = "FAILURE"
-                job["error"] = "local proxy forwarder unhealthy"
-                add_log(f"Proxy setup failed: {exc}", level="ERROR")
-                return
+        if use_proxy and not credentials_configured():
+            add_log(
+                "use_proxy requested but worker Oxylabs credentials may be missing",
+                level="WARNING",
+            )
 
         for phase in playbook.get("phases", []):
             phase_name = phase.get("name")

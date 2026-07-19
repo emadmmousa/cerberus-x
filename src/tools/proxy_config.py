@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 from typing import Any
-from urllib.parse import quote, urlparse, urlunparse
+from urllib.parse import quote, urlparse
 
 ALLOWED_PROTOCOLS = frozenset({"http", "https", "socks5h"})
 

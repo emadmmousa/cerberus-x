@@ -1,3 +1,10 @@
+FROM node:22-alpine AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json* ./
+RUN npm ci || npm install
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.12-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends --fix-missing \
@@ -113,6 +120,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ /app/src/
 COPY playbooks/ /app/playbooks/
+COPY --from=frontend /src/orchestrator/static/app /app/src/orchestrator/static/app
+
+# Fail build if SPA assets are missing
+RUN test -f /app/src/orchestrator/static/app/index.html
 
 ENV PYTHONPATH=/app/src
 ENV REDIS_URL=redis://redis:6379
