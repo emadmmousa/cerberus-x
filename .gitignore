@@ -14,3 +14,6 @@ venv/
 # Generated target reports
 output/*
 !output/.gitkeep
+
+# Frontend
+frontend/node_modules/

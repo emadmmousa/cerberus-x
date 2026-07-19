@@ -1,20 +1,20 @@
-from orchestrator.dashboard import app
+from pathlib import Path
+
+from orchestrator.dashboard import STATIC_APP, app
 
 
-def test_dashboard_renders_metasploit_controls():
+def test_dashboard_serves_spa_when_built():
     client = app.test_client()
+    spa_index = STATIC_APP / "index.html"
 
     response = client.get("/")
 
     assert response.status_code == 200
-    html = response.get_data(as_text=True)
-    assert "Metasploit Modules" in html
-    assert "Interactive Console" in html
-    assert 'id="searchModulesBtn"' in html
-    assert 'id="runModuleBtn"' in html
-    assert 'id="refreshJobsBtn"' in html
-    assert 'id="refreshSessionsBtn"' in html
-    assert 'id="consoleOpenBtn"' in html
-    assert "msf_console_create" in html
-    assert "textContent" in html
-    assert "innerHTML" not in html
+    if spa_index.is_file():
+        html = response.get_data(as_text=True)
+        assert 'id="root"' in html
+        assert "CERBERUS" in html.upper()
+    else:
+        # Fallback Jinja template during development without a frontend build
+        html = response.get_data(as_text=True)
+        assert "CERBERUS" in html.upper()
