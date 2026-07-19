@@ -25,7 +25,7 @@ export type PhaseView = {
   findings: ResultRow[];
 };
 
-function derivePhases(
+export function derivePhases(
   pipeline: PlaybookPhase[],
   status: TaskStatus | null,
   resultsByPhase: Record<string, ResultRow[]>,
@@ -38,10 +38,22 @@ function derivePhases(
   // Index of the phase currently executing: first reported phase that has no
   // saved results yet, while the job is still active.
   const savedPhases = new Set(Object.keys(status?.results ?? {}));
+  const staticNames = new Set(pipeline.map((phase) => phase.name));
+  const dynamicPhases = [...new Set(
+    (status?.phases ?? [])
+      .map((phase) => phase.phase)
+      .filter((name) => !staticNames.has(name)),
+  )].map((name) => ({
+    name,
+    tools: ["metasploit"],
+    parallel: false,
+    depends_on: [],
+    when: null,
+  }));
 
   let activeAssigned = false;
 
-  return pipeline.map((phase) => {
+  return [...pipeline, ...dynamicPhases].map((phase) => {
     const rep = reported.get(phase.name);
     const findings = resultsByPhase[phase.name] ?? [];
     let state: PhaseState = "pending";

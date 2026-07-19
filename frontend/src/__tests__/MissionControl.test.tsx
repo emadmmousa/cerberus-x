@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { derivePhases } from "../hooks/useMission";
 import { MissionControl } from "../views/MissionControl";
 
 vi.mock("../api/socket", () => ({
@@ -58,6 +59,28 @@ function mockFetch() {
 describe("MissionControl", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("adds reported automated impact phases to the timeline", () => {
+    const phases = derivePhases(
+      [{ name: "recon", tools: ["nmap"], parallel: false, depends_on: [] }],
+      {
+        task_id: "abc",
+        state: "RUNNING",
+        phases: [{ phase: "proof_of_impact", task_id: "impact-task" }],
+      },
+      {},
+    );
+
+    expect(phases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "proof_of_impact",
+          state: "running",
+          taskId: "impact-task",
+        }),
+      ]),
+    );
   });
 
   it("renders the full phase pipeline from /api/playbook", async () => {

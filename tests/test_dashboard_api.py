@@ -181,6 +181,66 @@ def test_results_endpoint_scopes_to_job_id(monkeypatch, tmp_path):
     assert "secret" not in str(data)
 
 
+def test_auto_action_phase_is_reported_before_waiting(monkeypatch):
+    job_id = "job-auto-phase"
+    dashboard.playbook_jobs[job_id] = {"phases": [], "results": {}}
+
+    class FakeWorkflow:
+        def __init__(self, phase_name):
+            self.phase_name = phase_name
+
+        def apply_async(self):
+            return type("Result", (), {"id": f"{self.phase_name}-task"})()
+
+    class FakeDecisionEngine:
+        def __init__(self, *args, **kwargs):
+            self.state = {"has_session": False}
+
+        def should_run_phase(self, phase):
+            return True, None
+
+        def evaluate_phase(self, *args):
+            pass
+
+        def generate_post_phase_actions(self, phase_name, phase_outputs):
+            if phase_name == "recon":
+                return [
+                    {
+                        "phase": "proof_of_impact",
+                        "tool": "metasploit",
+                        "args": {},
+                    }
+                ]
+            return []
+
+        def mark_actions_fired(self, actions):
+            pass
+
+    def collect(result, timeout):
+        if result.id == "proof_of_impact-task":
+            assert dashboard.playbook_jobs[job_id]["phases"][-1] == {
+                "phase": "proof_of_impact",
+                "task_id": "proof_of_impact-task",
+            }
+        return []
+
+    monkeypatch.setattr(dashboard, "DecisionEngine", FakeDecisionEngine)
+    monkeypatch.setattr(
+        dashboard, "build_phase_workflow", lambda phase_name, *args, **kwargs: FakeWorkflow(phase_name)
+    )
+    monkeypatch.setattr(dashboard, "collect_chain_results", collect)
+    monkeypatch.setattr(dashboard, "init_db", lambda: None)
+    monkeypatch.setattr(dashboard, "save_phase_result", lambda *args, **kwargs: None)
+
+    dashboard._run_playbook_job(
+        job_id,
+        "example.com",
+        {"phases": [{"name": "recon", "tools": [{"tool": "nmap"}]}]},
+    )
+
+    assert dashboard.playbook_jobs[job_id]["state"] == "SUCCESS"
+
+
 def test_proxy_settings_put_get_redacts_password(monkeypatch, tmp_path):
     monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
     from tools import proxy_settings

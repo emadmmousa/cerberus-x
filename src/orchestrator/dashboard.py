@@ -367,12 +367,12 @@ def _run_playbook_job(
                 if action_workflow is None:
                     continue
                 action_result = action_workflow.apply_async()
-                action_output = collect_chain_results(action_result, timeout=300)
-                job.setdefault("results", {})[action_name] = action_output
-                save_phase_result(target, action_name, action_output, job_id=job_id)
                 job["phases"].append(
                     {"phase": action_name, "task_id": action_result.id}
                 )
+                action_output = collect_chain_results(action_result, timeout=300)
+                job.setdefault("results", {})[action_name] = action_output
+                save_phase_result(target, action_name, action_output, job_id=job_id)
                 decision_engine.evaluate_phase(action_name, action_output)
                 decision_engine.mark_actions_fired([action])
 
@@ -399,13 +399,13 @@ def _run_playbook_job(
                     if action_workflow is None:
                         continue
                     action_result = action_workflow.apply_async()
+                    job["phases"].append(
+                        {"phase": action_name, "task_id": action_result.id}
+                    )
                     action_output = collect_chain_results(action_result, timeout=300)
                     job.setdefault("results", {})[action_name] = action_output
                     save_phase_result(
                         target, action_name, action_output, job_id=job_id
-                    )
-                    job["phases"].append(
-                        {"phase": action_name, "task_id": action_result.id}
                     )
                     decision_engine.evaluate_phase(action_name, action_output)
                     decision_engine.mark_actions_fired([action])
