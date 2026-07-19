@@ -24,6 +24,33 @@ class FakeClient:
             raise self.error
         return self.execution_result
 
+    def list_jobs(self):
+        if self.error:
+            raise self.error
+        return {}
+
+    def list_sessions(self):
+        if self.error:
+            raise self.error
+        return {}
+
+
+class WaitingFakeClient(FakeClient):
+    def __init__(self, *args, jobs=None, sessions=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._jobs = list(jobs or [])
+        self._sessions = sessions or {}
+        self.list_job_calls = 0
+
+    def list_jobs(self):
+        self.list_job_calls += 1
+        if self._jobs:
+            return self._jobs.pop(0)
+        return {}
+
+    def list_sessions(self):
+        return self._sessions
+
 
 def install_client(monkeypatch, client):
     monkeypatch.setattr(metasploit, "MetasploitRpcClient", lambda: client)
@@ -71,8 +98,29 @@ def test_scan_parses_full_module_path_and_coerces_options(monkeypatch):
         "job_id": 7,
         "uuid": "run-abc",
         "response": {"job_id": 7, "uuid": "run-abc"},
+        "sessions": [],
         "raw_output": "module=auxiliary/scanner/portscan/tcp job_id=7 uuid=run-abc",
     }
+
+
+def test_scan_waits_for_job_and_returns_sessions(monkeypatch):
+    client = WaitingFakeClient(
+        module_options={"RHOSTS": {"required": True}},
+        execution_result={"job_id": 9, "uuid": "u-1"},
+        jobs=[{"9": "exploit/multi/http/apache_path_traversal"}, {}],
+        sessions={"42": {"type": "meterpreter", "target_host": "scanner.example.test"}},
+    )
+    install_client(monkeypatch, client)
+    monkeypatch.setattr(metasploit.time, "sleep", lambda *_: None)
+
+    result = metasploit.scan(
+        "https://scanner.example.test",
+        ["exploit/multi/http/apache_path_traversal"],
+    )
+
+    assert result["sessions"] == [{"id": "42", "type": "meterpreter"}]
+    assert result["vulnerable"] is True
+    assert client.list_job_calls >= 1
 
 
 def test_scan_preserves_explicit_rhosts_and_coerces_false_and_negative_int(

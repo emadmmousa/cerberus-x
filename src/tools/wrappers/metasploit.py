@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 from urllib.parse import urlparse
 
@@ -10,6 +11,8 @@ from ..metasploit_rpc import MetasploitRpcClient, MetasploitRpcError
 
 
 DEFAULT_MODULE = "auxiliary/scanner/portscan/tcp"
+DEFAULT_JOB_WAIT_SECONDS = 90
+DEFAULT_JOB_POLL_INTERVAL = 2.0
 
 
 _IPV4_CIDR = re.compile(
@@ -121,6 +124,50 @@ def _missing_required_options(
     return sorted(missing)
 
 
+def _wait_for_job(
+    client: MetasploitRpcClient,
+    job_id: str | int | None,
+    timeout: float = DEFAULT_JOB_WAIT_SECONDS,
+) -> None:
+    if job_id is None:
+        return
+
+    deadline = time.monotonic() + timeout
+    job_key = str(job_id)
+    while time.monotonic() < deadline:
+        jobs = client.list_jobs() or {}
+        if isinstance(jobs, dict) and job_key not in {str(key) for key in jobs}:
+            return
+        time.sleep(DEFAULT_JOB_POLL_INTERVAL)
+
+
+def _sessions_for_target(sessions: Any, host: str) -> list[dict[str, str]]:
+    result = []
+    if not isinstance(sessions, dict):
+        return result
+
+    for session_id, metadata in sessions.items():
+        if not isinstance(metadata, dict):
+            continue
+        target_host = str(
+            metadata.get("target_host") or metadata.get("tunnel_peer") or ""
+        )
+        if (
+            host
+            and target_host
+            and host not in target_host
+            and target_host not in host
+        ):
+            continue
+        result.append(
+            {
+                "id": str(session_id),
+                "type": str(metadata.get("type") or "shell"),
+            }
+        )
+    return result
+
+
 
 def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
     """Validate and execute one explicit Metasploit module over RPC."""
@@ -159,18 +206,24 @@ def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
                 "Metasploit RPC returned an invalid execution response",
                 module=module,
             )
-        return {
+        _wait_for_job(client, response.get("job_id"))
+        sessions = _sessions_for_target(client.list_sessions(), _host(target))
+        result = {
             "tool": "metasploit",
             "target": target,
             "module": module,
             "job_id": response.get("job_id"),
             "uuid": response.get("uuid"),
             "response": response,
+            "sessions": sessions,
             "raw_output": (
                 f"module={module} job_id={response.get('job_id')} "
                 f"uuid={response.get('uuid')}"
             ),
         }
+        if sessions and module_type in {"exploit", "post"}:
+            result["vulnerable"] = True
+        return result
     except MetasploitRpcError as exc:
         return _error(target, "rpc_error", str(exc), module=module)
     except Exception:
