@@ -24,6 +24,7 @@ spec:
         prometheus.io/port: "5000"
         prometheus.io/path: "/metrics"
     spec:
+      serviceAccountName: orchestrator
       containers:
       - name: orchestrator
         image: cerberus-x-orchestrator:latest
@@ -38,6 +39,8 @@ spec:
             secretKeyRef:
               name: cerberus-secrets
               key: REDIS_PASSWORD
+        - name: CERBERUS_ENV_FILE
+          value: /app/.env
         - name: ELASTICSEARCH_URL
           value: http://elasticsearch-service:9200
         - name: MSF_RPC_HOST

@@ -120,10 +120,12 @@ services:
       - MSF_RPC_VERIFY_SSL=false
       - CERBERUS_OUTPUT_DIR=/app/output
       - CERBERUS_DB_PATH=/app/output/results.db
+      - CERBERUS_ENV_FILE=/app/.env
     volumes:
       - ./src:/app/src
       - ./playbooks:/app/playbooks
       - ./output:/app/output
+      - ./.env:/app/.env
     # Dashboard is the only host-facing entry point; bind to localhost only.
     ports:
       - "127.0.0.1:5000:5000"
