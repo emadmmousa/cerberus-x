@@ -150,24 +150,34 @@ describe("summarizeFinding", () => {
     expect(s.bullets.join(" ")).toMatch(/could not prove impact/i);
   });
 
-  it("summarizes metasploit hashdump post module", () => {
+  it("summarizes metasploit hashdump post module as attempted", () => {
     const s = summarizeFinding("metasploit", {
       module: "post/windows/gather/hashdump",
-      sessions: [{ id: "42", type: "meterpreter" }],
+      sessions: [],
+      status: "attempted",
+    });
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ")).toMatch(/credential|hash|attempted/i);
+  });
+
+  it("summarizes metasploit persistence post module as attempted", () => {
+    const s = summarizeFinding("metasploit", {
+      module: "post/windows/manage/persistence_exe",
+      sessions: [],
+      status: "attempted",
+    });
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ")).toMatch(/persistence|attempted/i);
+  });
+
+  it("summarizes confirmed post module completion as ok", () => {
+    const s = summarizeFinding("metasploit", {
+      module: "post/windows/gather/hashdump",
+      sessions: [],
       status: "completed",
     });
     expect(s.status).toBe("ok");
     expect(s.bullets.join(" ")).toMatch(/credential|hash/i);
-  });
-
-  it("summarizes metasploit persistence post module", () => {
-    const s = summarizeFinding("metasploit", {
-      module: "post/windows/manage/persistence_exe",
-      sessions: [{ id: "42", type: "meterpreter" }],
-      status: "completed",
-    });
-    expect(s.status).toBe("ok");
-    expect(s.bullets.join(" ")).toMatch(/persistence/i);
   });
 
   it("does not treat a retained post session as post-ex success", () => {
@@ -224,7 +234,7 @@ describe("summarizeMission", () => {
         result: {
           module: "post/windows/gather/hashdump",
           sessions: [],
-          status: "completed",
+          status: "attempted",
         },
       },
       {
@@ -242,7 +252,7 @@ describe("summarizeMission", () => {
     const m = summarizeMission(rows, "SUCCESS", "t.com");
     expect(m.impactProven).toBe(true);
     expect(m.sessions).toBe(1);
-    expect(m.postExSucceeded).toBe(1);
+    expect(m.postExSucceeded).toBe(0);
     expect(m.postExFailed).toBe(1);
     expect(m.sentence.toLowerCase()).toMatch(/session|impact|access/);
   });

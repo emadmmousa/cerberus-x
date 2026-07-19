@@ -184,7 +184,7 @@ def test_scan_reports_job_timeout_when_job_never_completes(monkeypatch):
     assert "timed out" in result["error"].lower()
 
 
-def test_scan_marks_completed_post_module_without_reusing_existing_session(monkeypatch):
+def test_scan_marks_attempted_post_module_without_reusing_existing_session(monkeypatch):
     client = WaitingFakeClient(
         module_options={"SESSION": {"required": True}},
         execution_result={"job_id": 9, "uuid": "u-1"},
@@ -201,7 +201,7 @@ def test_scan_marks_completed_post_module_without_reusing_existing_session(monke
         ["post/windows/gather/hashdump", "SESSION=42"],
     )
 
-    assert result["status"] == "completed"
+    assert result["status"] == "attempted"
     assert result["sessions"] == []
     assert "vulnerable" not in result
 

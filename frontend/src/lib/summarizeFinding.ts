@@ -423,6 +423,15 @@ function summarizeMetasploit(result: unknown): FindingSummary {
         bullets: [postWording ?? "Post-exploitation module completed."],
       };
     }
+    if (status === "attempted") {
+      return {
+        title: titleFor("metasploit"),
+        status: "partial",
+        bullets: [
+          postWording ?? "Post-exploitation module attempted; outcome unconfirmed.",
+        ],
+      };
+    }
     return {
       title: titleFor("metasploit"),
       status: "partial",

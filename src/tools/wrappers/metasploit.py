@@ -142,6 +142,17 @@ def _wait_for_job(
     return False
 
 
+def _post_module_has_explicit_success(response: dict[str, Any]) -> bool:
+    """True only when the RPC response carries a confirmed post-module success."""
+    return False
+
+
+def _post_module_status(response: dict[str, Any]) -> str:
+    if _post_module_has_explicit_success(response):
+        return "completed"
+    return "attempted"
+
+
 def _new_sessions_for_target(
     sessions: Any,
     existing_sessions: Any,
@@ -231,6 +242,11 @@ def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
             existing_sessions,
             _host(target),
         )
+        status = (
+            _post_module_status(response)
+            if module_type == "post"
+            else "completed"
+        )
         result = {
             "tool": "metasploit",
             "target": target,
@@ -239,7 +255,7 @@ def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
             "uuid": response.get("uuid"),
             "response": response,
             "sessions": sessions,
-            "status": "completed",
+            "status": status,
             "raw_output": (
                 f"module={module} job_id={response.get('job_id')} "
                 f"uuid={response.get('uuid')}"

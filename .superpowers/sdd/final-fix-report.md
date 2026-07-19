@@ -10,3 +10,15 @@ Verification:
 - `pytest tests/test_metasploit_wrapper.py tests/test_decision_engine.py` — 38 passed
 - `npm test -- --run src/__tests__/summarizeFinding.test.ts` — 20 passed
 - `pytest -q` — 185 passed
+
+## Post-ex attempted status — 2026-07-19
+
+- Post modules now emit `status: "attempted"` after a clean job wait; `completed` is reserved for an explicit RPC success signal (none wired today).
+- Summarizer maps `attempted` post results to `partial` / Needs attention; mission rollup no longer increments `postExSucceeded` without confirmed outcome.
+- Exploit/auxiliary modules unchanged (`completed` / timeout / failed as before).
+
+Verification:
+
+- `pytest tests/test_metasploit_wrapper.py` — 26 passed
+- `npm test -- --run src/__tests__/summarizeFinding.test.ts` — 21 passed
+- `pytest -q` — 185 passed
