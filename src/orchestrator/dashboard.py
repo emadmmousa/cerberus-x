@@ -123,11 +123,19 @@ def _run_playbook_job(job_id, target, playbook, use_proxy=False, proxy_protocol=
     job["use_proxy"] = use_proxy
     job["proxy_protocol"] = proxy_protocol
     try:
-        if use_proxy and not credentials_configured():
-            add_log(
-                "use_proxy requested but worker Oxylabs credentials may be missing",
-                level="WARNING",
-            )
+        if use_proxy:
+            flagged = os.getenv("OXYLABS_PROXY_CONFIGURED", "").lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+            if not flagged and not credentials_configured():
+                add_log(
+                    "use_proxy enabled — ensure workers have OXYLABS_PROXY_USERNAME/PASSWORD",
+                    level="INFO",
+                )
+            else:
+                add_log("use_proxy enabled for this run", level="INFO")
 
         for phase in playbook.get("phases", []):
             phase_name = phase.get("name")
