@@ -52,3 +52,25 @@ def test_decision_engine_metasploit_session():
     eng._process_metasploit_results(item)
     assert eng.state['has_session'] is True
     assert len(eng.state['sessions']) == 1
+
+
+def test_decision_engine_accepts_flat_wrapper_payloads():
+    eng = DecisionEngine("flat-target")
+    eng.evaluate_phase(
+        "recon",
+        [
+            {
+                "tool": "nmap",
+                "ports": [{"port": "443", "state": "open"}],
+            },
+            {
+                "tool": "nuclei",
+                "findings": [
+                    {"title": "CVE-2021-41773 Path Traversal", "severity": "critical"}
+                ],
+            },
+        ],
+    )
+    assert eng.state["vuln_found"] is True
+    assert eng.state["open_ports"][0]["port"] == "443"
+    assert eng.state["vulnerabilities"][0]["cve"] == "CVE-2021-41773"

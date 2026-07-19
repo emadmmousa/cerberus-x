@@ -34,6 +34,19 @@ export type ProxyStatus = {
   configured: boolean;
 };
 
+export type PlaybookPhase = {
+  name: string;
+  tools: string[];
+  parallel: boolean;
+  depends_on: string[];
+  when?: string | null;
+};
+
+export type PlaybookSummary = {
+  name?: string;
+  phases: PlaybookPhase[];
+};
+
 async function parseError(res: Response): Promise<string> {
   const text = await res.text();
   try {
@@ -70,4 +83,10 @@ export async function getProxyStatus(): Promise<ProxyStatus> {
   const res = await fetch("/api/proxy/status");
   if (!res.ok) throw new Error(await parseError(res));
   return res.json() as Promise<ProxyStatus>;
+}
+
+export async function getPlaybook(): Promise<PlaybookSummary> {
+  const res = await fetch("/api/playbook");
+  if (!res.ok) throw new Error(await parseError(res));
+  return res.json() as Promise<PlaybookSummary>;
 }

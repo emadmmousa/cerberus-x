@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: metasploit
+  namespace: cerberus-x
+  labels:
+    app: metasploit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: metasploit
+  template:
+    metadata:
+      labels:
+        app: metasploit
+    spec:
+      containers:
+      - name: metasploit
+        image: cerberus-x-metasploit:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: MSF_DB_HOST
+          value: postgres-service
+        - name: MSF_DB_USER
+          value: msf
+        - name: MSF_DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cerberus-secrets
+              key: POSTGRES_PASSWORD
+        - name: MSF_DB_NAME
+          value: msf_db
+        - name: MSF_DB_PORT
+          value: "5432"
+        - name: RPC_BIND_HOST
+          value: "0.0.0.0"
+        - name: RPC_PORT
+          value: "55553"
+        - name: MSF_RPC_USER
+          value: msf
+        - name: MSF_RPC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cerberus-secrets
+              key: MSF_RPC_PASSWORD
+        - name: MSF_RPC_SSL
+          value: "false"
+        ports:
+        - containerPort: 55553
+          name: rpc
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1000m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metasploit-service
+  namespace: cerberus-x
+spec:
+  selector:
+    app: metasploit
+  ports:
+  - port: 55553
+    targetPort: 55553
+  clusterIP: None

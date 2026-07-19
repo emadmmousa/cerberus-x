@@ -142,15 +142,62 @@ _singleton: Optional[LocalProxyServer] = None
 _singleton_lock = threading.Lock()
 
 
+def _port_open(host: str, port: int) -> bool:
+    """True if something already accepts TCP on host:port."""
+    try:
+        with socket.create_connection((host, port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+class _BorrowedProxy:
+    """Reference to a forwarder owned by another process (Celery prefork)."""
+
+    def __init__(self, host: str, port: int):
+        self.host = host
+        self.port = port
+        self._bound_port = port
+
+    @property
+    def address(self) -> tuple[str, int]:
+        return self.host, self.port
+
+    def healthy(self) -> bool:
+        return _port_open(self.host, self.port)
+
+    def stop(self) -> None:
+        return
+
+
 def ensure_local_proxy() -> LocalProxyServer:
     global _singleton
     with _singleton_lock:
-        if _singleton is None or not _singleton.healthy():
-            if _singleton is not None:
-                _singleton.stop()
-            server = LocalProxyServer()
+        if _singleton is not None and _singleton.healthy():
+            return _singleton  # type: ignore[return-value]
+        if _singleton is not None:
+            _singleton.stop()
+            _singleton = None
+
+        host = os.getenv("CERBERUS_LOCAL_PROXY_HOST", "127.0.0.1")
+        port = int(os.getenv("CERBERUS_LOCAL_PROXY_PORT", "18080"))
+
+        # Another Celery child may already own the listener — reuse it.
+        if port > 0 and _port_open(host, port):
+            borrowed = _BorrowedProxy(host, port)
+            _singleton = borrowed  # type: ignore[assignment]
+            return borrowed  # type: ignore[return-value]
+
+        server = LocalProxyServer(host=host, port=port)
+        try:
             server.start()
-            _singleton = server
+        except OSError as exc:
+            if getattr(exc, "errno", None) == errno.EADDRINUSE and _port_open(host, port):
+                borrowed = _BorrowedProxy(host, port)
+                _singleton = borrowed  # type: ignore[assignment]
+                return borrowed  # type: ignore[return-value]
+            raise ProxyForwardError(f"failed to bind local proxy: {exc}") from exc
+        _singleton = server
         return _singleton
 
 

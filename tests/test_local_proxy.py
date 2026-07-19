@@ -39,3 +39,27 @@ def test_socks5h_not_implemented(monkeypatch):
         assert "socks5h" in str(exc).lower()
         assert "p" == "p"  # password not relevant
         assert "super-secret" not in str(exc)
+
+
+def test_ensure_reuses_existing_listener(monkeypatch):
+    """Celery prefork: second process must borrow, not fail on EADDRINUSE."""
+    monkeypatch.setenv("OXYLABS_PROXY_USERNAME", "u")
+    monkeypatch.setenv("OXYLABS_PROXY_PASSWORD", "p")
+    monkeypatch.setenv("OXYLABS_PROXY_PROTOCOL", "http")
+    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_HOST", "127.0.0.1")
+    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_PORT", "0")
+
+    owner = local_proxy.LocalProxyServer()
+    owner.start()
+    host, port = owner.address
+    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_PORT", str(port))
+    local_proxy._singleton = None
+    try:
+        borrowed = local_proxy.ensure_local_proxy()
+        assert borrowed.healthy() is True
+        assert borrowed.address == (host, port)
+        assert isinstance(borrowed, local_proxy._BorrowedProxy)
+    finally:
+        owner.stop()
+        local_proxy._singleton = None
+

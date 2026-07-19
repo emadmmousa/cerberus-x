@@ -1,0 +1,29 @@
+FROM python:3.12-slim
+
+# Install system packages
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nmap masscan zmap whatweb gobuster sqlmap dirb hydra john hashcat curl unzip ca-certificates \
+    git perl libnet-ssleay-perl libio-socket-ssl-perl libjson-perl libxml-writer-perl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install RustScan, FFUF, nuclei, etc. (same as before)
+# [All tool installations from earlier Dockerfiles]
+
+RUN useradd -m -u 1000 cerberus && chown -R cerberus:cerberus /app
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY src/ /app/src/
+COPY playbooks/ /app/playbooks/
+RUN mkdir -p /app/output && chown -R cerberus:cerberus /app/output
+
+USER cerberus
+ENV PYTHONPATH=/app/src
+ENV REDIS_URL=redis://redis:6379/0
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+  CMD curl -f http://localhost:5000/health || exit 1
+
+EXPOSE 5000 5001
+
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "orchestrator.dashboard:app"]

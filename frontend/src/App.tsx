@@ -1,18 +1,14 @@
 import { useState } from "react";
-import { EventLog } from "./views/EventLog";
 import { ExploitOps } from "./views/ExploitOps";
-import { Findings } from "./views/Findings";
-import { MissionLaunch } from "./views/MissionLaunch";
+import { MissionControl } from "./views/MissionControl";
 import { MsfConsole } from "./views/MsfConsole";
 
-type View = "mission" | "findings" | "exploit" | "console" | "events";
+type View = "mission" | "exploit" | "console";
 
 const TABS: { id: View; label: string }[] = [
-  { id: "mission", label: "Mission" },
-  { id: "findings", label: "Findings" },
+  { id: "mission", label: "Mission Control" },
   { id: "exploit", label: "Exploit Ops" },
   { id: "console", label: "MSF Console" },
-  { id: "events", label: "Event Log" },
 ];
 
 export default function App() {
@@ -36,14 +32,10 @@ export default function App() {
       </nav>
       <main className="app-main">
         {view === "mission" && (
-          <MissionLaunch target={target} onTargetChange={setTarget} />
-        )}
-        {view === "findings" && (
-          <Findings target={target} onTargetChange={setTarget} />
+          <MissionControl target={target} onTargetChange={setTarget} />
         )}
         {view === "exploit" && <ExploitOps />}
         {view === "console" && <MsfConsole />}
-        {view === "events" && <EventLog />}
       </main>
     </div>
   );

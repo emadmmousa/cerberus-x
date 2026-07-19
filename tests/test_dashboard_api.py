@@ -85,6 +85,25 @@ def test_api_run_accepts_proxy_flags(monkeypatch):
     assert captured["proxy_protocol"] == "http"
 
 
+def test_playbook_summary_lists_phases():
+    client = dashboard.app.test_client()
+    resp = client.get("/api/playbook")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert "phases" in data
+    assert isinstance(data["phases"], list)
+    assert data["phases"], "expected at least one phase"
+    first = data["phases"][0]
+    assert set(first) >= {"name", "tools", "parallel", "depends_on", "when"}
+    assert isinstance(first["tools"], list)
+
+
+def test_playbook_summary_missing_file():
+    client = dashboard.app.test_client()
+    resp = client.get("/api/playbook?playbook=nope.yaml")
+    assert resp.status_code == 404
+
+
 def test_proxy_status_no_secrets(monkeypatch):
     monkeypatch.setenv("OXYLABS_PROXY_USERNAME", "u")
     monkeypatch.setenv("OXYLABS_PROXY_PASSWORD", "secret")

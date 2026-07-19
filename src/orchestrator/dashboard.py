@@ -90,6 +90,35 @@ def proxy_status():
     return jsonify({"configured": credentials_configured() or flagged})
 
 
+@app.route("/api/playbook")
+def playbook_summary():
+    """Expose the configured phase pipeline so the UI can pre-render it."""
+    playbook_path = request.args.get("playbook", DEFAULT_PLAYBOOK)
+    try:
+        with open(playbook_path) as handle:
+            playbook = yaml.safe_load(handle) or {}
+    except FileNotFoundError:
+        return jsonify({"error": f"playbook not found: {playbook_path}"}), 404
+
+    phases = []
+    for phase in playbook.get("phases", []):
+        phases.append(
+            {
+                "name": phase.get("name"),
+                "tools": [t.get("tool") for t in phase.get("tools", []) if t.get("tool")],
+                "parallel": bool(phase.get("parallel", False)),
+                "depends_on": phase.get("depends_on", []),
+                "when": phase.get("when"),
+            }
+        )
+    return jsonify(
+        {
+            "name": playbook.get("name"),
+            "phases": phases,
+        }
+    )
+
+
 @app.route("/status/<task_id>")
 def task_status(task_id):
     if task_id in playbook_jobs:

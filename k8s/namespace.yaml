@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cerberus-x
+  labels:
+    name: cerberus-x
+    environment: production

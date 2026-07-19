@@ -536,3 +536,250 @@ textarea {
 .status-pulse--pending .status-pulse__dot {
   background: var(--amber);
 }
+
+/* --- Unified launcher --- */
+.launcher__row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.launcher__launch {
+  flex-shrink: 0;
+  padding: 0.7rem 1.4rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .launcher__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* --- Mission summary --- */
+.mission-summary__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 0.85rem;
+}
+
+.mission-summary__target {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  color: var(--text);
+  letter-spacing: 0.06em;
+}
+
+.mission-summary__stat {
+  font-size: 0.68rem;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-left: 0.25rem;
+}
+
+.progress {
+  height: 6px;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.progress__bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan), var(--amber));
+  box-shadow: var(--glow-cyan);
+  transition: width 0.4s ease;
+}
+
+/* --- Mission layout --- */
+.grid-mission {
+  display: grid;
+  grid-template-columns: 1.6fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .grid-mission {
+    grid-template-columns: 1fr;
+  }
+}
+
+.phase-timeline,
+.mission-log {
+  background: var(--bg-1);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+}
+
+.mission-log {
+  position: sticky;
+  top: 1rem;
+}
+
+/* --- Phase card --- */
+.phase-card {
+  display: flex;
+  gap: 0.85rem;
+  position: relative;
+}
+
+.phase-card__rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 0.5rem;
+}
+
+.phase-card__node {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--line-bright);
+  background: var(--bg-0);
+  flex-shrink: 0;
+  z-index: 1;
+}
+
+.phase-card__rail::after {
+  content: "";
+  flex: 1;
+  width: 2px;
+  background: var(--line);
+  margin-top: 2px;
+}
+
+.phase-card:last-child .phase-card__rail::after {
+  display: none;
+}
+
+.phase-card--running .phase-card__node {
+  border-color: var(--cyan);
+  background: var(--cyan);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+.phase-card--done .phase-card__node {
+  border-color: var(--cyan);
+  background: var(--cyan-dim);
+}
+
+.phase-card--failed .phase-card__node {
+  border-color: var(--red);
+  background: var(--red);
+}
+
+.phase-card--skipped .phase-card__node {
+  border-color: var(--muted);
+  border-style: dashed;
+}
+
+.phase-card__body {
+  flex: 1;
+  padding-bottom: 1.25rem;
+  min-width: 0;
+}
+
+.phase-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  background: transparent;
+  border: none;
+  padding: 0;
+  text-align: left;
+}
+
+.phase-card__index {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.phase-card__name {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.phase-card--running .phase-card__name,
+.phase-card--done .phase-card__name {
+  color: var(--cyan);
+}
+
+.phase-card__state {
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.phase-card__state--running {
+  color: var(--cyan);
+  border-color: var(--cyan);
+  background: var(--cyan-dim);
+}
+
+.phase-card__state--done {
+  color: var(--cyan);
+  border-color: var(--line-bright);
+}
+
+.phase-card__state--failed {
+  color: var(--red);
+  border-color: var(--red);
+  background: var(--red-dim);
+}
+
+.phase-card__state--skipped {
+  color: var(--amber);
+  border-color: var(--amber);
+}
+
+.phase-card__chevron {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.phase-card__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+
+.chip {
+  font-size: 0.65rem;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.15rem 0.55rem;
+  background: var(--bg-0);
+}
+
+.phase-card__cond {
+  font-size: 0.66rem;
+  color: var(--amber);
+  margin: 0.5rem 0 0;
+}
+
+.phase-card__findings {
+  margin-top: 0.85rem;
+}

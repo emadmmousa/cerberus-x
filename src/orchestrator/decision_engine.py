@@ -1,13 +1,21 @@
-import json
-import re
 import logging
-from typing import Any, Dict, List, Optional, Tuple
-from .database import save_state, load_state
-from .tasks import build_phase_workflow
-from celery import chain, group
-from .celery_app import app
+import re
+from typing import Any, Dict, List
+
+from .database import load_state, save_state
 
 logger = logging.getLogger(__name__)
+
+
+def _payload(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Accept nested {result:...} or flat wrapper dicts."""
+    if not isinstance(item, dict):
+        return {}
+    nested = item.get("result")
+    if isinstance(nested, dict):
+        return nested
+    return item
+
 
 class DecisionEngine:
     def __init__(self, target: str):
@@ -17,86 +25,91 @@ class DecisionEngine:
 
     def evaluate_phase(self, phase_name: str, phase_results: List[Dict]) -> Dict[str, Any]:
         """Process results of a completed phase and update state."""
-        self.results_cache[phase_name] = phase_results
+        if isinstance(phase_results, dict):
+            phase_results = [phase_results]
+        self.results_cache[phase_name] = phase_results or []
 
-        for item in phase_results:
-            tool = item.get('tool')
-            if tool == 'nuclei':
+        for item in phase_results or []:
+            if not isinstance(item, dict):
+                continue
+            tool = item.get("tool") or _payload(item).get("tool")
+            if tool == "nuclei":
                 self._process_nuclei_results(item)
-            elif tool == 'nikto':
+            elif tool == "nikto":
                 self._process_nikto_results(item)
-            elif tool == 'metasploit':
+            elif tool == "metasploit":
                 self._process_metasploit_results(item)
-            elif tool == 'sqlmap':
+            elif tool == "sqlmap":
                 self._process_sqlmap_results(item)
-            elif tool == 'nmap':
+            elif tool == "nmap":
                 self._process_nmap_results(item)
-            elif tool == 'gobuster':
+            elif tool == "gobuster":
                 self._process_gobuster_results(item)
-            elif tool == 'ffuf':
+            elif tool == "ffuf":
                 self._process_ffuf_results(item)
 
         save_state(self.target, self.state)
         return self.state
 
     def _process_nuclei_results(self, item):
-        result = item.get('result', {})
-        findings = result.get('findings', [])
+        result = _payload(item)
+        findings = result.get("findings", [])
         vulns = []
-        for f in findings:
-            title = f.get('title', '')
-            if 'CVE' in title:
-                cve_match = re.search(r'CVE-\d{4}-\d+', title)
+        for finding in findings:
+            title = finding.get("title", "")
+            if "CVE" in title:
+                cve_match = re.search(r"CVE-\d{4}-\d+", title)
                 if cve_match:
-                    vulns.append({
-                        'cve': cve_match.group(0),
-                        'severity': f.get('severity', 'unknown'),
-                        'title': title
-                    })
+                    vulns.append(
+                        {
+                            "cve": cve_match.group(0),
+                            "severity": finding.get("severity", "unknown"),
+                            "title": title,
+                        }
+                    )
         if vulns:
-            self.state.setdefault('vulnerabilities', []).extend(vulns)
-            self.state['vuln_found'] = True
+            self.state.setdefault("vulnerabilities", []).extend(vulns)
+            self.state["vuln_found"] = True
 
     def _process_nikto_results(self, item):
-        result = item.get('result', {})
-        issues = result.get('issues', [])
+        result = _payload(item)
+        issues = result.get("issues", [])
         if issues:
-            self.state.setdefault('nikto_issues', []).extend(issues)
-            self.state['vuln_found'] = True
+            self.state.setdefault("nikto_issues", []).extend(issues)
+            self.state["vuln_found"] = True
 
     def _process_metasploit_results(self, item):
-        result = item.get('result', {})
-        sessions = result.get('sessions', [])
+        result = _payload(item)
+        sessions = result.get("sessions", [])
         if sessions:
-            self.state.setdefault('sessions', []).extend(sessions)
-            self.state['has_session'] = True
-        # Also check for exploits executed
-        if result.get('vulnerable'):
-            self.state['vuln_found'] = True
+            self.state.setdefault("sessions", []).extend(sessions)
+            self.state["has_session"] = True
+        if result.get("vulnerable"):
+            self.state["vuln_found"] = True
 
     def _process_sqlmap_results(self, item):
-        result = item.get('result', {})
-        if result.get('vulnerable'):
-            self.state['sql_injection'] = True
-            self.state['vuln_found'] = True
+        result = _payload(item)
+        if result.get("vulnerable"):
+            self.state["sql_injection"] = True
+            self.state["vuln_found"] = True
 
     def _process_nmap_results(self, item):
-        result = item.get('result', {})
-        ports = result.get('ports', [])
+        result = _payload(item)
+        ports = result.get("ports", [])
         if ports:
-            self.state.setdefault('open_ports', []).extend(ports)
+            self.state.setdefault("open_ports", []).extend(ports)
 
     def _process_gobuster_results(self, item):
-        result = item.get('result', {})
-        dirs = result.get('directories', [])
+        result = _payload(item)
+        dirs = result.get("directories", [])
         if dirs:
-            self.state.setdefault('directories', []).extend(dirs)
+            self.state.setdefault("directories", []).extend(dirs)
 
     def _process_ffuf_results(self, item):
-        result = item.get('result', {})
-        finds = result.get('results', [])
+        result = _payload(item)
+        finds = result.get("results", [])
         if finds:
-            self.state.setdefault('ffuf_finds', []).extend(finds)
+            self.state.setdefault("ffuf_finds", []).extend(finds)
 
     def decide_next_phase(self, playbook_phases: List[Dict]) -> List[Dict]:
         """Given the playbook phases, decide which to run based on current state."""
@@ -113,8 +126,12 @@ class DecisionEngine:
                 if dep_result is None:
                     continue
                 for item in dep_result:
-                    if item.get('result', {}).get('error'):
-                        logger.warning(f"Skipping phase {phase['name']} due to error in dependency {dep}")
+                    if _payload(item).get("error"):
+                        logger.warning(
+                            "Skipping phase %s due to error in dependency %s",
+                            phase["name"],
+                            dep,
+                        )
                         skip = True
                         break
                 if skip:
