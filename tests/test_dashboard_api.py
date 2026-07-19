@@ -123,9 +123,99 @@ def test_playbook_summary_missing_file():
 
 
 def test_proxy_status_no_secrets(monkeypatch):
+    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    from tools import proxy_settings
+
+    proxy_settings._memory_clear()
     monkeypatch.setenv("OXYLABS_PROXY_USERNAME", "u")
     monkeypatch.setenv("OXYLABS_PROXY_PASSWORD", "secret")
     client = dashboard.app.test_client()
     data = client.get("/api/proxy/status").get_json()
     assert data == {"configured": True}
     assert "secret" not in str(data)
+
+
+def test_proxy_settings_put_get_redacts_password(monkeypatch, tmp_path):
+    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    from tools import proxy_settings
+
+    proxy_settings._memory_clear()
+    env_path = tmp_path / ".env"
+    env_path.write_text("FOO=1\n", encoding="utf-8")
+    monkeypatch.setenv("CERBERUS_ENV_FILE", str(env_path))
+    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+    monkeypatch.delenv("OXYLABS_PROXY_USERNAME", raising=False)
+    monkeypatch.delenv("OXYLABS_PROXY_PASSWORD", raising=False)
+
+    client = dashboard.app.test_client()
+    put = client.put(
+        "/api/proxy/settings",
+        json={
+            "proxy_url": "http://customer-x:s3cret@pr.oxylabs.io:7777",
+        },
+    )
+    assert put.status_code == 200
+    data = put.get_json()
+    assert data["ok"] is True
+    assert data["redis"]["ok"] is True
+    assert data["env"]["ok"] is True
+    assert data["k8s"]["ok"] is False
+    assert "s3cret" not in str(data)
+    assert data["password_set"] is True
+    assert data["username"] == "customer-x"
+
+    got = client.get("/api/proxy/settings").get_json()
+    assert got["configured"] is True
+    assert got["source"] == "redis"
+    assert "password" not in got
+    assert "s3cret" not in str(got)
+    assert "OXYLABS_PROXY_PASSWORD=s3cret" in env_path.read_text(encoding="utf-8")
+
+
+def test_proxy_settings_empty_password_keeps_existing(monkeypatch, tmp_path):
+    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    from tools import proxy_settings
+
+    proxy_settings._memory_clear()
+    env_path = tmp_path / ".env"
+    monkeypatch.setenv("CERBERUS_ENV_FILE", str(env_path))
+    monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
+
+    client = dashboard.app.test_client()
+    client.put(
+        "/api/proxy/settings",
+        json={
+            "username": "u",
+            "password": "keep-me",
+            "host": "pr.oxylabs.io",
+            "port": 7777,
+            "protocol": "http",
+        },
+    )
+    resp = client.put(
+        "/api/proxy/settings",
+        json={
+            "username": "u2",
+            "password": "",
+            "host": "pr.oxylabs.io",
+            "port": 7777,
+            "protocol": "http",
+        },
+    )
+    assert resp.status_code == 200
+    stored = proxy_settings.load_settings()
+    assert stored["password"] == "keep-me"
+    assert stored["username"] == "u2"
+
+
+def test_proxy_settings_put_invalid_returns_400(monkeypatch):
+    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    from tools import proxy_settings
+
+    proxy_settings._memory_clear()
+    monkeypatch.delenv("OXYLABS_PROXY_USERNAME", raising=False)
+    monkeypatch.delenv("OXYLABS_PROXY_PASSWORD", raising=False)
+    client = dashboard.app.test_client()
+    resp = client.put("/api/proxy/settings", json={"host": "only-host"})
+    assert resp.status_code == 400
+    assert "error" in resp.get_json()

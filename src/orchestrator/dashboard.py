@@ -21,6 +21,9 @@ from .metasploit_socketio import register_metasploit_socketio
 from .prometheus_metrics import metrics_endpoint, update_queue_length
 from .tasks import build_phase_workflow
 from tools.proxy_config import ALLOWED_PROTOCOLS, credentials_configured
+from tools import proxy_settings
+from tools.env_file import clear_oxylabs_keys, upsert_oxylabs_keys
+from tools.k8s_proxy_sync import sync_proxy_to_kubernetes
 from tools.waf_evasion import evasion_profile
 
 logger = logging.getLogger(__name__)
@@ -103,6 +106,99 @@ def proxy_status():
         "yes",
     }
     return jsonify({"configured": credentials_configured() or flagged})
+
+
+def _env_file_path() -> str:
+    return os.getenv("CERBERUS_ENV_FILE", "/app/.env")
+
+
+def _settings_response(creds: dict | None, *, source: str, **extra):
+    body = proxy_settings.public_view(creds, source=source)
+    body.update(extra)
+    return body
+
+
+@app.route("/api/proxy/settings", methods=["GET"])
+def proxy_settings_get():
+    creds = proxy_settings.load_credentials()
+    source = (creds or {}).get("source", "none") if creds else "none"
+    return jsonify(_settings_response(creds, source=source))
+
+
+@app.route("/api/proxy/settings", methods=["PUT"])
+def proxy_settings_put():
+    body = request.get_json(silent=True) or {}
+    existing = proxy_settings.load_settings() or proxy_settings.load_credentials()
+    try:
+        merged = proxy_settings.merge_put_body(body, existing)
+    except (ValueError, TypeError) as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
+        proxy_settings.save_settings(merged)
+    except Exception as exc:
+        return jsonify({"error": f"redis write failed: {exc}"}), 503
+
+    redis_status = {"ok": True}
+    env_status: dict
+    try:
+        upsert_oxylabs_keys(
+            _env_file_path(),
+            {
+                "OXYLABS_PROXY_USERNAME": merged["username"],
+                "OXYLABS_PROXY_PASSWORD": merged["password"],
+                "OXYLABS_PROXY_HOST": merged["host"],
+                "OXYLABS_PROXY_PORT": str(merged["port"]),
+                "OXYLABS_PROXY_PROTOCOL": merged["protocol"],
+            },
+        )
+        env_status = {"ok": True}
+    except Exception as exc:
+        env_status = {"ok": False, "error": str(exc)}
+
+    k8s_status = sync_proxy_to_kubernetes(merged)
+    view = _settings_response(
+        {**merged, "source": "redis"},
+        source="redis",
+        ok=True,
+        redis=redis_status,
+        env=env_status,
+        k8s=k8s_status,
+    )
+    return jsonify(view)
+
+
+@app.route("/api/proxy/settings", methods=["DELETE"])
+def proxy_settings_delete():
+    purge = request.args.get("purge", "").lower() in {"1", "true", "yes"}
+    try:
+        proxy_settings.clear_settings()
+    except Exception as exc:
+        return jsonify({"error": f"redis clear failed: {exc}"}), 503
+
+    env_status = {"ok": True}
+    k8s_status = {"ok": True}
+    if purge:
+        try:
+            clear_oxylabs_keys(_env_file_path())
+        except Exception as exc:
+            env_status = {"ok": False, "error": str(exc)}
+        from tools.k8s_proxy_sync import clear_proxy_from_kubernetes
+
+        k8s_status = clear_proxy_from_kubernetes()
+
+    return jsonify(
+        {
+            "ok": True,
+            "configured": credentials_configured(),
+            "source": "none"
+            if not credentials_configured()
+            else (proxy_settings.load_credentials() or {}).get("source", "env"),
+            "redis": {"ok": True},
+            "env": env_status,
+            "k8s": k8s_status,
+        }
+    )
 
 
 @app.route("/api/playbook")
@@ -208,11 +304,14 @@ def _run_playbook_job(
             parallel = phase.get("parallel", False)
 
             # Re-evaluate when/depends after each prior phase updates state.
-            if not decision_engine.decide_next_phase([phase]):
-                reason = phase.get("when") or "dependency gate"
-                add_log(f"Skipping phase {phase_name} ({reason})", level="INFO")
+            should_run, skip_reason = decision_engine.should_run_phase(phase)
+            if not should_run:
+                add_log(
+                    f"Skipping phase {phase_name} ({skip_reason})",
+                    level="INFO",
+                )
                 job["phases"].append(
-                    {"phase": phase_name, "error": f"skipped: {reason}"}
+                    {"phase": phase_name, "error": f"skipped: {skip_reason}"}
                 )
                 continue
 
