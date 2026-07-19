@@ -14,7 +14,7 @@ spec:
     type: RollingUpdate
     rollingUpdate:
       maxSurge: 1
-      maxUnavailable: 0
+      maxUnavailable: 1
   template:
     metadata:
       labels:
@@ -74,12 +74,14 @@ spec:
             port: 5000
           initialDelaySeconds: 30
           periodSeconds: 10
+          timeoutSeconds: 5
         readinessProbe:
           httpGet:
             path: /ready
             port: 5000
           initialDelaySeconds: 10
           periodSeconds: 5
+          timeoutSeconds: 5
         resources:
           requests:
             memory: "512Mi"
