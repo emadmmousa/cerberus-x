@@ -2,6 +2,9 @@ import os
 import re
 import subprocess
 
+from tools.waf_evasion import random_delay, random_headers
+from tools.wrappers._proxy import merge_env, proxy_meta
+
 WORDLIST = "/usr/share/dirb/wordlists/common.txt"
 _WORDLIST_ALIASES = {
     "/usr/share/wordlists/dirb/common.txt": WORDLIST,
@@ -20,7 +23,9 @@ def _url(target: str) -> str:
     return f"https://{target}".rstrip("/")
 
 
-def _normalize_args(args: list[str], url: str) -> list[str]:
+def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
+    if evasion is None:
+        evasion = {}
     normalized = [
         arg.replace("{{target}}", url) if isinstance(arg, str) else arg
         for arg in args
@@ -46,6 +51,10 @@ def _normalize_args(args: list[str], url: str) -> list[str]:
             fixed.extend(["-w", WORDLIST])
     if "-ac" not in fixed and "--auto-calibrate" not in fixed:
         fixed.append("-ac")
+    if evasion.get("random_headers", False):
+        headers = random_headers()
+        for key, value in headers.items():
+            fixed.extend(["-H", f"{key}: {value}"])
     return fixed
 
 
@@ -71,9 +80,15 @@ def _parse_results(output: str) -> list[dict]:
     return results
 
 
-def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http"):
-    from tools.wrappers._proxy import merge_env, proxy_meta
-
+def scan(
+    target,
+    args=None,
+    use_proxy: bool = False,
+    proxy_protocol: str = "http",
+    evasion=None,
+):
+    if evasion is None:
+        evasion = {}
     url = _url(target)
     resolved, meta = proxy_meta("ffuf", use_proxy, proxy_protocol)
     if args is None:
@@ -83,15 +98,17 @@ def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http
             "-w",
             WORDLIST,
             "-mc",
-            "200,204,301,302,307,401,403",
-            "-t",
-            "20",
+            "200,301,302,401,403",
             "-maxtime",
             "60",
             "-ac",
         ]
     else:
-        args = _normalize_args(list(args), url)
+        args = _normalize_args(list(args), url, evasion)
+    if evasion.get("random_delay_min", 0) > 0:
+        random_delay(
+            evasion.get("random_delay_min"), evasion.get("random_delay_max")
+        )
 
     cmd = ["ffuf", *args, *resolved["flags"]]
     env = merge_env(resolved["env"])

@@ -2,6 +2,7 @@ export type RunRequest = {
   target: string;
   use_proxy?: boolean;
   proxy_protocol?: "http" | "https" | "socks5h";
+  evasion?: "low" | "medium" | "high" | "aggressive" | "off";
 };
 
 export type RunResponse = {
@@ -44,6 +45,7 @@ export type PlaybookPhase = {
 
 export type PlaybookSummary = {
   name?: string;
+  evasion?: string;
   phases: PlaybookPhase[];
 };
 

@@ -56,9 +56,17 @@ def test_results_falls_back_to_sqlite(monkeypatch, tmp_path):
 def test_api_run_accepts_proxy_flags(monkeypatch):
     captured = {}
 
-    def _fake_run(job_id, target, playbook, use_proxy=False, proxy_protocol="http"):
+    def _fake_run(
+        job_id,
+        target,
+        playbook,
+        use_proxy=False,
+        proxy_protocol="http",
+        evasion=None,
+    ):
         captured["use_proxy"] = use_proxy
         captured["proxy_protocol"] = proxy_protocol
+        captured["evasion"] = evasion
         dashboard.playbook_jobs[job_id]["state"] = "SUCCESS"
 
     class ImmediateThread:
@@ -73,16 +81,25 @@ def test_api_run_accepts_proxy_flags(monkeypatch):
     monkeypatch.setattr(dashboard, "_run_playbook_job", _fake_run)
     monkeypatch.setattr(
         "builtins.open",
-        lambda *a, **k: __import__("io").StringIO("phases: []\n"),
+        lambda *a, **k: __import__("io").StringIO(
+            "evasion: medium\nphases: []\n"
+        ),
     )
     client = dashboard.app.test_client()
     resp = client.post(
         "/api/run",
-        json={"target": "example.com", "use_proxy": True, "proxy_protocol": "http"},
+        json={
+            "target": "example.com",
+            "use_proxy": True,
+            "proxy_protocol": "http",
+            "evasion": "high",
+        },
     )
     assert resp.status_code == 200
     assert captured["use_proxy"] is True
     assert captured["proxy_protocol"] == "http"
+    assert captured["evasion"]["random_headers"] is True
+    assert captured["evasion"]["random_delay_max"] >= 1.0
 
 
 def test_playbook_summary_lists_phases():
@@ -90,6 +107,7 @@ def test_playbook_summary_lists_phases():
     resp = client.get("/api/playbook")
     assert resp.status_code == 200
     data = resp.get_json()
+    assert data["evasion"] == "aggressive"
     assert "phases" in data
     assert isinstance(data["phases"], list)
     assert data["phases"], "expected at least one phase"

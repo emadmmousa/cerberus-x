@@ -2,6 +2,9 @@ import os
 import re
 import subprocess
 
+from tools.waf_evasion import random_delay, random_headers
+from tools.wrappers._proxy import merge_env, proxy_meta
+
 TEMPLATE_ROOTS = (
     os.environ.get("NUCLEI_TEMPLATES_DIR", "/root/nuclei-templates"),
     "/home/nuclei/nuclei-templates",
@@ -16,7 +19,6 @@ def _url(target: str) -> str:
 
 
 def _resolve_template_arg(value: str) -> str:
-    """Map short template paths like cves/ to installed nuclei-templates dirs."""
     if not value or value.startswith("/") or os.path.isdir(value) or os.path.isfile(value):
         return value
     candidates = [
@@ -34,18 +36,19 @@ def _resolve_template_arg(value: str) -> str:
                 return path
             if not candidate.endswith("/") and os.path.isdir(f"{path}/"):
                 return f"{path}/"
-    # Prefer the canonical CVE tree even if templates were not downloaded yet.
     return os.path.join(TEMPLATE_ROOTS[0], "http/cves/")
 
 
-def _normalize_args(args: list[str]) -> list[str]:
+def _normalize_args(args: list[str], evasion=None) -> list[str]:
+    if evasion is None:
+        evasion = {}
     normalized: list[str] = []
     skip_next = False
     for index, arg in enumerate(args):
         if skip_next:
             skip_next = False
             continue
-        if arg in {"-t", "--templates"}:
+        if arg in ("-t", "--templates"):
             if index + 1 < len(args):
                 normalized.extend([arg, _resolve_template_arg(str(args[index + 1]))])
                 skip_next = True
@@ -55,12 +58,22 @@ def _normalize_args(args: list[str]) -> list[str]:
             normalized.append(f"{key}={_resolve_template_arg(value)}")
             continue
         normalized.append(arg)
+    if evasion.get("random_headers", False):
+        headers = random_headers()
+        for key, value in headers.items():
+            normalized.extend(["-H", f"{key}: {value}"])
     return normalized
 
 
-def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http"):
-    from tools.wrappers._proxy import merge_env, proxy_meta
-
+def scan(
+    target,
+    args=None,
+    use_proxy: bool = False,
+    proxy_protocol: str = "http",
+    evasion=None,
+):
+    if evasion is None:
+        evasion = {}
     url = _url(target)
     resolved, meta = proxy_meta("nuclei", use_proxy, proxy_protocol)
     if args is None:
@@ -72,13 +85,17 @@ def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http
             "-silent",
         ]
     else:
-        args = _normalize_args(list(args))
+        args = _normalize_args(list(args), evasion)
         if "-t" not in args and "--templates" not in args and not any(
             str(arg).startswith("--templates=") for arg in args
         ):
             args = ["-t", _resolve_template_arg("http/cves/"), *args]
         if "-silent" not in args and "--silent" not in args:
             args = [*args, "-silent"]
+    if evasion.get("random_delay_min", 0) > 0:
+        random_delay(
+            evasion.get("random_delay_min"), evasion.get("random_delay_max")
+        )
 
     cmd = ["nuclei", "-u", url, *args, *resolved["flags"]]
     env = merge_env(resolved["env"])
@@ -86,11 +103,11 @@ def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http
         output = subprocess.check_output(
             cmd, stderr=subprocess.STDOUT, text=True, env=env
         )
-    except FileNotFoundError:
+    except FileNotFoundError as e:
         return {
             "tool": "nuclei",
             "target": url,
-            "error": "nuclei binary not found",
+            "error": str(e),
             "proxy": meta,
         }
     except subprocess.CalledProcessError as e:
@@ -148,6 +165,6 @@ def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http
         "tool": "nuclei",
         "target": url,
         "findings": findings,
-        "raw_output": output if output.strip() else "no findings",
+        "raw_output": output,
         "proxy": meta,
     }

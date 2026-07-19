@@ -18,6 +18,9 @@ function formatTime(ts?: number): string {
 export function MissionControl({ target, onTargetChange }: Props) {
   const [useProxy, setUseProxy] = useState(false);
   const [protocol, setProtocol] = useState<"http" | "https" | "socks5h">("http");
+  const [evasion, setEvasion] = useState<
+    "low" | "medium" | "high" | "aggressive" | "off"
+  >("aggressive");
   const {
     status,
     error,
@@ -38,6 +41,7 @@ export function MissionControl({ target, onTargetChange }: Props) {
       target: target.trim(),
       use_proxy: useProxy,
       proxy_protocol: protocol,
+      evasion,
     });
   }
 
@@ -73,6 +77,31 @@ export function MissionControl({ target, onTargetChange }: Props) {
           >
             {isActive ? "Operation Running\u2026" : "Launch Full Spectrum"}
           </button>
+        </div>
+
+        <div className="field" style={{ maxWidth: 220, marginBottom: "0.75rem" }}>
+          <label htmlFor="evasion-level">WAF Evasion</label>
+          <select
+            id="evasion-level"
+            value={evasion}
+            onChange={(e) =>
+              setEvasion(
+                e.target.value as
+                  | "low"
+                  | "medium"
+                  | "high"
+                  | "aggressive"
+                  | "off",
+              )
+            }
+            disabled={isActive}
+          >
+            <option value="off">off</option>
+            <option value="low">low</option>
+            <option value="medium">medium</option>
+            <option value="high">high</option>
+            <option value="aggressive">aggressive</option>
+          </select>
         </div>
 
         <ProxyToggle

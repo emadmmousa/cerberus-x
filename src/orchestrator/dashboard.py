@@ -14,14 +14,29 @@ from flask_socketio import SocketIO, emit
 from .celery_app import app as celery_app
 from .cli import collect_chain_results, collect_group_results
 from .database import get_results, init_db, save_phase_result
+from .decision_engine import DecisionEngine
 from .elasticsearch_client import ElasticsearchClient
 from .metasploit_api import msf_bp
 from .metasploit_socketio import register_metasploit_socketio
 from .prometheus_metrics import metrics_endpoint, update_queue_length
 from .tasks import build_phase_workflow
 from tools.proxy_config import ALLOWED_PROTOCOLS, credentials_configured
+from tools.waf_evasion import evasion_profile
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_evasion(playbook: dict, override=None) -> dict:
+    """Build evasion settings from API override or playbook default."""
+    raw = override if override is not None else playbook.get("evasion")
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        level = raw.strip().lower()
+        if level in {"off", "none", "false", "0"}:
+            return {}
+        return evasion_profile(level)
+    return {}
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "cerberus-x-secret"
@@ -114,6 +129,7 @@ def playbook_summary():
     return jsonify(
         {
             "name": playbook.get("name"),
+            "evasion": playbook.get("evasion"),
             "phases": phases,
         }
     )
@@ -146,11 +162,20 @@ def results():
     return jsonify(get_results(target, limit))
 
 
-def _run_playbook_job(job_id, target, playbook, use_proxy=False, proxy_protocol="http"):
+def _run_playbook_job(
+    job_id, target, playbook, use_proxy=False, proxy_protocol="http", evasion=None
+):
     job = playbook_jobs[job_id]
     job["state"] = "STARTED"
     job["use_proxy"] = use_proxy
     job["proxy_protocol"] = proxy_protocol
+    resolved_evasion = evasion if isinstance(evasion, dict) else _resolve_evasion(playbook)
+    job["evasion"] = {
+        "random_headers": bool(resolved_evasion.get("random_headers")),
+        "obfuscate_payloads": bool(resolved_evasion.get("obfuscate_payloads")),
+        "random_delay_min": resolved_evasion.get("random_delay_min"),
+        "random_delay_max": resolved_evasion.get("random_delay_max"),
+    }
     try:
         if use_proxy:
             flagged = os.getenv("OXYLABS_PROXY_CONFIGURED", "").lower() in {
@@ -165,11 +190,32 @@ def _run_playbook_job(job_id, target, playbook, use_proxy=False, proxy_protocol=
                 )
             else:
                 add_log("use_proxy enabled for this run", level="INFO")
+        if resolved_evasion:
+            add_log(
+                "WAF evasion active "
+                f"(headers={resolved_evasion.get('random_headers')}, "
+                f"delay={resolved_evasion.get('random_delay_min')}-"
+                f"{resolved_evasion.get('random_delay_max')})",
+                level="INFO",
+            )
+
+        init_db()
+        decision_engine = DecisionEngine(target)
 
         for phase in playbook.get("phases", []):
             phase_name = phase.get("name")
             tools = phase.get("tools", [])
             parallel = phase.get("parallel", False)
+
+            # Re-evaluate when/depends after each prior phase updates state.
+            if not decision_engine.decide_next_phase([phase]):
+                reason = phase.get("when") or "dependency gate"
+                add_log(f"Skipping phase {phase_name} ({reason})", level="INFO")
+                job["phases"].append(
+                    {"phase": phase_name, "error": f"skipped: {reason}"}
+                )
+                continue
+
             add_log(
                 f"Running phase {phase_name} for {target} "
                 f"(parallel={parallel}, proxy={use_proxy})"
@@ -181,6 +227,7 @@ def _run_playbook_job(job_id, target, playbook, use_proxy=False, proxy_protocol=
                 parallel=parallel,
                 use_proxy=use_proxy,
                 proxy_protocol=proxy_protocol,
+                evasion=resolved_evasion,
             )
             if workflow is None:
                 job["phases"].append({"phase": phase_name, "error": "No valid tools"})
@@ -193,6 +240,33 @@ def _run_playbook_job(job_id, target, playbook, use_proxy=False, proxy_protocol=
                 phase_outputs = collect_chain_results(async_result, timeout=600)
             job.setdefault("results", {})[phase_name] = phase_outputs
             save_phase_result(target, phase_name, phase_outputs)
+            decision_engine.evaluate_phase(phase_name, phase_outputs)
+
+            actions = decision_engine.generate_post_phase_actions(
+                phase_name, phase_outputs
+            )
+            for action in actions:
+                action_name = f"auto_{action['tool']}_{phase_name}"
+                add_log(f"Auto action {action_name}", level="INFO")
+                action_workflow = build_phase_workflow(
+                    action_name,
+                    [{"tool": action["tool"], "args": action["args"]}],
+                    target,
+                    parallel=False,
+                    use_proxy=use_proxy,
+                    proxy_protocol=proxy_protocol,
+                    evasion=resolved_evasion,
+                )
+                if action_workflow is None:
+                    continue
+                action_result = action_workflow.apply_async()
+                action_output = collect_chain_results(action_result, timeout=300)
+                job.setdefault("results", {})[action_name] = action_output
+                save_phase_result(target, action_name, action_output)
+                job["phases"].append(
+                    {"phase": action_name, "task_id": action_result.id}
+                )
+
             add_log(f"Completed phase {phase_name}")
         job["state"] = "SUCCESS"
         add_log(f"Playbook finished for {target}")
@@ -222,6 +296,13 @@ def api_run():
     except FileNotFoundError:
         return jsonify({"error": f"playbook not found: {playbook_path}"}), 404
 
+    evasion_override = body.get("evasion")
+    if evasion_override is not None and not isinstance(
+        evasion_override, (str, dict)
+    ):
+        return jsonify({"error": "invalid evasion"}), 400
+    resolved_evasion = _resolve_evasion(playbook, evasion_override)
+
     job_id = str(uuid.uuid4())
     playbook_jobs[job_id] = {
         "task_id": job_id,
@@ -233,7 +314,14 @@ def api_run():
     }
     threading.Thread(
         target=_run_playbook_job,
-        args=(job_id, target, playbook, use_proxy, proxy_protocol),
+        args=(
+            job_id,
+            target,
+            playbook,
+            use_proxy,
+            proxy_protocol,
+            resolved_evasion,
+        ),
         daemon=True,
     ).start()
     add_log(

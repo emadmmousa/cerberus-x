@@ -116,6 +116,7 @@ def get_results(target=None, limit=100):
 
 
 def save_state(target: str, state: dict):
+    init_db()
     with get_db() as conn:
         conn.execute(
             "REPLACE INTO state (target, state_json) VALUES (?, ?)",
@@ -125,6 +126,7 @@ def save_state(target: str, state: dict):
 
 
 def load_state(target: str) -> dict:
+    init_db()
     with get_db() as conn:
         cursor = conn.execute(
             "SELECT state_json FROM state WHERE target = ?",

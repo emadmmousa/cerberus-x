@@ -46,7 +46,10 @@ function derivePhases(
     const findings = resultsByPhase[phase.name] ?? [];
     let state: PhaseState = "pending";
 
-    if (rep?.error === "No valid tools") {
+    if (
+      rep?.error === "No valid tools" ||
+      (typeof rep?.error === "string" && rep.error.startsWith("skipped:"))
+    ) {
       state = "skipped";
     } else if (savedPhases.has(phase.name) || findings.length > 0) {
       state = "done";

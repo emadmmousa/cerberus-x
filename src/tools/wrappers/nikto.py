@@ -1,6 +1,9 @@
 import subprocess
 from urllib.parse import urlparse
 
+from tools.waf_evasion import random_delay, random_headers
+from tools.wrappers._proxy import merge_env, proxy_meta
+
 DEFAULT_TIMEOUT_SECONDS = 120
 
 
@@ -10,8 +13,10 @@ def _url(target: str) -> str:
     return f"https://{target}"
 
 
-def _normalize_args(url: str, args: list[str]) -> list[str]:
+def _normalize_args(url: str, args: list[str], evasion=None) -> list[str]:
     """Drop -port/-ssl when -host is already a full URI (Nikto rejects that combo)."""
+    if evasion is None:
+        evasion = {}
     normalized: list[str] = []
     skip_next = False
     parsed = urlparse(url)
@@ -25,9 +30,7 @@ def _normalize_args(url: str, args: list[str]) -> list[str]:
             if arg in {"-port", "-p"} and index + 1 < len(args):
                 skip_next = True
             continue
-        if has_scheme and (
-            arg.startswith("-port=") or arg.startswith("-p=")
-        ):
+        if has_scheme and (arg.startswith("-port=") or arg.startswith("-p=")):
             continue
         normalized.append(arg)
 
@@ -35,6 +38,10 @@ def _normalize_args(url: str, args: list[str]) -> list[str]:
         str(arg).startswith("-maxtime=") for arg in normalized
     ):
         normalized.extend(["-maxtime", "60"])
+    if evasion.get("random_headers", False):
+        headers = random_headers()
+        for key, value in headers.items():
+            normalized.extend(["-header", f"{key}: {value}"])
     return normalized
 
 
@@ -44,15 +51,20 @@ def scan(
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     use_proxy: bool = False,
     proxy_protocol: str = "http",
+    evasion=None,
 ):
-    from tools.wrappers._proxy import merge_env, proxy_meta
-
+    if evasion is None:
+        evasion = {}
     url = _url(target)
     resolved, meta = proxy_meta("nikto", use_proxy, proxy_protocol)
     if args is None:
         args = ["-maxtime", "60"]
     else:
-        args = _normalize_args(url, list(args))
+        args = _normalize_args(url, list(args), evasion)
+    if evasion.get("random_delay_min", 0) > 0:
+        random_delay(
+            evasion.get("random_delay_min"), evasion.get("random_delay_max")
+        )
 
     cmd = ["nikto", "-host", url, *args, *resolved["flags"]]
     env = merge_env(resolved["env"])
@@ -66,7 +78,11 @@ def scan(
             env=env,
         )
         output = (completed.stdout or "") + (completed.stderr or "")
-        issues = [line.strip() for line in output.splitlines() if line.strip().startswith("+")]
+        issues = [
+            line.strip()
+            for line in output.splitlines()
+            if line.strip().startswith("+")
+        ]
         result = {
             "tool": "nikto",
             "target": url,
@@ -81,7 +97,8 @@ def scan(
                 (
                     line.strip()
                     for line in output.splitlines()
-                    if line.strip().startswith("- ERROR:") or line.strip().startswith("ERROR:")
+                    if line.strip().startswith("- ERROR:")
+                    or line.strip().startswith("ERROR:")
                 ),
                 None,
             )
@@ -100,7 +117,11 @@ def scan(
         return {
             "tool": "nikto",
             "target": url,
-            "issues": [line.strip() for line in output.splitlines() if line.strip().startswith("+")],
+            "issues": [
+                line.strip()
+                for line in output.splitlines()
+                if line.strip().startswith("+")
+            ],
             "raw_output": output,
             "error": f"nikto timed out after {timeout}s",
             "proxy": meta,

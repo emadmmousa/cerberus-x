@@ -76,6 +76,7 @@ describe("MissionControl", () => {
             target: "test.com",
             use_proxy: true,
             proxy_protocol: "http",
+            evasion: "aggressive",
           }),
         }),
       );

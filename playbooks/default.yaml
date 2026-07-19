@@ -1,5 +1,7 @@
 name: "Full Spectrum Attack"
-target: "https://wks.agency"
+target: "https://takwene.com"
+evasion: "aggressive"   # low, medium, high, aggressive
+
 phases:
   - name: "recon"
     tools:
