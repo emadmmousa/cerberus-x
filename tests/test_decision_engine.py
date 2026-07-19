@@ -100,6 +100,22 @@ def test_generate_actions_dedupes_same_cve_within_job():
     assert second == []
 
 
+def test_generate_actions_dedupes_duplicate_vulnerabilities_in_same_pass():
+    eng = DecisionEngine("t", job_id="j1")
+    eng.state = {
+        "vuln_found": True,
+        "vulnerabilities": [
+            {"cve": "CVE-2021-41773", "severity": "high"},
+            {"cve": "CVE-2021-41773", "severity": "critical"},
+        ],
+    }
+
+    actions = eng.generate_post_phase_actions("vulnerability_scan", [])
+
+    assert len(actions) == 1
+    assert actions[0]["finding_id"] == "CVE-2021-41773"
+
+
 def test_post_ex_uses_real_session_ids_not_hardcoded_one():
     eng = DecisionEngine("t", job_id="j1")
     eng.state = {

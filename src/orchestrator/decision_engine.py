@@ -158,6 +158,7 @@ class DecisionEngine:
     def generate_post_phase_actions(self, phase_name: str, phase_results: List[Dict]) -> List[Dict]:
         """Generate additional tasks based on phase results."""
         actions = []
+        proposed_keys: set[str] = set()
         exploit_modules = {
             "CVE-2021-41773": (
                 "exploit/multi/http/apache_path_traversal",
@@ -177,7 +178,8 @@ class DecisionEngine:
                 if not match:
                     continue
                 module, options = match
-                if self._action_fired("exploit", cve, module):
+                key = f"exploit:{cve}:{module}"
+                if key in proposed_keys or self._action_fired("exploit", cve, module):
                     continue
                 actions.append(
                     {
@@ -188,6 +190,7 @@ class DecisionEngine:
                         "args": [module, *options],
                     }
                 )
+                proposed_keys.add(key)
 
         if self.state.get("has_session"):
             post_modules = [
@@ -200,7 +203,10 @@ class DecisionEngine:
                 if session_id is None:
                     continue
                 for module in post_modules:
-                    if self._action_fired("post", str(session_id), module):
+                    key = f"post:{session_id}:{module}"
+                    if key in proposed_keys or self._action_fired(
+                        "post", str(session_id), module
+                    ):
                         continue
                     actions.append(
                         {
@@ -211,6 +217,7 @@ class DecisionEngine:
                             "args": [module, f"SESSION={session_id}"],
                         }
                     )
+                    proposed_keys.add(key)
         return actions
 
     def _action_fired(self, stage: str, finding_id: str, module: str) -> bool:
