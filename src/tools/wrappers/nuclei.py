@@ -58,8 +58,11 @@ def _normalize_args(args: list[str]) -> list[str]:
     return normalized
 
 
-def scan(target, args=None):
+def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http"):
+    from tools.wrappers._proxy import merge_env, proxy_meta
+
     url = _url(target)
+    resolved, meta = proxy_meta("nuclei", use_proxy, proxy_protocol)
     if args is None:
         args = [
             "-t",
@@ -77,15 +80,28 @@ def scan(target, args=None):
         if "-silent" not in args and "--silent" not in args:
             args = [*args, "-silent"]
 
-    cmd = ["nuclei", "-u", url, *args]
+    cmd = ["nuclei", "-u", url, *args, *resolved["flags"]]
+    env = merge_env(resolved["env"])
     try:
-        output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+        output = subprocess.check_output(
+            cmd, stderr=subprocess.STDOUT, text=True, env=env
+        )
     except FileNotFoundError:
-        return {"tool": "nuclei", "target": url, "error": "nuclei binary not found"}
+        return {
+            "tool": "nuclei",
+            "target": url,
+            "error": "nuclei binary not found",
+            "proxy": meta,
+        }
     except subprocess.CalledProcessError as e:
         output = e.output or ""
         if not output:
-            return {"tool": "nuclei", "target": url, "error": str(e)}
+            return {
+                "tool": "nuclei",
+                "target": url,
+                "error": str(e),
+                "proxy": meta,
+            }
 
     findings = []
     ansi = re.compile(r"\x1b\[[0-9;]*m")
@@ -114,7 +130,6 @@ def scan(target, args=None):
             )
         ):
             continue
-        # Real findings look like: [critical] CVE-... [http] https://...
         match = re.match(
             r"^\[(?P<severity>[^\]]+)\]\s+(?P<title>.+?)\s*(?:\[(?P<protocol>[^\]]+)\])?\s*(?P<url>https?://\S+)?\s*$",
             clean,
@@ -134,4 +149,5 @@ def scan(target, args=None):
         "target": url,
         "findings": findings,
         "raw_output": output if output.strip() else "no findings",
+        "proxy": meta,
     }

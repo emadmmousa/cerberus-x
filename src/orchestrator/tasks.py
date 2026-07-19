@@ -6,30 +6,42 @@ from tools.wrappers import (
     zmap, nikto, xsstrike, impacket, crackmapexec, responder, bloodhound, sliver
 )
 
+_PROXY_TOOLS = {
+    "gobuster",
+    "whatweb",
+    "sqlmap",
+    "nuclei",
+    "ffuf",
+    "hydra",
+    "nikto",
+    "xsstrike",
+}
+
+
 @app.task(bind=True)
 def run_nmap_task(self, target, args=None):
     self.update_state(state='STARTED', meta={'status': 'Nmap scanning...'})
     return nmap.scan(target, args)
 
 @app.task(bind=True)
-def run_gobuster_task(self, target, args=None):
+def run_gobuster_task(self, target, args=None, use_proxy=False, proxy_protocol="http"):
     self.update_state(state='STARTED', meta={'status': 'Gobuster brute-forcing...'})
-    return gobuster.scan(target, args)
+    return gobuster.scan(target, args, use_proxy=use_proxy, proxy_protocol=proxy_protocol)
 
 @app.task(bind=True)
-def run_whatweb_task(self, target, args=None):
+def run_whatweb_task(self, target, args=None, use_proxy=False, proxy_protocol="http"):
     self.update_state(state='STARTED', meta={'status': 'WhatWeb fingerprinting...'})
-    return whatweb.scan(target, args)
+    return whatweb.scan(target, args, use_proxy=use_proxy, proxy_protocol=proxy_protocol)
 
 @app.task(bind=True)
-def run_sqlmap_task(self, target, args=None):
+def run_sqlmap_task(self, target, args=None, use_proxy=False, proxy_protocol="http"):
     self.update_state(state='STARTED', meta={'status': 'SQLMap testing...'})
-    return sqlmap.scan(target, args)
+    return sqlmap.scan(target, args, use_proxy=use_proxy, proxy_protocol=proxy_protocol)
 
 @app.task(bind=True)
-def run_nuclei_task(self, target, args=None):
+def run_nuclei_task(self, target, args=None, use_proxy=False, proxy_protocol="http"):
     self.update_state(state='STARTED', meta={'status': 'Nuclei scanning...'})
-    return nuclei.scan(target, args)
+    return nuclei.scan(target, args, use_proxy=use_proxy, proxy_protocol=proxy_protocol)
 
 @app.task(bind=True)
 def run_metasploit_task(self, target, args=None):
@@ -52,14 +64,14 @@ def run_theharvester_task(self, target, args=None):
     return theharvester.scan(target, args)
 
 @app.task(bind=True)
-def run_ffuf_task(self, target, args=None):
+def run_ffuf_task(self, target, args=None, use_proxy=False, proxy_protocol="http"):
     self.update_state(state='STARTED', meta={'status': 'FFUF fuzzing...'})
-    return ffuf.scan(target, args)
+    return ffuf.scan(target, args, use_proxy=use_proxy, proxy_protocol=proxy_protocol)
 
 @app.task(bind=True)
-def run_hydra_task(self, target, args=None):
+def run_hydra_task(self, target, args=None, use_proxy=False, proxy_protocol="http"):
     self.update_state(state='STARTED', meta={'status': 'Hydra brute-forcing...'})
-    return hydra.scan(target, args)
+    return hydra.scan(target, args, use_proxy=use_proxy, proxy_protocol=proxy_protocol)
 
 @app.task(bind=True)
 def run_john_task(self, target, args=None):
@@ -87,14 +99,14 @@ def run_zmap_task(self, target, args=None):
     return zmap.scan(target, args)
 
 @app.task(bind=True)
-def run_nikto_task(self, target, args=None):
+def run_nikto_task(self, target, args=None, use_proxy=False, proxy_protocol="http"):
     self.update_state(state='STARTED', meta={'status': 'Nikto scanning...'})
-    return nikto.scan(target, args)
+    return nikto.scan(target, args, use_proxy=use_proxy, proxy_protocol=proxy_protocol)
 
 @app.task(bind=True)
-def run_xsstrike_task(self, target, args=None):
+def run_xsstrike_task(self, target, args=None, use_proxy=False, proxy_protocol="http"):
     self.update_state(state='STARTED', meta={'status': 'XSStrike scanning...'})
-    return xsstrike.scan(target, args)
+    return xsstrike.scan(target, args, use_proxy=use_proxy, proxy_protocol=proxy_protocol)
 
 @app.task(bind=True)
 def run_impacket_task(self, target, args=None):
@@ -121,7 +133,42 @@ def run_sliver_task(self, target, args=None):
     self.update_state(state='STARTED', meta={'status': 'Sliver payload generation...'})
     return sliver.scan(target, args)
 
-def build_phase_workflow(phase_name, tools_list, target, parallel=False):
+
+_TASK_MAP = {
+    "nmap": run_nmap_task,
+    "gobuster": run_gobuster_task,
+    "whatweb": run_whatweb_task,
+    "sqlmap": run_sqlmap_task,
+    "nuclei": run_nuclei_task,
+    "metasploit": run_metasploit_task,
+    "masscan": run_masscan_task,
+    "rustscan": run_rustscan_task,
+    "theharvester": run_theharvester_task,
+    "ffuf": run_ffuf_task,
+    "hydra": run_hydra_task,
+    "john": run_john_task,
+    "hashcat": run_hashcat_task,
+    "winpeas": run_winpeas_task,
+    "linpeas": run_linpeas_task,
+    "zmap": run_zmap_task,
+    "nikto": run_nikto_task,
+    "xsstrike": run_xsstrike_task,
+    "impacket": run_impacket_task,
+    "crackmapexec": run_crackmapexec_task,
+    "responder": run_responder_task,
+    "bloodhound": run_bloodhound_task,
+    "sliver": run_sliver_task,
+}
+
+
+def build_phase_workflow(
+    phase_name,
+    tools_list,
+    target,
+    parallel=False,
+    use_proxy=False,
+    proxy_protocol="http",
+):
     """
     Build a workflow for a phase.
     If parallel=True, use group() to run tools concurrently.
@@ -135,60 +182,19 @@ def build_phase_workflow(phase_name, tools_list, target, parallel=False):
             arg.replace('{{target}}', target) if isinstance(arg, str) else arg
             for arg in tool.get('args', [])
         ]
-        if tool_name == 'nmap':
-            task_list.append(run_nmap_task.si(target, args))
-        elif tool_name == 'gobuster':
-            task_list.append(run_gobuster_task.si(target, args))
-        elif tool_name == 'whatweb':
-            task_list.append(run_whatweb_task.si(target, args))
-        elif tool_name == 'sqlmap':
-            task_list.append(run_sqlmap_task.si(target, args))
-        elif tool_name == 'nuclei':
-            task_list.append(run_nuclei_task.si(target, args))
-        elif tool_name == 'metasploit':
-            task_list.append(run_metasploit_task.si(target, args))
-        elif tool_name == 'masscan':
-            task_list.append(run_masscan_task.si(target, args))
-        elif tool_name == 'rustscan':
-            task_list.append(run_rustscan_task.si(target, args))
-        elif tool_name == 'theharvester':
-            task_list.append(run_theharvester_task.si(target, args))
-        elif tool_name == 'ffuf':
-            task_list.append(run_ffuf_task.si(target, args))
-        elif tool_name == 'hydra':
-            task_list.append(run_hydra_task.si(target, args))
-        elif tool_name == 'john':
-            task_list.append(run_john_task.si(target, args))
-        elif tool_name == 'hashcat':
-            task_list.append(run_hashcat_task.si(target, args))
-        elif tool_name == 'winpeas':
-            task_list.append(run_winpeas_task.si(target, args))
-        elif tool_name == 'linpeas':
-            task_list.append(run_linpeas_task.si(target, args))
-        elif tool_name == 'zmap':
-            task_list.append(run_zmap_task.si(target, args))
-        elif tool_name == 'nikto':
-            task_list.append(run_nikto_task.si(target, args))
-        elif tool_name == 'xsstrike':
-            task_list.append(run_xsstrike_task.si(target, args))
-        elif tool_name == 'impacket':
-            task_list.append(run_impacket_task.si(target, args))
-        elif tool_name == 'crackmapexec':
-            task_list.append(run_crackmapexec_task.si(target, args))
-        elif tool_name == 'responder':
-            task_list.append(run_responder_task.si(target, args))
-        elif tool_name == 'bloodhound':
-            task_list.append(run_bloodhound_task.si(target, args))
-        elif tool_name == 'sliver':
-            task_list.append(run_sliver_task.si(target, args))
+        task_fn = _TASK_MAP.get(tool_name)
+        if task_fn is None:
+            continue
+        if tool_name in _PROXY_TOOLS:
+            task_list.append(
+                task_fn.si(target, args, use_proxy, proxy_protocol)
+            )
         else:
-            # Unknown tool – ignore
-            pass
+            task_list.append(task_fn.si(target, args))
 
     if not task_list:
         return None
 
     if parallel:
         return group(*task_list)
-    else:
-        return chain(*task_list)
+    return chain(*task_list)

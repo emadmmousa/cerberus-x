@@ -3,7 +3,9 @@ import subprocess
 import uuid
 import ssl
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener, urlopen
+
+from tools.wrappers._proxy import merge_env, proxy_meta
 
 WORDLIST = "/usr/share/dirb/wordlists/common.txt"
 _WILDCARD_LENGTH_RE = re.compile(r"Length:\s*(\d+)", re.IGNORECASE)
@@ -16,12 +18,17 @@ def _url(target: str) -> str:
     return f"https://{target}"
 
 
-def _probe_exclude_length(url: str) -> int | None:
+def _probe_exclude_length(url: str, env: dict[str, str] | None = None) -> int | None:
     """Measure response body length for a random path (CDN/wildcard detection)."""
     probe = f"{url.rstrip('/')}/{uuid.uuid4()}"
     req = Request(probe, headers={"User-Agent": "gobuster/3.6"})
     ctx = ssl.create_default_context()
     try:
+        if env and (env.get("HTTP_PROXY") or env.get("http_proxy")):
+            proxy = env.get("HTTPS_PROXY") or env.get("HTTP_PROXY") or env.get("http_proxy")
+            opener = build_opener(ProxyHandler({"http": proxy, "https": proxy}))
+            with opener.open(req, timeout=10) as resp:
+                return len(resp.read())
         with urlopen(req, timeout=10, context=ctx) as resp:
             return len(resp.read())
     except HTTPError as exc:
@@ -105,12 +112,16 @@ def _with_blacklist_status(args: list[str], status: str) -> list[str]:
     return [*cleaned, "-b", ",".join(codes)]
 
 
-def _run(args: list[str]) -> str:
-    return subprocess.check_output(["gobuster", *args], stderr=subprocess.STDOUT, text=True)
+def _run(args: list[str], env: dict[str, str] | None = None) -> str:
+    return subprocess.check_output(
+        ["gobuster", *args], stderr=subprocess.STDOUT, text=True, env=env
+    )
 
 
-def scan(target, args=None):
+def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http"):
     url = _url(target)
+    resolved, meta = proxy_meta("gobuster", use_proxy, proxy_protocol)
+    env = merge_env(resolved["env"])
     if args is None:
         args = ["dir", "-u", url, "-w", WORDLIST, "-q", "-t", "20", "-b", "404"]
     else:
@@ -120,23 +131,30 @@ def scan(target, args=None):
         ]
 
     args = list(args)
+    args = [*args, *resolved["flags"]]
     if "--exclude-length" not in args and not any(
         a.startswith("--exclude-length=") for a in args
     ):
-        length = _probe_exclude_length(url)
+        length = _probe_exclude_length(url, env)
         if length is not None:
             args = _with_exclude_length(args, length)
 
     try:
-        output = _run(args)
+        output = _run(args, env=env)
         return {
             "tool": "gobuster",
             "target": url,
             "directories": _parse_directories(output),
             "raw_output": output,
+            "proxy": meta,
         }
     except FileNotFoundError:
-        return {"tool": "gobuster", "target": url, "error": "gobuster binary not found"}
+        return {
+            "tool": "gobuster",
+            "target": url,
+            "error": "gobuster binary not found",
+            "proxy": meta,
+        }
     except subprocess.CalledProcessError as exc:
         message = str(exc.output or exc)
         reported = _length_from_error(message)
@@ -147,14 +165,15 @@ def scan(target, args=None):
         if status is not None:
             retry_args = _with_blacklist_status(retry_args, status)
         if reported is None and status is None:
-            return {"tool": "gobuster", "target": url, "error": message}
+            return {"tool": "gobuster", "target": url, "error": message, "proxy": meta}
         try:
-            output = _run(retry_args)
+            output = _run(retry_args, env=env)
             result = {
                 "tool": "gobuster",
                 "target": url,
                 "directories": _parse_directories(output),
                 "raw_output": output,
+                "proxy": meta,
             }
             if reported is not None:
                 result["exclude_length"] = reported
@@ -166,4 +185,5 @@ def scan(target, args=None):
                 "tool": "gobuster",
                 "target": url,
                 "error": str(retry_exc.output or retry_exc),
+                "proxy": meta,
             }

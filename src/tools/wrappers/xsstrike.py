@@ -1,5 +1,7 @@
 import subprocess
 
+from tools.wrappers._proxy import merge_env, proxy_meta
+
 DEFAULT_TIMEOUT_SECONDS = 90
 
 
@@ -13,15 +15,22 @@ def _url(target: str) -> str:
     return url
 
 
-def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
+def scan(
+    target,
+    args=None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    use_proxy: bool = False,
+    proxy_protocol: str = "http",
+):
     url = _url(target)
+    resolved, meta = proxy_meta("xsstrike", use_proxy, proxy_protocol)
     if args is None:
-        # Keep defaults light so smoke tests finish.
         args = ["--crawl", "1", "--threads", "5"]
     else:
         args = list(args)
 
-    cmd = ["xsstrike", "-u", url, *args]
+    cmd = ["xsstrike", "-u", url, *args, *resolved["flags"]]
+    env = merge_env(resolved["env"])
     try:
         completed = subprocess.run(
             cmd,
@@ -29,6 +38,7 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             text=True,
             timeout=timeout,
             start_new_session=True,
+            env=env,
         )
         output = (completed.stdout or "") + (completed.stderr or "")
         findings = [
@@ -41,6 +51,7 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             "target": url,
             "findings": findings,
             "raw_output": output,
+            "proxy": meta,
         }
         if (
             completed.returncode != 0
@@ -55,7 +66,12 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
                 result["error"] = f"xsstrike exited with code {completed.returncode}"
         return result
     except FileNotFoundError:
-        return {"tool": "xsstrike", "target": url, "error": "xsstrike binary not found"}
+        return {
+            "tool": "xsstrike",
+            "target": url,
+            "error": "xsstrike binary not found",
+            "proxy": meta,
+        }
     except subprocess.TimeoutExpired as exc:
         output = (exc.stdout or "") + (exc.stderr or "")
         return {
@@ -64,4 +80,5 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             "findings": [],
             "raw_output": output,
             "error": f"xsstrike timed out after {timeout}s",
+            "proxy": meta,
         }

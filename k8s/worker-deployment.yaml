@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  namespace: cerberus-x
+  labels:
+    app: worker
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+      - name: worker
+        image: cerberus-x-worker:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: REDIS_HOST
+          value: redis-service
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cerberus-secrets
+              key: REDIS_PASSWORD
+        - name: ELASTICSEARCH_URL
+          value: http://elasticsearch-service:9200
+        - name: MSF_RPC_HOST
+          value: metasploit-service
+        - name: MSF_RPC_PORT
+          value: "55553"
+        - name: MSF_RPC_USER
+          value: msf
+        - name: MSF_RPC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cerberus-secrets
+              key: MSF_RPC_PASSWORD
+        - name: CERBERUS_OUTPUT_DIR
+          value: /app/output
+        - name: LOG_LEVEL
+          value: INFO
+        - name: WORKER_CONCURRENCY
+          value: "8"
+        - name: OXYLABS_PROXY_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: cerberus-config
+              key: OXYLABS_PROXY_HOST
+        - name: OXYLABS_PROXY_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: cerberus-config
+              key: OXYLABS_PROXY_PORT
+        - name: OXYLABS_PROXY_PROTOCOL
+          valueFrom:
+            configMapKeyRef:
+              name: cerberus-config
+              key: OXYLABS_PROXY_PROTOCOL
+        - name: CERBERUS_LOCAL_PROXY_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: cerberus-config
+              key: CERBERUS_LOCAL_PROXY_HOST
+        - name: CERBERUS_LOCAL_PROXY_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: cerberus-config
+              key: CERBERUS_LOCAL_PROXY_PORT
+        - name: OXYLABS_PROXY_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: cerberus-secrets
+              key: OXYLABS_PROXY_USERNAME
+              optional: true
+        - name: OXYLABS_PROXY_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cerberus-secrets
+              key: OXYLABS_PROXY_PASSWORD
+              optional: true
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        volumeMounts:
+        - name: output-storage
+          mountPath: /app/output
+      volumes:
+      - name: output-storage
+        emptyDir: {}

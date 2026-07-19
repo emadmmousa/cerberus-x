@@ -117,8 +117,18 @@ def _parse_credentials(output: str) -> list[dict]:
     return found
 
 
-def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
+def scan(
+    target,
+    args=None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    use_proxy: bool = False,
+    proxy_protocol: str = "http",
+):
+    from tools.wrappers._proxy import merge_env, proxy_meta
+
     host, service, command = _build_command(target, list(args) if args else None)
+    resolved, meta = proxy_meta("hydra", use_proxy, proxy_protocol)
+    env = merge_env(resolved["env"])
     try:
         completed = subprocess.run(
             command,
@@ -126,6 +136,7 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             text=True,
             timeout=timeout,
             start_new_session=True,
+            env=env,
         )
         output = (completed.stdout or "") + (completed.stderr or "")
         result = {
@@ -134,6 +145,7 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             "service": service,
             "credentials": _parse_credentials(output),
             "raw_output": output,
+            "proxy": meta,
         }
         # Hydra often exits non-zero when no valid login is found; treat that as
         # a completed run unless there is no usable output at all.
@@ -146,6 +158,7 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             "target": host,
             "service": service,
             "error": "hydra binary not found",
+            "proxy": meta,
         }
     except subprocess.TimeoutExpired as exc:
         output = ""
@@ -160,4 +173,5 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             "credentials": _parse_credentials(output),
             "raw_output": output,
             "error": f"hydra timed out after {timeout}s",
+            "proxy": meta,
         }

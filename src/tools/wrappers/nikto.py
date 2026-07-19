@@ -38,14 +38,24 @@ def _normalize_args(url: str, args: list[str]) -> list[str]:
     return normalized
 
 
-def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
+def scan(
+    target,
+    args=None,
+    timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    use_proxy: bool = False,
+    proxy_protocol: str = "http",
+):
+    from tools.wrappers._proxy import merge_env, proxy_meta
+
     url = _url(target)
+    resolved, meta = proxy_meta("nikto", use_proxy, proxy_protocol)
     if args is None:
         args = ["-maxtime", "60"]
     else:
         args = _normalize_args(url, list(args))
 
-    cmd = ["nikto", "-host", url, *args]
+    cmd = ["nikto", "-host", url, *args, *resolved["flags"]]
+    env = merge_env(resolved["env"])
     try:
         completed = subprocess.run(
             cmd,
@@ -53,6 +63,7 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             text=True,
             timeout=timeout,
             start_new_session=True,
+            env=env,
         )
         output = (completed.stdout or "") + (completed.stderr or "")
         issues = [line.strip() for line in output.splitlines() if line.strip().startswith("+")]
@@ -61,6 +72,7 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             "target": url,
             "issues": issues,
             "raw_output": output,
+            "proxy": meta,
         }
         if completed.returncode != 0 and not output.strip():
             result["error"] = f"nikto exited with code {completed.returncode}"
@@ -77,7 +89,12 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
                 result["error"] = error_line.lstrip("- ").strip()
         return result
     except FileNotFoundError:
-        return {"tool": "nikto", "target": url, "error": "nikto binary not found"}
+        return {
+            "tool": "nikto",
+            "target": url,
+            "error": "nikto binary not found",
+            "proxy": meta,
+        }
     except subprocess.TimeoutExpired as exc:
         output = (exc.stdout or "") + (exc.stderr or "")
         return {
@@ -86,4 +103,5 @@ def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
             "issues": [line.strip() for line in output.splitlines() if line.strip().startswith("+")],
             "raw_output": output,
             "error": f"nikto timed out after {timeout}s",
+            "proxy": meta,
         }

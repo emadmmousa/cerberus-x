@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cerberus-config
+  namespace: cerberus-x
+data:
+  REDIS_HOST: redis-service
+  REDIS_PORT: "6379"
+  POSTGRES_HOST: postgres-service
+  POSTGRES_PORT: "5432"
+  MSF_RPC_HOST: metasploit-service
+  MSF_RPC_PORT: "55553"
+  MSF_RPC_SSL: "false"
+  ELASTICSEARCH_HOST: elasticsearch-service
+  ELASTICSEARCH_PORT: "9200"
+  CERBERUS_OUTPUT_DIR: /app/output
+  LOG_LEVEL: INFO
+  WORKER_CONCURRENCY: "8"
+  OXYLABS_PROXY_HOST: pr.oxylabs.io
+  OXYLABS_PROXY_PORT: "7777"
+  OXYLABS_PROXY_PROTOCOL: http
+  CERBERUS_LOCAL_PROXY_HOST: "127.0.0.1"
+  CERBERUS_LOCAL_PROXY_PORT: "18080"
