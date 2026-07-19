@@ -1,0 +1,121 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orchestrator
+  namespace: cerberus-x
+  labels:
+    app: orchestrator
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: orchestrator
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: orchestrator
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: orchestrator
+        image: cerberus-x-orchestrator:latest
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: REDIS_HOST
+          value: redis-service
+        - name: REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cerberus-secrets
+              key: REDIS_PASSWORD
+        - name: ELASTICSEARCH_URL
+          value: http://elasticsearch-service:9200
+        - name: MSF_RPC_HOST
+          value: metasploit-service
+        - name: MSF_RPC_PORT
+          value: "55553"
+        - name: MSF_RPC_USER
+          value: msf
+        - name: MSF_RPC_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cerberus-secrets
+              key: MSF_RPC_PASSWORD
+        - name: CERBERUS_OUTPUT_DIR
+          value: /app/output
+        - name: LOG_LEVEL
+          value: INFO
+        - name: OXYLABS_PROXY_CONFIGURED
+          valueFrom:
+            configMapKeyRef:
+              name: cerberus-config
+              key: OXYLABS_PROXY_CONFIGURED
+              optional: true
+        ports:
+        - containerPort: 5000
+          name: http
+          # /metrics is served on the same Flask port as /health
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        volumeMounts:
+        - name: output-storage
+          mountPath: /app/output
+      volumes:
+      - name: output-storage
+        persistentVolumeClaim:
+          claimName: output-pvc
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: output-pvc
+  namespace: cerberus-x
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orchestrator-service
+  namespace: cerberus-x
+  labels:
+    app: orchestrator
+spec:
+  selector:
+    app: orchestrator
+  ports:
+  - name: http
+    port: 5000
+    targetPort: 5000
+  type: ClusterIP
