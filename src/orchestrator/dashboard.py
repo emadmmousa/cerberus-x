@@ -82,7 +82,12 @@ def metrics():
 
 @app.route("/api/proxy/status")
 def proxy_status():
-    return jsonify({"configured": credentials_configured()})
+    flagged = os.getenv("OXYLABS_PROXY_CONFIGURED", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    return jsonify({"configured": credentials_configured() or flagged})
 
 
 @app.route("/status/<task_id>")

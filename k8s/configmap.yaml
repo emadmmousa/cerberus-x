@@ -21,3 +21,5 @@ data:
   OXYLABS_PROXY_PROTOCOL: http
   CERBERUS_LOCAL_PROXY_HOST: "127.0.0.1"
   CERBERUS_LOCAL_PROXY_PORT: "18080"
+  # Surfaced by orchestrator /api/proxy/status (credentials stay on workers).
+  OXYLABS_PROXY_CONFIGURED: "true"
