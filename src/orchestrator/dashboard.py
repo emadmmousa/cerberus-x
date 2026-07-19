@@ -304,7 +304,7 @@ def _run_playbook_job(
             )
 
         init_db()
-        decision_engine = DecisionEngine(target)
+        decision_engine = DecisionEngine(target, job_id=job_id)
 
         for phase in playbook.get("phases", []):
             phase_name = phase.get("name")

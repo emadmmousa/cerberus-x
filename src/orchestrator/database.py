@@ -129,22 +129,28 @@ def get_results(target=None, limit=100, job_id=None):
         ]
 
 
-def save_state(target: str, state: dict):
+def _state_key(target: str, job_id: str | None = None) -> str:
+    if job_id:
+        return f"{target}::{job_id}"
+    return target
+
+
+def save_state(target: str, state: dict, job_id: str | None = None):
     init_db()
     with get_db() as conn:
         conn.execute(
             "REPLACE INTO state (target, state_json) VALUES (?, ?)",
-            (target, json.dumps(state)),
+            (_state_key(target, job_id), json.dumps(state)),
         )
         conn.commit()
 
 
-def load_state(target: str) -> dict:
+def load_state(target: str, job_id: str | None = None) -> dict:
     init_db()
     with get_db() as conn:
         cursor = conn.execute(
             "SELECT state_json FROM state WHERE target = ?",
-            (target,),
+            (_state_key(target, job_id),),
         )
         row = cursor.fetchone()
         if row:

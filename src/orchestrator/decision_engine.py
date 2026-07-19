@@ -18,10 +18,12 @@ def _payload(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class DecisionEngine:
-    def __init__(self, target: str):
+    def __init__(self, target: str, job_id: str | None = None):
         self.target = target
-        self.state = load_state(target) or {}
+        self.job_id = job_id
+        self.state = load_state(target, job_id=job_id) or {}
         self.results_cache = {}
+        self._fired_actions: set[str] = set(self.state.get("fired_actions") or [])
 
     def evaluate_phase(self, phase_name: str, phase_results: List[Dict]) -> Dict[str, Any]:
         """Process results of a completed phase and update state."""
@@ -48,7 +50,7 @@ class DecisionEngine:
             elif tool == "ffuf":
                 self._process_ffuf_results(item)
 
-        save_state(self.target, self.state)
+        save_state(self.target, self.state, job_id=self.job_id)
         return self.state
 
     def _process_nuclei_results(self, item):
