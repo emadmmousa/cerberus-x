@@ -1,4 +1,14 @@
-from tools import proxy_config
+import pytest
+
+from tools import proxy_config, proxy_settings
+
+
+@pytest.fixture(autouse=True)
+def _memory_proxy_settings(monkeypatch):
+    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    proxy_settings._memory_clear()
+    yield
+    proxy_settings._memory_clear()
 
 
 def test_disabled_by_default(monkeypatch):
@@ -71,3 +81,24 @@ def test_use_proxy_true_without_credentials_is_direct(monkeypatch):
     assert result["mode"] == "unsupported"
     note = (result["note"] or "").lower()
     assert "credential" in note or "not configured" in note
+
+
+def test_credentials_from_redis_without_env(monkeypatch):
+    monkeypatch.delenv("OXYLABS_PROXY_USERNAME", raising=False)
+    monkeypatch.delenv("OXYLABS_PROXY_PASSWORD", raising=False)
+    proxy_settings.save_settings(
+        {
+            "username": "redis-user",
+            "password": "redis-pass",
+            "host": "pr.oxylabs.io",
+            "port": 7777,
+            "protocol": "http",
+        }
+    )
+    assert proxy_config.credentials_configured() is True
+    upstream = proxy_config.upstream_proxy_url()
+    assert proxy_config.redact_proxy_url(upstream) == (
+        "http://redis-user:***@pr.oxylabs.io:7777"
+    )
+    result = proxy_config.resolve_for_tool("sqlmap", use_proxy=True)
+    assert result["mode"] == "local_proxy"

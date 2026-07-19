@@ -106,13 +106,22 @@ class LocalProxyServer:
                     f"CONNECT {target} HTTP/1.1\r\n"
                     f"Host: {target}\r\n"
                     f"{auth}"
-                    f"Connection: keep-alive\r\n"
+                    f"Proxy-Connection: Keep-Alive\r\n"
                     f"\r\n"
                 ).encode()
                 upstream.sendall(connect_req)
                 resp = _recv_headers(upstream)
-                if not resp.startswith(b"HTTP/1.") or b" 200 " not in resp.split(b"\r\n", 1)[0]:
-                    client.sendall(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                status_line = resp.split(b"\r\n", 1)[0] if resp else b""
+                if not resp.startswith(b"HTTP/1.") or b" 200 " not in status_line:
+                    # Surface upstream status without leaking credentials.
+                    reason = status_line.decode("latin-1", errors="replace") or "empty upstream response"
+                    body = f"upstream CONNECT failed: {reason}\n".encode()
+                    client.sendall(
+                        b"HTTP/1.1 502 Bad Gateway\r\n"
+                        b"Content-Type: text/plain\r\n"
+                        + f"Content-Length: {len(body)}\r\n\r\n".encode()
+                        + body
+                    )
                     return
                 client.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
                 _tunnel(client, upstream)
@@ -202,8 +211,13 @@ def ensure_local_proxy() -> LocalProxyServer:
 
 
 def _proxy_authorization_header() -> str:
-    user = os.environ["OXYLABS_PROXY_USERNAME"]
-    password = os.environ["OXYLABS_PROXY_PASSWORD"]
+    from tools.proxy_settings import load_credentials
+
+    creds = load_credentials()
+    if not creds:
+        raise KeyError("proxy credentials not configured")
+    user = creds["username"]
+    password = creds["password"]
     token = base64.b64encode(f"{user}:{password}".encode()).decode()
     return f"Proxy-Authorization: Basic {token}\r\n"
 

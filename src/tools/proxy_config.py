@@ -43,7 +43,9 @@ _SOCKS_UNSUPPORTED = frozenset({"nikto", "whatweb", "xsstrike"})
 
 
 def credentials_configured() -> bool:
-    return bool(os.getenv("OXYLABS_PROXY_USERNAME") and os.getenv("OXYLABS_PROXY_PASSWORD"))
+    from tools.proxy_settings import load_credentials
+
+    return load_credentials() is not None
 
 
 def local_proxy_url(protocol: str = "http") -> str:
@@ -54,11 +56,16 @@ def local_proxy_url(protocol: str = "http") -> str:
 
 
 def upstream_proxy_url() -> str:
-    user = quote(os.environ["OXYLABS_PROXY_USERNAME"], safe="")
-    password = quote(os.environ["OXYLABS_PROXY_PASSWORD"], safe="")
-    host = os.getenv("OXYLABS_PROXY_HOST", "pr.oxylabs.io")
-    port = os.getenv("OXYLABS_PROXY_PORT", "7777")
-    protocol = os.getenv("OXYLABS_PROXY_PROTOCOL", "http")
+    from tools.proxy_settings import load_credentials
+
+    creds = load_credentials()
+    if not creds:
+        raise KeyError("proxy credentials not configured")
+    user = quote(creds["username"], safe="")
+    password = quote(creds["password"], safe="")
+    host = creds.get("host") or "pr.oxylabs.io"
+    port = int(creds.get("port") or 7777)
+    protocol = creds.get("protocol") or "http"
     if protocol not in ALLOWED_PROTOCOLS:
         protocol = "http"
     scheme = "socks5h" if protocol == "socks5h" else "http"
