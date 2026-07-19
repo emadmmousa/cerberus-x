@@ -96,5 +96,9 @@ describe("MissionControl", () => {
         }),
       );
     });
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith("/results?target=test.com&job_id=abc");
+    });
   });
 });

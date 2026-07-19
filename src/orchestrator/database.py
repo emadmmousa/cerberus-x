@@ -27,10 +27,17 @@ def init_db():
                 phase TEXT NOT NULL,
                 tool TEXT,
                 result_json TEXT,
-                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                job_id TEXT
             )
             """
         )
+        cols = {
+            row[1]
+            for row in conn.execute("PRAGMA table_info(results)").fetchall()
+        }
+        if "job_id" not in cols:
+            conn.execute("ALTER TABLE results ADD COLUMN job_id TEXT")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS state (
@@ -60,26 +67,28 @@ def _normalize_phase_outputs(phase_outputs):
     return rows
 
 
-def _maybe_index_es(target, phase_name, tool_name, payload):
+def _maybe_index_es(target, phase_name, tool_name, payload, job_id=None):
     try:
         from .elasticsearch_client import ElasticsearchClient
 
         client = ElasticsearchClient()
         if client.available:
-            client.index_result(target, phase_name, tool_name, payload)
+            client.index_result(target, phase_name, tool_name, payload, job_id=job_id)
     except Exception as exc:
         logger.debug("Elasticsearch index skipped: %s", exc)
 
 
-def save_phase_result(target, phase_name, phase_outputs):
+def save_phase_result(target, phase_name, phase_outputs, job_id=None):
+    init_db()
     rows = _normalize_phase_outputs(phase_outputs)
     with get_db() as conn:
         for tool_name, payload in rows:
             conn.execute(
-                "INSERT INTO results (target, phase, tool, result_json) VALUES (?, ?, ?, ?)",
-                (target, phase_name, tool_name, json.dumps(payload)),
+                "INSERT INTO results (target, phase, tool, result_json, job_id) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (target, phase_name, tool_name, json.dumps(payload), job_id),
             )
-            _maybe_index_es(target, phase_name, tool_name, payload)
+            _maybe_index_es(target, phase_name, tool_name, payload, job_id=job_id)
         conn.commit()
     paths = export_target_reports(target, get_results(target, limit=10000))
     print(
@@ -88,20 +97,24 @@ def save_phase_result(target, phase_name, phase_outputs):
     )
 
 
-def get_results(target=None, limit=100):
+def get_results(target=None, limit=100, job_id=None):
+    init_db()
     with get_db() as conn:
+        clauses = []
+        params: list = []
         if target:
-            cursor = conn.execute(
-                "SELECT target, phase, tool, result_json, timestamp FROM results "
-                "WHERE target = ? ORDER BY timestamp DESC LIMIT ?",
-                (target, limit),
-            )
-        else:
-            cursor = conn.execute(
-                "SELECT target, phase, tool, result_json, timestamp FROM results "
-                "ORDER BY timestamp DESC LIMIT ?",
-                (limit,),
-            )
+            clauses.append("target = ?")
+            params.append(target)
+        if job_id:
+            clauses.append("job_id = ?")
+            params.append(job_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        cursor = conn.execute(
+            f"SELECT target, phase, tool, result_json, timestamp, job_id "
+            f"FROM results {where} ORDER BY timestamp DESC LIMIT ?",
+            params,
+        )
         rows = cursor.fetchall()
         return [
             {
@@ -110,6 +123,7 @@ def get_results(target=None, limit=100):
                 "tool": row[2],
                 "result": json.loads(row[3]),
                 "timestamp": row[4],
+                "job_id": row[5],
             }
             for row in rows
         ]

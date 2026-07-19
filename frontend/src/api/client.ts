@@ -29,6 +29,7 @@ export type ResultRow = {
   tool: string;
   result: unknown;
   timestamp: string | number;
+  job_id?: string | null;
 };
 
 export type ProxyStatus = {
@@ -100,8 +101,13 @@ export async function getStatus(taskId: string): Promise<TaskStatus> {
   return res.json() as Promise<TaskStatus>;
 }
 
-export async function getResults(target: string): Promise<ResultRow[]> {
-  const res = await fetch(`/results?target=${encodeURIComponent(target)}`);
+export async function getResults(
+  target: string,
+  jobId?: string | null,
+): Promise<ResultRow[]> {
+  const params = new URLSearchParams({ target });
+  if (jobId) params.set("job_id", jobId);
+  const res = await fetch(`/results?${params.toString()}`);
   if (!res.ok) throw new Error(await parseError(res));
   return res.json() as Promise<ResultRow[]>;
 }

@@ -51,7 +51,13 @@ function derivePhases(
       (typeof rep?.error === "string" && rep.error.startsWith("skipped:"))
     ) {
       state = "skipped";
-    } else if (savedPhases.has(phase.name) || findings.length > 0) {
+    } else if (savedPhases.has(phase.name)) {
+      state = "done";
+    } else if (
+      findings.length > 0 &&
+      (!runState || !ACTIVE_STATES.has(runState))
+    ) {
+      // Historical/completed jobs may hydrate findings without status.results.
       state = "done";
     } else if (rep && ACTIVE_STATES.has(runState ?? "") && !activeAssigned) {
       state = "running";
@@ -106,14 +112,14 @@ export function useMission() {
       try {
         const [statusData, resultRows] = await Promise.all([
           getStatus(id),
-          getResults(target).catch(() => [] as ResultRow[]),
+          getResults(target, id).catch(() => [] as ResultRow[]),
         ]);
         setStatus(statusData);
         setResults(resultRows);
         if (!ACTIVE_STATES.has(statusData.state)) {
           stopPolling();
-          // one final results sweep after completion
-          getResults(target)
+          // one final results sweep after completion (still job-scoped)
+          getResults(target, id)
             .then((rows) => setResults(rows))
             .catch(() => undefined);
         }

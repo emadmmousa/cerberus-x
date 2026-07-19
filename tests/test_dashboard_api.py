@@ -135,6 +135,52 @@ def test_proxy_status_no_secrets(monkeypatch):
     assert "secret" not in str(data)
 
 
+def test_results_endpoint_scopes_to_job_id(monkeypatch, tmp_path):
+    from orchestrator import database
+
+    monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "results.db"))
+    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path / "output"))
+    database.init_db()
+    database.save_phase_result(
+        "example.com",
+        "recon",
+        [{"tool": "nmap", "ports": [{"port": "80"}]}],
+        job_id="job-a",
+    )
+    database.save_phase_result(
+        "example.com",
+        "recon",
+        [{"tool": "nmap", "ports": [{"port": "443"}]}],
+        job_id="job-b",
+    )
+
+    class _Unavailable:
+        available = False
+
+        def search_results(self, **kwargs):
+            return None
+
+    monkeypatch.setattr(dashboard, "es_client", _Unavailable())
+    client = dashboard.app.test_client()
+    scoped = client.get("/results?target=example.com&job_id=job-b").get_json()
+    assert len(scoped) == 1
+    assert scoped[0]["job_id"] == "job-b"
+    assert scoped[0]["result"]["ports"][0]["port"] == "443"
+
+    all_rows = client.get("/results?target=example.com").get_json()
+    assert len(all_rows) == 2
+    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    from tools import proxy_settings
+
+    proxy_settings._memory_clear()
+    monkeypatch.setenv("OXYLABS_PROXY_USERNAME", "u")
+    monkeypatch.setenv("OXYLABS_PROXY_PASSWORD", "secret")
+    client = dashboard.app.test_client()
+    data = client.get("/api/proxy/status").get_json()
+    assert data == {"configured": True}
+    assert "secret" not in str(data)
+
+
 def test_proxy_settings_put_get_redacts_password(monkeypatch, tmp_path):
     monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
     from tools import proxy_settings

@@ -248,9 +248,17 @@ def task_status(task_id):
 
 @app.route("/results")
 def results():
-    """Return recent results as JSON (ES preferred, SQLite fallback)."""
+    """Return recent results as JSON (ES preferred, SQLite fallback).
+
+    When job_id is provided, scope to that mission only so the UI does not
+    hydrate with historical findings for the same target.
+    """
     target = request.args.get("target")
+    job_id = request.args.get("job_id")
     limit = int(request.args.get("limit", 100))
+    if job_id:
+        # Job-scoped mission polls must not mix in older target history from ES.
+        return jsonify(get_results(target, limit, job_id=job_id))
     if es_client.available:
         rows = es_client.search_results(target=target, limit=limit)
         if rows:
@@ -338,7 +346,7 @@ def _run_playbook_job(
             else:
                 phase_outputs = collect_chain_results(async_result, timeout=600)
             job.setdefault("results", {})[phase_name] = phase_outputs
-            save_phase_result(target, phase_name, phase_outputs)
+            save_phase_result(target, phase_name, phase_outputs, job_id=job_id)
             decision_engine.evaluate_phase(phase_name, phase_outputs)
 
             actions = decision_engine.generate_post_phase_actions(
@@ -361,7 +369,7 @@ def _run_playbook_job(
                 action_result = action_workflow.apply_async()
                 action_output = collect_chain_results(action_result, timeout=300)
                 job.setdefault("results", {})[action_name] = action_output
-                save_phase_result(target, action_name, action_output)
+                save_phase_result(target, action_name, action_output, job_id=job_id)
                 job["phases"].append(
                     {"phase": action_name, "task_id": action_result.id}
                 )
