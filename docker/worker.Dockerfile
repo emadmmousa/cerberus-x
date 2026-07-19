@@ -114,6 +114,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ /app/src/
 
 ENV PYTHONPATH=/app/src
-ENV REDIS_URL=redis://redis:6379
 
 CMD ["celery", "-A", "orchestrator.tasks", "worker", "--concurrency=8", "--loglevel=info"]

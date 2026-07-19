@@ -126,7 +126,6 @@ COPY --from=frontend /src/orchestrator/static/app /app/src/orchestrator/static/a
 RUN test -f /app/src/orchestrator/static/app/index.html
 
 ENV PYTHONPATH=/app/src
-ENV REDIS_URL=redis://redis:6379
 
 EXPOSE 5000
 
