@@ -41,7 +41,8 @@ def _normalize_args(url: str, args: list[str], evasion=None) -> list[str]:
     if evasion.get("random_headers", False):
         headers = random_headers()
         for key, value in headers.items():
-            normalized.extend(["-header", f"{key}: {value}"])
+            # Nikto 2.5+ uses -Add-header (not -header).
+            normalized.extend(["-Add-header", f"{key}: {value}"])
     return normalized
 
 

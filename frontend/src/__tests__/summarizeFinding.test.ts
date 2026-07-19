@@ -49,33 +49,65 @@ describe("summarizeFinding", () => {
     const s = summarizeFinding("gobuster", {
       tool: "gobuster",
       error: 'context deadline exceeded (Client.Timeout exceeded while awaiting headers)',
-      proxy: { enabled: true, mode: "local_proxy" },
+      proxy: {
+        enabled: true,
+        mode: "local_proxy",
+        note: "oxylabs upstream unreachable: TimeoutError",
+      },
     });
     expect(s.status).toBe("failed");
     expect(s.bullets.join(" ").toLowerCase()).toMatch(/proxy|reach|timeout/);
   });
 
-  it("says sqlmap found no injection", () => {
+  it("does not blame the proxy when proxy is only enabled metadata", () => {
+    const s = summarizeFinding("nuclei", {
+      tool: "nuclei",
+      findings: [],
+      raw_output: "",
+      proxy: { enabled: true, protocol: "http" },
+    });
+    expect(s.status).toBe("ok");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/no vulnerability/);
+    expect(s.bullets.join(" ").toLowerCase()).not.toMatch(/proxy/);
+  });
+
+  it("uses a connection message for ssl failures without a proxy note", () => {
     const s = summarizeFinding("sqlmap", {
       tool: "sqlmap",
       vulnerable: false,
       raw_output: "can't establish SSL connection",
+      proxy: { enabled: true, protocol: "http" },
     });
     expect(s.status).toBe("failed");
-    expect(s.bullets.join(" ").toLowerCase()).toMatch(/couldn|reach|proxy|ssl|connect/);
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/secure connection|ssl|connect/);
+    expect(s.bullets.join(" ")).not.toBe("Couldn't reach the site through the proxy.");
+  });
+
+  it("keeps nikto option failures distinct from proxy failures", () => {
+    const s = summarizeFinding("nikto", {
+      tool: "nikto",
+      issues: ["+ requires a value"],
+      raw_output: "Unknown option: header\n-Help",
+      proxy: {
+        enabled: true,
+        note: "oxylabs upstream unreachable: TimeoutError",
+      },
+    });
+    expect(s.status).toBe("failed");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/didn.?t run|incorrectly/);
+    expect(s.bullets.join(" ").toLowerCase()).not.toMatch(/proxy/);
   });
 
   it("handles empty nuclei findings as no issues", () => {
     const s = summarizeFinding("nuclei", {
       tool: "nuclei",
       findings: [],
-      raw_output: "",
+      raw_output: "scan completed",
       proxy: { enabled: true },
     });
-    expect(["ok", "failed"]).toContain(s.status);
-    expect(s.bullets.length).toBeGreaterThan(0);
+    expect(s.status).toBe("ok");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/no vulnerability/);
   });
-
   it("detects nikto help-text failure", () => {
     const s = summarizeFinding("nikto", {
       tool: "nikto",

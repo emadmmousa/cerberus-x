@@ -78,24 +78,79 @@ function textBlob(result: unknown): string {
   return stripAnsi(parts.join("\n")).toLowerCase();
 }
 
-function isProxyReachabilityFailure(result: unknown): boolean {
+function proxyMeta(result: unknown): Record<string, unknown> | null {
   const obj = asObj(result);
+  if (!obj.proxy || typeof obj.proxy !== "object") return null;
+  return obj.proxy as Record<string, unknown>;
+}
+
+function proxyNote(result: unknown): string {
+  const meta = proxyMeta(result);
+  return typeof meta?.note === "string" ? meta.note.toLowerCase() : "";
+}
+
+function isProxyEnabled(result: unknown): boolean {
+  return Boolean(proxyMeta(result)?.enabled);
+}
+
+function hasProxyUpstreamFailure(result: unknown): boolean {
+  const note = proxyNote(result);
+  if (!note) return false;
+  return (
+    note.includes("unreachable") ||
+    note.includes("timeout") ||
+    note.includes("timed out") ||
+    note.includes("gaierror") ||
+    note.includes("connect") ||
+    note.includes("empty response")
+  );
+}
+
+function hasReachabilityFailureText(result: unknown): boolean {
   const blob = textBlob(result);
-  const proxyOn =
-    obj.proxy &&
-    typeof obj.proxy === "object" &&
-    Boolean((obj.proxy as Record<string, unknown>).enabled);
   const hints = [
     "timeout",
     "deadline exceeded",
-    "ssl",
+    "ssl session is not started",
     "can't establish",
     "cannot establish",
     "unable to connect",
     "connection refused",
-    "proxy",
+    "context deadline exceeded",
   ];
-  return Boolean(proxyOn || hints.some((h) => blob.includes(h)));
+  return hints.some((h) => blob.includes(h));
+}
+
+/** True only when failure evidence points at proxy/connectivity — not merely proxy.enabled. */
+function isProxyReachabilityFailure(result: unknown): boolean {
+  if (hasProxyUpstreamFailure(result)) return true;
+  return isProxyEnabled(result) && hasReachabilityFailureText(result);
+}
+
+function reachabilityFail(result: unknown, tool: string): FindingSummary {
+  if (hasProxyUpstreamFailure(result) || (isProxyEnabled(result) && proxyNote(result))) {
+    return proxyFail(tool);
+  }
+  const blob = textBlob(result);
+  if (blob.includes("ssl")) {
+    return {
+      title: titleFor(tool),
+      status: "failed",
+      bullets: ["Couldn't complete a secure connection to the site."],
+    };
+  }
+  if (blob.includes("timeout") || blob.includes("deadline")) {
+    return {
+      title: titleFor(tool),
+      status: "failed",
+      bullets: ["Connection timed out before the check finished."],
+    };
+  }
+  return {
+    title: titleFor(tool),
+    status: "failed",
+    bullets: ["Couldn't connect to the site."],
+  };
 }
 
 function extractPorts(result: unknown): string[] {
@@ -230,8 +285,8 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
         confirmedVulns: 1,
       };
     }
-    if (isProxyReachabilityFailure(result) || blob.includes("ssl")) {
-      return proxyFail(tool);
+    if (isProxyReachabilityFailure(result) || blob.includes("ssl") || blob.includes("unable to connect")) {
+      return reachabilityFail(result, tool);
     }
     return {
       title: titleFor(tool),
@@ -251,9 +306,8 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
         possibleIssues: findings.length,
       };
     }
-    if (isProxyReachabilityFailure(result) || (!blob && obj.proxy)) {
-      // empty output with proxy often means unreachable
-      if (!blob.trim() && obj.proxy) return proxyFail(tool);
+    if (isProxyReachabilityFailure(result)) {
+      return reachabilityFail(result, tool);
     }
     if (typeof obj.error === "string" && obj.error.trim()) {
       return {
@@ -280,13 +334,13 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
       };
     }
     if (blob.includes("errors:") || isProxyReachabilityFailure(result)) {
-      return proxyFail(tool);
+      return reachabilityFail(result, tool);
     }
   }
 
   if (tool === "xsstrike") {
     if (blob.includes("unable to connect") || isProxyReachabilityFailure(result)) {
-      return proxyFail(tool);
+      return reachabilityFail(result, tool);
     }
     const findings = Array.isArray(obj.findings) ? obj.findings : [];
     if (findings.length && !blob.includes("unable to connect")) {
@@ -300,17 +354,19 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
   }
 
   if (tool === "whatweb" || tool === "gobuster") {
-    if (isProxyReachabilityFailure(result) || typeof obj.error === "string") {
-      if (isProxyReachabilityFailure(result) || textBlob(result).includes("timeout")) {
-        return proxyFail(tool);
-      }
+    if (isProxyReachabilityFailure(result)) {
+      return reachabilityFail(result, tool);
     }
-    if (tool === "whatweb" && blob.includes("ssl")) return proxyFail(tool);
-    if (tool === "gobuster" && typeof obj.error === "string") return proxyFail(tool);
+    if (tool === "whatweb" && blob.includes("ssl")) {
+      return reachabilityFail(result, tool);
+    }
+    if (tool === "gobuster" && typeof obj.error === "string") {
+      return reachabilityFail(result, tool);
+    }
   }
 
   if (typeof obj.error === "string" && obj.error.trim()) {
-    if (isProxyReachabilityFailure(result)) return proxyFail(tool);
+    if (isProxyReachabilityFailure(result)) return reachabilityFail(result, tool);
     return {
       title: titleFor(tool),
       status: "failed",
@@ -318,10 +374,9 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
     };
   }
 
-  if (isProxyReachabilityFailure(result) && (blob.includes("ssl") || blob.includes("timeout") || blob.includes("unable"))) {
-    return proxyFail(tool);
+  if (isProxyReachabilityFailure(result)) {
+    return reachabilityFail(result, tool);
   }
-
   return {
     title: titleFor(tool),
     status: "ok",
@@ -564,7 +619,7 @@ export function summarizeMission(
   }
   if (failedTools) {
     parts.push(
-      `${failedTools} tool${failedTools === 1 ? "" : "s"} failed (often proxy or connectivity)`,
+      `${failedTools} tool${failedTools === 1 ? "" : "s"} failed`,
     );
   }
   if (impactProven) {
