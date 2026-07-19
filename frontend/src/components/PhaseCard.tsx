@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { PhaseView } from "../hooks/useMission";
+import { PHASE_LABELS } from "../lib/summarizeFinding";
 import { ResultCard } from "./ResultCard";
 
 const STATE_LABEL: Record<PhaseView["state"], string> = {
@@ -17,7 +18,8 @@ type Props = {
 
 export function PhaseCard({ phase, index }: Props) {
   const [open, setOpen] = useState(false);
-  const hasFindings = phase.findings.length > 0;
+  const hasResults = phase.findings.length > 0;
+  const label = PHASE_LABELS[phase.name] ?? phase.name.replace(/_/g, " ");
 
   return (
     <div className={`phase-card phase-card--${phase.state}`}>
@@ -31,14 +33,18 @@ export function PhaseCard({ phase, index }: Props) {
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
         >
-          <span className="phase-card__index">{String(index + 1).padStart(2, "0")}</span>
-          <span className="phase-card__name">{phase.name.replace(/_/g, " ")}</span>
+          <span className="phase-card__index">
+            {String(index + 1).padStart(2, "0")}
+          </span>
+          <span className="phase-card__name">{label}</span>
           <span className={`phase-card__state phase-card__state--${phase.state}`}>
             {STATE_LABEL[phase.state]}
           </span>
           {phase.parallel && <span className="badge">parallel</span>}
-          {hasFindings && (
-            <span className="badge badge--ok">{phase.findings.length} findings</span>
+          {hasResults && (
+            <span className="badge badge--ok">
+              {phase.findings.length} result{phase.findings.length === 1 ? "" : "s"}
+            </span>
           )}
           <span className="phase-card__chevron">{open ? "\u2212" : "+"}</span>
         </button>
@@ -54,21 +60,21 @@ export function PhaseCard({ phase, index }: Props) {
         {phase.error && phase.state !== "skipped" && (
           <p className="error-text">{phase.error}</p>
         )}
-        {phase.when && (
-          <p className="phase-card__cond">condition: {phase.when}</p>
+        {phase.when && phase.state === "skipped" && (
+          <p className="phase-card__cond">Skipped based on earlier results.</p>
         )}
 
         {open && (
           <div className="phase-card__findings">
-            {hasFindings ? (
+            {hasResults ? (
               phase.findings.map((row, i) => (
                 <ResultCard key={`${row.tool}-${row.timestamp}-${i}`} row={row} />
               ))
             ) : (
               <p className="result-card__meta">
                 {phase.state === "running"
-                  ? "Collecting output\u2026"
-                  : "No findings recorded for this phase."}
+                  ? "Collecting results\u2026"
+                  : "No results recorded for this step yet."}
               </p>
             )}
           </div>

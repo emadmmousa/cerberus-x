@@ -463,6 +463,25 @@ textarea {
   color: var(--muted);
 }
 
+.result-card__bullets {
+  margin: 0;
+  padding-left: 1.15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.result-card--failed {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--line));
+}
+
+.result-card--skipped {
+  border-color: color-mix(in srgb, var(--amber) 45%, var(--line));
+}
+
 .terminal {
   background: #050608;
   border: 1px solid var(--line);
@@ -607,6 +626,53 @@ textarea {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   margin-left: 0.25rem;
+}
+
+.mission-summary__sentence {
+  margin: 0 0 1rem;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.5;
+  max-width: 52rem;
+}
+
+.mission-summary__stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.mission-stat {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.65rem 0.75rem;
+  background: var(--bg-0);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.mission-stat__value {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--cyan);
+  letter-spacing: 0.04em;
+  word-break: break-word;
+}
+
+.mission-stat__label {
+  font-size: 0.65rem;
+  color: var(--muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+@media (max-width: 800px) {
+  .mission-summary__stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .progress {

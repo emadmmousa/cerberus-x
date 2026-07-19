@@ -65,8 +65,8 @@ describe("MissionControl", () => {
     render(<MissionControl target="test.com" onTargetChange={() => {}} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/recon/i)).toBeInTheDocument();
-      expect(screen.getByText(/vulnerability scan/i)).toBeInTheDocument();
+      expect(screen.getByText(/reconnaissance/i)).toBeInTheDocument();
+      expect(screen.getByText(/vulnerability checks/i)).toBeInTheDocument();
     });
   });
 

@@ -192,6 +192,7 @@ export function useMission() {
     launch,
     isActive,
     phases,
+    results,
     activeTarget,
     totalFindings,
     completedPhases,

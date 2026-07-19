@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { MissionSummary } from "../components/MissionSummary";
 import { PhaseCard } from "../components/PhaseCard";
 import { ProxyToggle } from "../components/ProxyToggle";
-import { StatusPulse } from "../components/StatusPulse";
 import { useEventLog } from "../hooks/useEventLog";
 import { useMission } from "../hooks/useMission";
+import { summarizeMission } from "../lib/summarizeFinding";
 
 type Props = {
   target: string;
@@ -28,8 +29,8 @@ export function MissionControl({ target, onTargetChange }: Props) {
     launch,
     isActive,
     phases,
+    results,
     activeTarget,
-    totalFindings,
     completedPhases,
     pipelineLength,
   } = useMission();
@@ -47,6 +48,15 @@ export function MissionControl({ target, onTargetChange }: Props) {
 
   const progress =
     pipelineLength > 0 ? Math.round((completedPhases / pipelineLength) * 100) : 0;
+
+  const missionSummary = useMemo(() => {
+    if (!activeTarget && !status) return null;
+    return summarizeMission(
+      results,
+      status?.state,
+      activeTarget ?? target.trim(),
+    );
+  }, [activeTarget, status, results, target]);
 
   return (
     <div className={launchFlash ? "launch-confirm" : undefined}>
@@ -115,29 +125,16 @@ export function MissionControl({ target, onTargetChange }: Props) {
         {error && <p className="error-text">{error}</p>}
       </div>
 
-      {(status || activeTarget) && (
-        <div className="panel mission-summary">
-          <div className="mission-summary__head">
-            <StatusPulse state={status?.state ?? "PENDING"} />
-            {activeTarget && (
-              <span className="mission-summary__target">{activeTarget}</span>
-            )}
-            {status?.use_proxy && (
-              <span className="badge badge--ok">
-                Proxy {status.proxy_protocol ?? protocol}
-              </span>
-            )}
-            <span className="mission-summary__stat">
-              {completedPhases}/{pipelineLength} phases
-            </span>
-            <span className="mission-summary__stat">{totalFindings} findings</span>
-          </div>
-          <div className="progress">
-            <div className="progress__bar" style={{ width: `${progress}%` }} />
-          </div>
-          {status?.error && <p className="error-text">{status.error}</p>}
-        </div>
+      {missionSummary && (
+        <MissionSummary
+          summary={missionSummary}
+          proxyLabel={
+            status?.use_proxy ? (status.proxy_protocol ?? protocol) : null
+          }
+          progress={progress}
+        />
       )}
+      {status?.error && <p className="error-text">{status.error}</p>}
 
       <div className="grid-mission">
         <section className="phase-timeline">
