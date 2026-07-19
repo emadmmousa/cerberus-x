@@ -353,7 +353,7 @@ def _run_playbook_job(
                 phase_name, phase_outputs
             )
             for action in actions:
-                action_name = f"auto_{action['tool']}_{phase_name}"
+                action_name = action.get("phase") or f"auto_{action['tool']}_{phase_name}"
                 add_log(f"Auto action {action_name}", level="INFO")
                 action_workflow = build_phase_workflow(
                     action_name,
@@ -373,6 +373,42 @@ def _run_playbook_job(
                 job["phases"].append(
                     {"phase": action_name, "task_id": action_result.id}
                 )
+                decision_engine.evaluate_phase(action_name, action_output)
+                decision_engine.mark_actions_fired([action])
+
+            if decision_engine.state.get("has_session"):
+                post_actions = [
+                    action
+                    for action in decision_engine.generate_post_phase_actions(
+                        phase_name, phase_outputs
+                    )
+                    if action.get("phase") == "post_exploitation"
+                ]
+                for action in post_actions:
+                    action_name = action.get("phase") or f"auto_{action['tool']}_{phase_name}"
+                    add_log(f"Auto action {action_name}", level="INFO")
+                    action_workflow = build_phase_workflow(
+                        action_name,
+                        [{"tool": action["tool"], "args": action["args"]}],
+                        target,
+                        parallel=False,
+                        use_proxy=use_proxy,
+                        proxy_protocol=proxy_protocol,
+                        evasion=resolved_evasion,
+                    )
+                    if action_workflow is None:
+                        continue
+                    action_result = action_workflow.apply_async()
+                    action_output = collect_chain_results(action_result, timeout=300)
+                    job.setdefault("results", {})[action_name] = action_output
+                    save_phase_result(
+                        target, action_name, action_output, job_id=job_id
+                    )
+                    job["phases"].append(
+                        {"phase": action_name, "task_id": action_result.id}
+                    )
+                    decision_engine.evaluate_phase(action_name, action_output)
+                    decision_engine.mark_actions_fired([action])
 
             add_log(f"Completed phase {phase_name}")
         job["state"] = "SUCCESS"

@@ -1,6 +1,13 @@
 import json
 import pytest
+from orchestrator import database
 from orchestrator.decision_engine import DecisionEngine
+
+
+@pytest.fixture(autouse=True)
+def isolated_state_database(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "results.db"))
+
 
 def test_decision_engine_evaluate_condition():
     eng = DecisionEngine("test")
@@ -22,7 +29,10 @@ def test_decision_engine_generate_actions_for_cve():
 
 def test_decision_engine_generate_actions_for_session():
     eng = DecisionEngine("test")
-    eng.state = {'has_session': True}
+    eng.state = {
+        'has_session': True,
+        'sessions': [{'id': '42', 'type': 'meterpreter'}],
+    }
     actions = eng.generate_post_phase_actions("exploitation", [])
     post_hashdump = any('post/windows/gather/hashdump' in str(a) for a in actions)
     assert post_hashdump is True
@@ -74,3 +84,54 @@ def test_decision_engine_accepts_flat_wrapper_payloads():
     assert eng.state["vuln_found"] is True
     assert eng.state["open_ports"][0]["port"] == "443"
     assert eng.state["vulnerabilities"][0]["cve"] == "CVE-2021-41773"
+
+
+def test_generate_actions_dedupes_same_cve_within_job():
+    eng = DecisionEngine("t", job_id="j1")
+    eng.state = {
+        "vuln_found": True,
+        "vulnerabilities": [{"cve": "CVE-2021-41773", "severity": "high"}],
+    }
+    first = eng.generate_post_phase_actions("vulnerability_scan", [])
+    assert len(first) == 1
+    assert first[0]["phase"] == "proof_of_impact"
+    eng.mark_actions_fired(first)
+    second = eng.generate_post_phase_actions("vulnerability_scan", [])
+    assert second == []
+
+
+def test_post_ex_uses_real_session_ids_not_hardcoded_one():
+    eng = DecisionEngine("t", job_id="j1")
+    eng.state = {
+        "has_session": True,
+        "sessions": [{"id": "42", "type": "meterpreter"}],
+    }
+    actions = eng.generate_post_phase_actions("access_gained", [])
+    assert actions
+    assert all("SESSION=42" in a["args"] for a in actions)
+    assert all("SESSION=1" not in a["args"] for a in actions)
+    assert all(a["phase"] == "post_exploitation" for a in actions)
+
+
+def test_should_run_phase_allows_partial_dependency_failures():
+    eng = DecisionEngine("t")
+    eng.results_cache["recon"] = [{"tool": "nmap", "error": "timed out"}, {"tool": "nuclei"}]
+    assert eng.should_run_phase({"name": "scan", "depends_on": ["recon"]}) == (True, None)
+
+
+def test_should_run_phase_blocks_all_failed_dependency():
+    eng = DecisionEngine("t")
+    eng.results_cache["recon"] = [{"tool": "nmap", "error": "timed out"}]
+    assert eng.should_run_phase({"name": "scan", "depends_on": ["recon"]}) == (
+        False,
+        "dependency recon failed",
+    )
+
+
+def test_should_run_phase_blocks_unmet_condition():
+    eng = DecisionEngine("t")
+    eng.state = {"vuln_found": False}
+    assert eng.should_run_phase({"name": "exploit", "when": "vuln_found == True"}) == (
+        False,
+        "condition not met: vuln_found == True",
+    )
