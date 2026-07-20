@@ -50,6 +50,20 @@ def test_memory_roundtrip():
     assert "sqlmap" in hits[0]["summary"]
 
 
+def test_completions_url_normalization():
+    from orchestrator.ai import llm
+
+    assert (
+        llm.completions_url("http://ollama:11434/v1")
+        == "http://ollama:11434/v1/chat/completions"
+    )
+    assert (
+        llm.completions_url("http://ollama:11434")
+        == "http://ollama:11434/v1/chat/completions"
+    )
+    assert llm.completions_url("") is None
+
+
 def test_high_risk_confirm_gate(monkeypatch):
     monkeypatch.setenv("CERBERUS_AI_REQUIRE_CONFIRM", "true")
     assert require_confirm_for_tool("sqlmap") is True

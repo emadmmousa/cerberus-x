@@ -3,14 +3,30 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, Optional
 
 import requests
 
+logger = logging.getLogger(__name__)
+
 
 def llm_configured() -> bool:
     return bool((os.environ.get("CERBERUS_LLM_BASE_URL") or "").strip())
+
+
+def completions_url(base: Optional[str] = None) -> Optional[str]:
+    """Normalize CERBERUS_LLM_BASE_URL to .../v1/chat/completions."""
+    value = (base if base is not None else os.environ.get("CERBERUS_LLM_BASE_URL") or "").strip()
+    if not value:
+        return None
+    value = value.rstrip("/")
+    if value.endswith("/chat/completions"):
+        return value
+    if value.endswith("/v1"):
+        return f"{value}/chat/completions"
+    return f"{value}/v1/chat/completions"
 
 
 def chat_completion(
@@ -23,18 +39,11 @@ def chat_completion(
     Call an OpenAI-compatible /v1/chat/completions endpoint.
     Returns assistant content string, or None if unavailable/failed.
     """
-    base = (os.environ.get("CERBERUS_LLM_BASE_URL") or "").rstrip("/")
-    if not base:
+    url = completions_url()
+    if not url:
         return None
-    model = os.environ.get("CERBERUS_LLM_MODEL", "mistral")
+    model = os.environ.get("CERBERUS_LLM_MODEL", "llama3.2")
     api_key = os.environ.get("CERBERUS_LLM_API_KEY", "ollama")
-    url = f"{base}/chat/completions"
-    if not url.endswith("/chat/completions"):
-        # allow base already including /v1
-        if base.endswith("/v1"):
-            url = f"{base}/chat/completions"
-        else:
-            url = f"{base}/v1/chat/completions"
     try:
         resp = requests.post(
             url,
@@ -52,7 +61,8 @@ def chat_completion(
         resp.raise_for_status()
         data = resp.json()
         return data["choices"][0]["message"]["content"]
-    except Exception:
+    except Exception as exc:
+        logger.debug("LLM chat_completion failed: %s", exc)
         return None
 
 

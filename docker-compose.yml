@@ -106,6 +106,7 @@ services:
         condition: service_healthy
       metasploit:
         condition: service_healthy
+      # ollama is optional — LLM client falls back to heuristic planner if down
     env_file:
       - path: .env
         required: true
@@ -121,6 +122,13 @@ services:
       - CERBERUS_OUTPUT_DIR=/app/output
       - CERBERUS_DB_PATH=/app/output/results.db
       - CERBERUS_ENV_FILE=/app/.env
+      - CERBERUS_MCP_ENABLED=${CERBERUS_MCP_ENABLED:-true}
+      - CERBERUS_MCP_API_KEY=${CERBERUS_MCP_API_KEY:-}
+      - CERBERUS_MCP_RATE_LIMIT_PER_MIN=${CERBERUS_MCP_RATE_LIMIT_PER_MIN:-30}
+      - CERBERUS_AI_REQUIRE_CONFIRM=${CERBERUS_AI_REQUIRE_CONFIRM:-true}
+      - CERBERUS_LLM_BASE_URL=${CERBERUS_LLM_BASE_URL:-http://ollama:11434/v1}
+      - CERBERUS_LLM_API_KEY=${CERBERUS_LLM_API_KEY:-ollama}
+      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-llama3.2}
     volumes:
       - ./src:/app/src
       - ./playbooks:/app/playbooks
@@ -136,6 +144,39 @@ services:
     command: ["python", "-m", "orchestrator.dashboard"]
     networks:
       - cerberus-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cerberus-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    # Host access for debugging; orchestrator uses http://ollama:11434/v1
+    ports:
+      - "127.0.0.1:11434:11434"
+    networks:
+      - cerberus-net
+    restart: unless-stopped
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: cerberus-ollama-pull
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "Waiting for Ollama..."
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+          ollama list >/dev/null 2>&1 && break
+          sleep 2
+        done
+        echo "Pulling ${CERBERUS_LLM_MODEL:-llama3.2}..."
+        ollama pull "${CERBERUS_LLM_MODEL:-llama3.2}"
+    networks:
+      - cerberus-net
+    restart: "no"
 
   worker:
     build:
@@ -175,6 +216,7 @@ services:
 volumes:
   redis_data:
   postgres_data:
+  ollama_data:
 
 networks:
   cerberus-net:

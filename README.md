@@ -79,9 +79,17 @@ Cerberus-X exposes a Model Context Protocol façade on the orchestrator:
 - Auth: `Authorization: Bearer <CERBERUS_MCP_API_KEY>` or `X-API-Key`
 - Tools: `session_create`, `list_tools`, `run_tool`, `get_job_status`, `get_findings`, `list_sessions`, `suggest_next_phase`
 
-Set `CERBERUS_MCP_API_KEY` in `.env`. High-risk tools (`sqlmap`, `metasploit`, …) require `"confirm": true` when `CERBERUS_AI_REQUIRE_CONFIRM=true`.
+Configure in `.env` (see `.env.example`):
 
-Mission Control **AI Mode** posts `ai_mode: true` to `/api/run` and uses the heuristic planner (or an OpenAI-compatible LLM if `CERBERUS_LLM_BASE_URL` is set).
+```bash
+CERBERUS_MCP_API_KEY=<random>          # python -c "import secrets; print(secrets.token_urlsafe(32))"
+CERBERUS_LLM_BASE_URL=http://ollama:11434/v1   # recommended with compose `ollama` service
+CERBERUS_LLM_MODEL=llama3.2
+```
+
+`docker compose up -d` starts **Ollama** and pulls `llama3.2` via `ollama-pull`. If the LLM is down, AI Mode falls back to the heuristic planner.
+
+Mission Control **AI Mode** posts `ai_mode: true` to `/api/run`. High-risk tools require confirm when `CERBERUS_AI_REQUIRE_CONFIRM=true`.
 
 Design/plan docs:
 

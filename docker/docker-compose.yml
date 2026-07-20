@@ -104,6 +104,7 @@ services:
         condition: service_healthy
       metasploit:
         condition: service_healthy
+      # ollama is optional — LLM client falls back to heuristic planner if down
     env_file:
       - path: ../.env
         required: true
@@ -117,6 +118,11 @@ services:
       - CERBERUS_OUTPUT_DIR=/app/output
       - CERBERUS_DB_PATH=/app/output/results.db
       - CERBERUS_ENV_FILE=/app/.env
+      - CERBERUS_MCP_ENABLED=${CERBERUS_MCP_ENABLED:-true}
+      - CERBERUS_MCP_API_KEY=${CERBERUS_MCP_API_KEY:-}
+      - CERBERUS_LLM_BASE_URL=${CERBERUS_LLM_BASE_URL:-http://ollama:11434/v1}
+      - CERBERUS_LLM_API_KEY=${CERBERUS_LLM_API_KEY:-ollama}
+      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-llama3.2}
       # MSF_RPC_USER / MSF_RPC_PASSWORD come from ../.env via env_file
     volumes:
       - ../src:/app/src
@@ -132,6 +138,36 @@ services:
     command: ["python", "-m", "orchestrator.dashboard"]
     networks:
       - cerberus-net
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: cerberus-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    networks:
+      - cerberus-net
+    restart: unless-stopped
+
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: cerberus-ollama-pull
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+          ollama list >/dev/null 2>&1 && break
+          sleep 2
+        done
+        ollama pull "${CERBERUS_LLM_MODEL:-llama3.2}"
+    networks:
+      - cerberus-net
+    restart: "no"
 
   worker:
     build:
@@ -169,6 +205,7 @@ services:
 volumes:
   redis_data:
   postgres_data:
+  ollama_data:
 
 networks:
   cerberus-net:
