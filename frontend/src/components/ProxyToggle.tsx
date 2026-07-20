@@ -213,30 +213,33 @@ export function ProxyToggle({
   };
 
   return (
-    <div className="panel">
-      <div className="panel__title">Proxy Routing</div>
-      <div className="toggle-row">
-        <label className="toggle" aria-label="Enable proxy routing">
+    <div className="options-block">
+      <label className="toggle-row options-block__toggle">
+        <span className="toggle">
           <input
             type="checkbox"
             checked={enabled}
             onChange={(e) => onChange(e.target.checked)}
             disabled={disabled}
+            aria-label="Proxy"
           />
           <span className="toggle__track">
             <span className="toggle__thumb" />
           </span>
-        </label>
-        <span>Route via worker proxy</span>
+        </span>
+        <span>
+          <strong>Proxy</strong>
+          <span className="options-block__hint"> Route through worker</span>
+        </span>
         {configured === true && (
-          <span className="badge badge--ok">Worker configured</span>
+          <span className="badge badge--ok">Ready</span>
         )}
         {configured === false && (
-          <span className="badge badge--warn">Not configured</span>
+          <span className="badge badge--warn">Not set</span>
         )}
-      </div>
+      </label>
       {enabled && (
-        <div className="field" style={{ marginTop: "0.75rem", maxWidth: 240 }}>
+        <div className="field options-block__body" style={{ maxWidth: 240 }}>
           <label htmlFor="proxy-protocol">Protocol</label>
           <select
             id="proxy-protocol"

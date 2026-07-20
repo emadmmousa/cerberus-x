@@ -126,17 +126,19 @@ describe("MissionControl", () => {
     });
   });
 
-  it("launches the unified playbook with use_proxy when toggle enabled", async () => {
+  it("launches with Start after enabling proxy in Options", async () => {
     const fetchMock = mockFetch();
     vi.stubGlobal("fetch", fetchMock);
     render(<MissionControl target="test.com" onTargetChange={() => {}} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^options$/i }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/api/proxy/status");
     });
 
-    fireEvent.click(screen.getByLabelText(/enable proxy routing/i));
-    fireEvent.click(screen.getByRole("button", { name: /launch full spectrum/i }));
+    fireEvent.click(screen.getByLabelText(/^proxy$/i));
+    fireEvent.click(screen.getByRole("button", { name: /^start$/i }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -158,5 +160,17 @@ describe("MissionControl", () => {
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith("/results?target=test.com&job_id=abc");
     });
+  });
+
+  it("keeps advanced controls collapsed by default", async () => {
+    vi.stubGlobal("fetch", mockFetch());
+    render(<MissionControl target="" onTargetChange={() => {}} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^start$/i })).toBeInTheDocument();
+    });
+    expect(screen.queryByLabelText(/^stealth$/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^options$/i }));
+    expect(screen.getByLabelText(/^stealth$/i)).toBeInTheDocument();
   });
 });

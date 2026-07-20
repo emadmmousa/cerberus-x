@@ -18,24 +18,33 @@ export function AiModeToggle({
   disabled,
 }: Props) {
   return (
-    <div className="proxy-toggle" style={{ marginTop: "0.75rem" }}>
-      <label className="proxy-toggle__label">
-        <input
-          type="checkbox"
-          checked={enabled}
-          onChange={(e) => onChange(e.target.checked)}
-          disabled={disabled}
-        />{" "}
-        AI Mode (adaptive planner)
+    <div className="options-block">
+      <label className="toggle-row options-block__toggle">
+        <span className="toggle">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={(e) => onChange(e.target.checked)}
+            disabled={disabled}
+            aria-label="Smart plan"
+          />
+          <span className="toggle__track">
+            <span className="toggle__thumb" />
+          </span>
+        </span>
+        <span>
+          <strong>Smart plan</strong>
+          <span className="options-block__hint"> Adaptive steps</span>
+        </span>
       </label>
       {enabled && (
-        <div style={{ marginTop: "0.5rem", display: "grid", gap: "0.5rem" }}>
+        <div className="options-block__body">
           <div className="field">
-            <label htmlFor="nl-goal">Mission goal (optional)</label>
+            <label htmlFor="nl-goal">Goal (optional)</label>
             <input
               id="nl-goal"
               type="text"
-              placeholder="e.g. Recon and prefer SQL injection checks"
+              placeholder="e.g. Check for SQL injection"
               value={nlGoal}
               onChange={(e) => onNlGoalChange(e.target.value)}
               disabled={disabled}
@@ -48,7 +57,7 @@ export function AiModeToggle({
               onChange={(e) => onConfirmHighRiskChange(e.target.checked)}
               disabled={disabled}
             />{" "}
-            Allow high-risk tools (exploit / creds)
+            Allow risky tools
           </label>
         </div>
       )}

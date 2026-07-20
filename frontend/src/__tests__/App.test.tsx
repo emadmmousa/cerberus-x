@@ -32,6 +32,7 @@ describe("App", () => {
     render(<App />);
     expect(screen.queryByText(/Exploit Ops/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/MSF Console/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/Unified Operations Launcher/i)).toBeInTheDocument();
+    expect(screen.getByText(/CERBERUS-X/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^start$/i })).toBeInTheDocument();
   });
 });

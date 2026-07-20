@@ -46,19 +46,19 @@ export function MissionSummary({ summary, proxyLabel, progress }: Props) {
           <span className="mission-stat__value">
             {summary.openPorts.length ? summary.openPorts.join(", ") : "—"}
           </span>
-          <span className="mission-stat__label">Open ports</span>
+          <span className="mission-stat__label">Ports</span>
         </div>
         <div className="mission-stat">
           <span className="mission-stat__value">{summary.possibleIssues}</span>
-          <span className="mission-stat__label">Possible issues</span>
+          <span className="mission-stat__label">Issues</span>
         </div>
         <div className="mission-stat">
           <span className="mission-stat__value">{summary.confirmedVulns}</span>
-          <span className="mission-stat__label">Confirmed vulns</span>
+          <span className="mission-stat__label">Confirmed</span>
         </div>
         <div className="mission-stat">
           <span className="mission-stat__value">{summary.failedTools}</span>
-          <span className="mission-stat__label">Failed tools</span>
+          <span className="mission-stat__label">Failed</span>
         </div>
       </div>
 

@@ -12,6 +12,14 @@ type Props = {
   onTargetChange: (target: string) => void;
 };
 
+type StealthUi = "off" | "low" | "high";
+
+function stealthToEvasion(level: StealthUi): "off" | "low" | "aggressive" {
+  if (level === "off") return "off";
+  if (level === "low") return "low";
+  return "aggressive";
+}
+
 function formatTime(ts?: number): string {
   if (!ts) return new Date().toLocaleTimeString();
   return new Date(ts * 1000).toLocaleTimeString();
@@ -20,12 +28,11 @@ function formatTime(ts?: number): string {
 export function MissionControl({ target, onTargetChange }: Props) {
   const [useProxy, setUseProxy] = useState(false);
   const [protocol, setProtocol] = useState<"http" | "https" | "socks5h">("http");
-  const [evasion, setEvasion] = useState<
-    "low" | "medium" | "high" | "aggressive" | "off"
-  >("aggressive");
+  const [stealth, setStealth] = useState<StealthUi>("high");
   const [aiMode, setAiMode] = useState(false);
   const [nlGoal, setNlGoal] = useState("");
   const [confirmHighRisk, setConfirmHighRisk] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
   const {
     status,
     error,
@@ -46,7 +53,7 @@ export function MissionControl({ target, onTargetChange }: Props) {
       target: target.trim(),
       use_proxy: useProxy,
       proxy_protocol: protocol,
-      evasion,
+      evasion: stealthToEvasion(stealth),
       ai_mode: aiMode,
       nl_goal: nlGoal.trim() || undefined,
       confirm_high_risk: confirmHighRisk,
@@ -66,23 +73,22 @@ export function MissionControl({ target, onTargetChange }: Props) {
   }, [activeTarget, status, results, target]);
 
   const aiSteps = status?.ai?.steps ?? [];
+  const showRun = Boolean(missionSummary || phases.length > 0 || entries.length > 0);
 
   return (
-    <div className={launchFlash ? "launch-confirm" : undefined}>
-      <h1 className="hero-title">CERBERUS-X</h1>
-      <p className="hero-sub">Unified Operations Launcher</p>
-
-      <div className="panel launcher">
-        <div className="launcher__row">
-          <div className="field">
-            <label htmlFor="target">Target URL</label>
+    <div className={launchFlash ? "mission launch-confirm" : "mission"}>
+      <section className="panel launch" aria-label="Start scan">
+        <div className="launch__row">
+          <div className="field launch__field">
+            <label htmlFor="target">Website or host</label>
             <input
               id="target"
               type="text"
-              placeholder="https://target.example.com"
+              placeholder="example.com"
               value={target}
               onChange={(e) => onTargetChange(e.target.value)}
               disabled={isActive}
+              autoComplete="off"
               onKeyDown={(e) => {
                 if (e.key === "Enter") void handleLaunch();
               }}
@@ -90,118 +96,142 @@ export function MissionControl({ target, onTargetChange }: Props) {
           </div>
           <button
             type="button"
-            className="btn btn--primary launcher__launch"
+            className="btn btn--primary launch__start"
             onClick={() => void handleLaunch()}
             disabled={!target.trim() || isActive}
           >
-            {isActive
-              ? "Operation Running\u2026"
-              : aiMode
-                ? "Launch AI Mission"
-                : "Launch Full Spectrum"}
+            {isActive ? "Running…" : "Start"}
           </button>
         </div>
 
-        <div className="field" style={{ maxWidth: 220, marginBottom: "0.75rem" }}>
-          <label htmlFor="evasion-level">WAF Evasion</label>
-          <select
-            id="evasion-level"
-            value={evasion}
-            onChange={(e) =>
-              setEvasion(
-                e.target.value as
-                  | "low"
-                  | "medium"
-                  | "high"
-                  | "aggressive"
-                  | "off",
-              )
-            }
-            disabled={isActive}
+        <div className="launch__meta">
+          <button
+            type="button"
+            className="link-btn"
+            aria-expanded={optionsOpen}
+            onClick={() => setOptionsOpen((v) => !v)}
           >
-            <option value="off">off</option>
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-            <option value="aggressive">aggressive</option>
-          </select>
+            {optionsOpen ? "Hide options" : "Options"}
+          </button>
+          {(useProxy || aiMode || stealth !== "high") && !optionsOpen && (
+            <span className="launch__chips">
+              {stealth !== "high" && (
+                <span className="chip">Stealth {stealth}</span>
+              )}
+              {useProxy && <span className="chip">Proxy</span>}
+              {aiMode && <span className="chip">Smart plan</span>}
+            </span>
+          )}
         </div>
 
-        <ProxyToggle
-          enabled={useProxy}
-          onChange={setUseProxy}
-          protocol={protocol}
-          onProtocolChange={setProtocol}
-          disabled={isActive}
-        />
+        {optionsOpen && (
+          <div className="options" id="mission-options">
+            <div className="field options__stealth">
+              <label htmlFor="stealth">Stealth</label>
+              <select
+                id="stealth"
+                value={stealth}
+                onChange={(e) => setStealth(e.target.value as StealthUi)}
+                disabled={isActive}
+              >
+                <option value="off">Off</option>
+                <option value="low">Low</option>
+                <option value="high">High</option>
+              </select>
+            </div>
 
-        <AiModeToggle
-          enabled={aiMode}
-          onChange={setAiMode}
-          nlGoal={nlGoal}
-          onNlGoalChange={setNlGoal}
-          confirmHighRisk={confirmHighRisk}
-          onConfirmHighRiskChange={setConfirmHighRisk}
-          disabled={isActive}
-        />
+            <ProxyToggle
+              enabled={useProxy}
+              onChange={setUseProxy}
+              protocol={protocol}
+              onProtocolChange={setProtocol}
+              disabled={isActive}
+            />
+
+            <AiModeToggle
+              enabled={aiMode}
+              onChange={setAiMode}
+              nlGoal={nlGoal}
+              onNlGoalChange={setNlGoal}
+              confirmHighRisk={confirmHighRisk}
+              onConfirmHighRiskChange={setConfirmHighRisk}
+              disabled={isActive}
+            />
+          </div>
+        )}
 
         {error && <p className="error-text">{error}</p>}
-      </div>
+        {status?.error && <p className="error-text">{status.error}</p>}
+      </section>
 
-      {missionSummary && (
-        <MissionSummary
-          summary={missionSummary}
-          proxyLabel={
-            status?.use_proxy ? (status.proxy_protocol ?? protocol) : null
-          }
-          progress={progress}
-        />
-      )}
-      {status?.error && <p className="error-text">{status.error}</p>}
-
-      {aiSteps.length > 0 && (
-        <div className="panel" style={{ marginBottom: "1rem" }}>
-          <div className="panel__title">AI decisions</div>
-          <ul className="result-card__bullets">
-            {aiSteps.map((step, idx) => (
-              <li key={`${step.phase_name ?? "step"}-${idx}`}>
-                <strong>{step.phase_name ?? `step ${idx + 1}`}</strong>
-                {step.source ? ` [${step.source}]` : ""}: {step.reason ?? "—"}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      <div className="grid-mission">
-        <section className="phase-timeline">
-          <div className="panel__title">Attack Pipeline</div>
-          {phases.length === 0 && (
-            <p className="result-card__meta">Loading pipeline…</p>
+      {showRun && (
+        <>
+          {missionSummary && (
+            <section aria-label="Status">
+              <div className="section-label">Status</div>
+              <MissionSummary
+                summary={missionSummary}
+                proxyLabel={
+                  status?.use_proxy ? (status.proxy_protocol ?? protocol) : null
+                }
+                progress={progress}
+              />
+            </section>
           )}
-          {phases.map((phase, i) => (
-            <PhaseCard key={phase.name} phase={phase} index={i} />
-          ))}
-        </section>
 
-        <aside className="mission-log">
-          <div className="panel__title">Live Event Stream</div>
-          <div className="log-scroll">
-            {entries.length === 0 && (
-              <p className="result-card__meta">Waiting for events…</p>
-            )}
-            {entries.map((entry, i) => (
-              <div key={`${entry.timestamp}-${i}`} className="log-line">
-                <span className="log-line__time">{formatTime(entry.timestamp)}</span>
-                <span className={`log-line__lvl log-line__lvl--${entry.level}`}>
-                  {entry.level}
-                </span>
-                <span>{entry.message}</span>
+          {aiSteps.length > 0 && (
+            <section className="panel" aria-label="Plan">
+              <div className="section-label">Plan</div>
+              <ul className="plan-list">
+                {aiSteps.map((step, idx) => (
+                  <li key={`${step.phase_name ?? "step"}-${idx}`}>
+                    <span className="plan-list__name">
+                      {step.phase_name ?? `Step ${idx + 1}`}
+                    </span>
+                    <span className="plan-list__reason">
+                      {step.reason ?? "—"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          <div className="grid-mission">
+            <section className="phase-timeline" aria-label="Steps">
+              <div className="section-label">Steps</div>
+              {phases.length === 0 && (
+                <p className="result-card__meta">Preparing steps…</p>
+              )}
+              {phases.map((phase, i) => (
+                <PhaseCard key={phase.name} phase={phase} index={i} />
+              ))}
+            </section>
+
+            <aside className="mission-log" aria-label="Activity">
+              <div className="section-label">Activity</div>
+              <div className="log-scroll">
+                {entries.length === 0 && (
+                  <p className="result-card__meta">No activity yet</p>
+                )}
+                {entries.map((entry, i) => (
+                  <div key={`${entry.timestamp}-${i}`} className="log-line">
+                    <span className="log-line__time">
+                      {formatTime(entry.timestamp)}
+                    </span>
+                    <span
+                      className={`log-line__lvl log-line__lvl--${entry.level}`}
+                    >
+                      {entry.level}
+                    </span>
+                    <span>{entry.message}</span>
+                  </div>
+                ))}
               </div>
-            ))}
+            </aside>
           </div>
-        </aside>
-      </div>
+        </>
+      )}
     </div>
   );
 }

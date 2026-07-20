@@ -106,7 +106,7 @@ describe("ProxyToggle settings", () => {
 
     await waitFor(() => {
       expect(screen.getByText(/runtime: saved/i)).toBeInTheDocument();
-      expect(screen.getByText(/Worker configured/i)).toBeInTheDocument();
+      expect(screen.getByText(/^Ready$/i)).toBeInTheDocument();
     });
   });
 });
