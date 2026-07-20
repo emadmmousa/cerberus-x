@@ -101,7 +101,7 @@ def run_metasploit_task(self, target, args=None, evasion=None):
     return metasploit.scan(target, args)
 
 
-@app.task(bind=True)
+@app.task(bind=True, soft_time_limit=90, time_limit=120)
 def run_masscan_task(self, target, args=None, evasion=None):
     self.update_state(state="STARTED", meta={"status": "Masscan scanning..."})
     return masscan.scan(target, args)

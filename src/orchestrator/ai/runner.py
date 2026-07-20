@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Optional
 
+from celery.exceptions import TimeoutError as CeleryTimeoutError
+
 from orchestrator.ai import memory, planner
 from orchestrator.cli import collect_chain_results, collect_group_results
 from orchestrator.database import save_phase_result
@@ -13,6 +15,42 @@ from orchestrator.tasks import build_phase_workflow
 
 
 LogFn = Callable[[str], None]
+
+# Per-phase wait for Celery group/chain. Keep below pathological tool hangs;
+# masscan/etc. also have their own soft time limits.
+PHASE_TIMEOUT_SECONDS = 180
+
+
+def _partial_results(async_result) -> list[Any]:
+    """Best-effort gather of finished children after a phase timeout."""
+    collected: list[Any] = []
+    try:
+        children = list(async_result.children or [])
+    except Exception:
+        children = []
+    for child in children:
+        try:
+            if child.successful():
+                collected.append(child.result)
+            elif child.failed():
+                collected.append(
+                    {
+                        "tool": "unknown",
+                        "error": str(child.result) if child.result else "task failed",
+                    }
+                )
+        except Exception:
+            continue
+    if not collected and async_result.successful():
+        try:
+            result = async_result.result
+            if isinstance(result, list):
+                return result
+            if result is not None:
+                return [result]
+        except Exception:
+            pass
+    return collected
 
 
 def run_ai_mission(
@@ -80,17 +118,50 @@ def run_ai_mission(
         job.setdefault("phases", []).append(
             {"phase": phase_name, "task_id": async_result.id, "reason": plan.get("reason")}
         )
-        if bool(plan.get("parallel")):
-            phase_output = collect_group_results(async_result, timeout=600)
-        else:
-            phase_output = collect_chain_results(async_result, timeout=600)
+        timed_out = False
+        try:
+            if bool(plan.get("parallel")):
+                phase_output = collect_group_results(
+                    async_result, timeout=PHASE_TIMEOUT_SECONDS
+                )
+            else:
+                phase_output = collect_chain_results(
+                    async_result, timeout=PHASE_TIMEOUT_SECONDS
+                )
+        except Exception as exc:
+            # Celery raises celery.exceptions.TimeoutError; some paths use builtins.
+            if not (
+                isinstance(exc, (CeleryTimeoutError, TimeoutError))
+                or "timed out" in str(exc).lower()
+            ):
+                raise
+            timed_out = True
+            phase_output = _partial_results(async_result)
+            if not phase_output:
+                phase_output = [
+                    {
+                        "tool": "phase",
+                        "error": f"phase timed out after {PHASE_TIMEOUT_SECONDS}s: {exc}",
+                        "partial": True,
+                    }
+                ]
+            log(
+                f"AI phase {phase_name} timed out; continuing with "
+                f"{len(phase_output)} partial result(s)"
+            )
+            try:
+                async_result.revoke(terminate=True, signal="SIGKILL")
+            except Exception:
+                pass
 
         results_by_phase[phase_name] = phase_output
         job.setdefault("results", {})[phase_name] = phase_output
         save_phase_result(target, phase_name, phase_output, job_id=job_id)
         decision_engine.evaluate_phase(phase_name, phase_output)
+        if timed_out:
+            # Prefer a re-plan that avoids repeating the hung tool set.
+            continue
 
-    # Remember a short strategy summary for future missions.
     summary = (
         f"target={target} goal={nl_goal or 'default'} "
         f"phases={list(results_by_phase.keys())}"

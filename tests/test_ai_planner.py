@@ -64,6 +64,23 @@ def test_completions_url_normalization():
     assert llm.completions_url("") is None
 
 
+def test_llm_masscan_args_get_sanitized(monkeypatch):
+    monkeypatch.setenv("CERBERUS_LLM_BASE_URL", "http://ollama:11434/v1")
+
+    def fake_chat(messages, **_k):
+        return (
+            '{"phase_name":"Reconnaissance","reason":"scan","parallel":true,'
+            '"stop":false,"tools":[{"tool":"masscan","args":["-sV","--limit=1000","-p1-1024"]}]}'
+        )
+
+    monkeypatch.setattr("orchestrator.ai.llm.chat_completion", fake_chat)
+    plan = planner.suggest_next_phase("https://example.com", {}, step=0)
+    assert plan["source"] == "llm"
+    mass = next(t for t in plan["tools"] if t["tool"] == "masscan")
+    assert "-sV" not in mass["args"]
+    assert not any(a.startswith("--limit") for a in mass["args"])
+
+
 def test_high_risk_confirm_gate(monkeypatch):
     monkeypatch.setenv("CERBERUS_AI_REQUIRE_CONFIRM", "true")
     assert require_confirm_for_tool("sqlmap") is True

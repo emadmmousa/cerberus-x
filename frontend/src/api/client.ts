@@ -30,7 +30,14 @@ export type TaskStatus = {
   ai?: {
     goal?: string;
     mode?: string;
-    steps?: Array<{ phase_name?: string; reason?: string; source?: string }>;
+    steps?: Array<{
+      phase_name?: string;
+      reason?: string;
+      source?: string;
+      parallel?: boolean;
+      stop?: boolean;
+      tools?: Array<{ tool: string; args?: string[] }>;
+    }>;
   };
 };
 

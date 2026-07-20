@@ -38,22 +38,53 @@ export function derivePhases(
   // Index of the phase currently executing: first reported phase that has no
   // saved results yet, while the job is still active.
   const savedPhases = new Set(Object.keys(status?.results ?? {}));
-  const staticNames = new Set(pipeline.map((phase) => phase.name));
-  const dynamicPhases = [...new Set(
-    (status?.phases ?? [])
-      .map((phase) => phase.phase)
-      .filter((name) => !staticNames.has(name)),
-  )].map((name) => ({
-    name,
-    tools: status?.ai_mode ? ["ai"] : ["adaptive"],
-    parallel: false,
-    depends_on: [],
-    when: null,
-  }));
+
+  // AI Mode: show planned AI steps (real tools), not the static YAML playbook.
+  let effectivePipeline: PlaybookPhase[] = pipeline;
+  if (status?.ai_mode) {
+    const aiSteps = (status.ai?.steps ?? [])
+      .filter((step) => !step.stop && (step.tools?.length || step.phase_name))
+      .map((step) => ({
+        name: step.phase_name || "ai_phase",
+        tools: (step.tools ?? []).map((t) => t.tool),
+        parallel: Boolean(step.parallel),
+        depends_on: [] as string[],
+        when: null as string | null,
+      }));
+    const seen = new Set(aiSteps.map((p) => p.name));
+    for (const phase of status.phases ?? []) {
+      if (!seen.has(phase.phase)) {
+        aiSteps.push({
+          name: phase.phase,
+          tools: [],
+          parallel: false,
+          depends_on: [],
+          when: null,
+        });
+        seen.add(phase.phase);
+      }
+    }
+    effectivePipeline = aiSteps.length > 0 ? aiSteps : [];
+  }
+
+  const staticNames = new Set(effectivePipeline.map((phase) => phase.name));
+  const dynamicPhases = status?.ai_mode
+    ? []
+    : [...new Set(
+        (status?.phases ?? [])
+          .map((phase) => phase.phase)
+          .filter((name) => !staticNames.has(name)),
+      )].map((name) => ({
+        name,
+        tools: ["adaptive"],
+        parallel: false,
+        depends_on: [] as string[],
+        when: null as string | null,
+      }));
 
   let activeAssigned = false;
 
-  return [...pipeline, ...dynamicPhases].map((phase) => {
+  return [...effectivePipeline, ...dynamicPhases].map((phase) => {
     const rep = reported.get(phase.name);
     const findings = resultsByPhase[phase.name] ?? [];
     let state: PhaseState = "pending";

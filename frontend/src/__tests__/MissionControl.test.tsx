@@ -83,6 +83,39 @@ describe("MissionControl", () => {
     );
   });
 
+  it("AI mode shows planned tools instead of the YAML playbook", () => {
+    const phases = derivePhases(
+      [
+        { name: "recon", tools: ["masscan", "nmap"], parallel: true, depends_on: [] },
+        { name: "vulnerability_scan", tools: ["nuclei"], parallel: false, depends_on: ["recon"] },
+      ],
+      {
+        task_id: "ai1",
+        state: "FAILURE",
+        ai_mode: true,
+        phases: [{ phase: "Reconnaissance", task_id: "grp-1" }],
+        ai: {
+          steps: [
+            {
+              phase_name: "Reconnaissance",
+              parallel: true,
+              tools: [
+                { tool: "masscan", args: ["-p80,443"] },
+                { tool: "nmap", args: ["-sV"] },
+              ],
+            },
+          ],
+        },
+      },
+      {},
+    );
+
+    expect(phases.map((p) => p.name)).toEqual(["Reconnaissance"]);
+    expect(phases[0].tools).toEqual(["masscan", "nmap"]);
+    expect(phases[0].state).toBe("failed");
+    expect(phases.some((p) => p.tools.includes("ai"))).toBe(false);
+  });
+
   it("renders the full phase pipeline from /api/playbook", async () => {
     vi.stubGlobal("fetch", mockFetch());
     render(<MissionControl target="test.com" onTargetChange={() => {}} />);

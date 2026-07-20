@@ -10,8 +10,14 @@ from urllib.parse import urlparse
 
 # Hard ceiling so a broken wait-loop can never block the orchestrator.
 DEFAULT_TIMEOUT_SECONDS = 45
+# TCP-connect fallback must stay bounded (LLM plans often pass wide -p ranges).
+MAX_FALLBACK_PORTS = 64
+FALLBACK_BUDGET_SECONDS = 30
+MAX_PORT_RANGE_SPAN = 256
 _DONE_RE = re.compile(r"100\.00%\s+done", re.IGNORECASE)
 _PORT_ARG_RE = re.compile(r"^-p(.+)$")
+# Flags that belong to nmap / other scanners — masscan will hang or misparse them.
+_FOREIGN_FLAGS = frozenset({"-sV", "-sS", "-sT", "-sU", "-A", "-O", "-Pn", "-n"})
 
 
 def _extract_host(target: str) -> str:
@@ -50,11 +56,57 @@ def _expand_port_token(token: str) -> list[int]:
         start_s, end_s = token.split("-", 1)
         if start_s.isdigit() and end_s.isdigit():
             start, end = int(start_s), int(end_s)
-            if start > end or end - start > 1024:
+            if start > end or end - start > MAX_PORT_RANGE_SPAN:
                 return []
             return list(range(start, end + 1))
         return []
     return [int(token)] if token.isdigit() else []
+
+
+def sanitize_args(args: list[str] | None) -> list[str]:
+    """Drop foreign/nmap flags and keep masscan invocations bounded."""
+    if not args:
+        return ["-p80,443,22,8080,8443", "--rate=1000", "--wait=0"]
+    cleaned: list[str] = []
+    skip_next = False
+    for arg in args:
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in _FOREIGN_FLAGS:
+            continue
+        if arg.startswith("-T") and len(arg) <= 3 and arg[2:].isdigit():
+            continue
+        if arg.startswith("--script"):
+            if arg == "--script":
+                skip_next = True
+            continue
+        if arg.startswith("--limit"):
+            # masscan has no --limit; LLMs often copy nmap-ish forms
+            if arg == "--limit":
+                skip_next = True
+            continue
+        cleaned.append(arg)
+    ports = _ports_from_args(cleaned)
+    if not ports or len(ports) > MAX_FALLBACK_PORTS:
+        # Replace unbounded/empty port specs with a safe common set.
+        without_p: list[str] = []
+        skip = False
+        for arg in cleaned:
+            if skip:
+                skip = False
+                continue
+            if arg == "-p":
+                skip = True
+                continue
+            if _PORT_ARG_RE.match(arg):
+                continue
+            without_p.append(arg)
+        cleaned = [
+            *without_p,
+            f"-p{','.join(str(p) for p in (80, 443, 22, 8080, 8443))}",
+        ]
+    return _force_wait_zero(cleaned)
 
 
 def _ports_from_args(args: list[str]) -> list[int]:
@@ -127,10 +179,18 @@ def _parse_ports(output: str) -> list[dict]:
 
 
 def _tcp_connect_ports(
-    address: str, ports: list[int], timeout: float = 2.0
+    address: str,
+    ports: list[int],
+    timeout: float = 1.0,
+    *,
+    max_ports: int = MAX_FALLBACK_PORTS,
+    budget_seconds: float = FALLBACK_BUDGET_SECONDS,
 ) -> list[dict]:
     open_ports = []
-    for port in ports:
+    deadline = time.monotonic() + budget_seconds
+    for port in ports[:max_ports]:
+        if time.monotonic() >= deadline:
+            break
         try:
             with socket.create_connection((address, port), timeout=timeout):
                 open_ports.append({"port": str(port), "protocol": "tcp"})
@@ -228,10 +288,7 @@ def _run_masscan_syn(
 
 
 def scan(target, args=None, timeout: int = DEFAULT_TIMEOUT_SECONDS):
-    if args is None:
-        args = ["-p80,443,22", "--rate=1000", "--wait=0"]
-    else:
-        args = list(args)
+    args = sanitize_args(list(args) if args is not None else None)
 
     host = _extract_host(target)
     try:

@@ -62,6 +62,33 @@ def test_masscan_parse_port_list():
     assert masscan._ports_from_args(["-p1-3"]) == [1, 2, 3]
 
 
+def test_masscan_sanitize_strips_nmap_flags_and_wide_ranges():
+    cleaned = masscan.sanitize_args(["-sV", "--limit=1000", "-p1-1024"])
+    assert "-sV" not in cleaned
+    assert not any(a.startswith("--limit") for a in cleaned)
+    ports = masscan._ports_from_args(cleaned)
+    assert ports
+    assert len(ports) <= masscan.MAX_FALLBACK_PORTS
+    assert "--wait=0" in cleaned
+
+
+def test_masscan_tcp_connect_respects_budget(monkeypatch):
+    calls = {"n": 0}
+    times = {"t": 0.0}
+
+    monkeypatch.setattr(masscan.time, "monotonic", lambda: times["t"])
+
+    def advance_then_fail(*_a, **_k):
+        calls["n"] += 1
+        times["t"] += 10.0
+        raise OSError("closed")
+
+    monkeypatch.setattr(masscan.socket, "create_connection", advance_then_fail)
+    masscan._tcp_connect_ports("1.2.3.4", list(range(1, 200)), budget_seconds=25, max_ports=200)
+    # Budget 25s / 10s per attempt => at most a few probes before break
+    assert calls["n"] <= 4
+
+
 def test_masscan_tcp_connect_fallback(monkeypatch):
     monkeypatch.setattr(masscan, "_resolve_target", lambda host: "1.2.3.4")
     monkeypatch.setattr(
@@ -72,7 +99,7 @@ def test_masscan_tcp_connect_fallback(monkeypatch):
     monkeypatch.setattr(
         masscan,
         "_tcp_connect_ports",
-        lambda address, ports, timeout=2.0: [
+        lambda address, ports, timeout=1.0, **kwargs: [
             {"port": "80", "protocol": "tcp"},
             {"port": "443", "protocol": "tcp"},
         ],

@@ -18,6 +18,8 @@ Propose the next scan phase as JSON only:
   "tools": [{"tool": "nmap", "args": ["-sV", "-T4"]}]
 }
 Only use tools from the provided allowlist. Prefer recon before exploitation.
+Do NOT invent tool flags from other scanners (e.g. never pass -sV to masscan).
+For masscan use only: -pPORTLIST --rate=1000 --wait=0 with a small port list.
 If the objective is complete, set stop=true and tools=[].
 """
 
@@ -53,12 +55,12 @@ def _sanitize_plan(plan: dict, allow: set[str]) -> Optional[dict]:
         args = entry.get("args") or []
         if not isinstance(args, list):
             args = []
-        tools.append(
-            {
-                "tool": name,
-                "args": [str(a) for a in args if isinstance(a, (str, int, float))],
-            }
-        )
+        clean_args = [str(a) for a in args if isinstance(a, (str, int, float))]
+        if name == "masscan":
+            from tools.wrappers import masscan as masscan_mod
+
+            clean_args = masscan_mod.sanitize_args(clean_args)
+        tools.append({"tool": name, "args": clean_args})
     return {
         "phase_name": str(plan.get("phase_name") or "ai_phase")[:80],
         "reason": str(plan.get("reason") or "AI suggested next actions")[:500],
