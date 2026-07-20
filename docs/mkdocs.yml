@@ -1,0 +1,8 @@
+site_name: Cerberus‑X
+theme: readthedocs
+nav:
+  - Home: index.md
+  - User Manual: user_manual.md
+  - API Reference: api_reference.md
+  - Developer Guide: developer_guide.md
+  - Aggressive Playbook: aggressive_playbook.md

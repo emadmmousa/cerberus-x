@@ -1,0 +1,29 @@
+name: Aggressive Dynamic
+description: Conditional follow-on checks for authorized engagements
+
+steps:
+  - tool: nmap
+    params:
+      target: "{{context.target}}"
+      ports: "21,22,80,443,8080,8443"
+      args: ["-sV", "-T4"]
+    when: "{{context.allow_scan}}"
+
+  - tool: masscan
+    params:
+      target: "{{context.target}}"
+      ports: "80,443,8080,8443"
+      rate: 1000
+    when: "{{context.allow_scan}}"
+
+  - tool: whatweb
+    params:
+      target: "{{context.target}}"
+      args: ["-a", "3"]
+    when: "{{context.allow_scan}}"
+
+  - tool: nuclei
+    params:
+      target: "{{context.target}}"
+      args: ["-severity", "critical,high", "-silent"]
+    when: "{{context.aggressive_level}} > 3"

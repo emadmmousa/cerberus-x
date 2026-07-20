@@ -260,8 +260,13 @@ def test_zmap_host_and_ports():
     assert zmap._ports_from_args(["-p", "80,443"]) == [80, 443]
 
 
-def test_nikto_and_xsstrike_url_helpers():
+def test_nikto_and_xsstrike_url_helpers(monkeypatch):
     from tools.wrappers import nikto, xsstrike
+    from tools.wrappers._web_url import ensure_https_url
+
+    # Avoid live DNS/HTTP probes; wrappers bind canonicalize at import time.
+    monkeypatch.setattr(nikto, "canonicalize_web_url", ensure_https_url)
+    monkeypatch.setattr(xsstrike, "canonicalize_web_url", ensure_https_url)
 
     assert nikto._url("takwene.com") == "https://takwene.com"
     assert xsstrike._url("takwene.com").startswith("https://takwene.com")

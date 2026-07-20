@@ -1,3 +1,6 @@
+# orchestrator/dashboard.py
+# Main Flask application entrypoint with integrated security hardening.
+
 import logging
 import os
 import threading
@@ -27,6 +30,12 @@ from tools.env_file import clear_oxylabs_keys, upsert_oxylabs_keys
 from tools.k8s_proxy_sync import sync_proxy_to_kubernetes
 from tools.waf_evasion import evasion_profile
 
+from security.audit import audit_log
+from security.rate_limit import limiter
+from security.vault_integration import VaultClient
+from security.waf import WAFMiddleware
+from security.auth import oauth
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,9 +52,37 @@ def _resolve_evasion(playbook: dict, override=None) -> dict:
     return {}
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = "cerberus-x-secret"
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "cerberus-x-secret")
+try:
+    app.config.from_object("utils.config.Config")
+except Exception:
+    pass
+
+# Register blueprints (existing)
 app.register_blueprint(msf_bp)
 app.register_blueprint(mcp_bp)
+
+# Aggressive AI / deception / scaling APIs
+from .aggressive_api import agg as aggressive_blueprint
+
+app.register_blueprint(aggressive_blueprint, url_prefix="/api")
+
+# Auth routes
+from .auth_routes import auth_bp
+
+app.register_blueprint(auth_bp, url_prefix="/auth")
+
+# Security middleware (scoped WAF; optional limiter)
+app.before_request(WAFMiddleware.before_request)
+app.after_request(WAFMiddleware.after_request)
+try:
+    limiter.init_app(app)
+except Exception:
+    pass
+try:
+    oauth.init_app(app)
+except Exception:
+    pass
 
 es_client = ElasticsearchClient()
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -65,7 +102,16 @@ _SPA_RESERVED = {
     "ready",
     "socket.io",
     "mcp",
+    "auth",
 }
+
+# Vault client (no-op when VAULT_TOKEN unset / vault down)
+try:
+    _vault = VaultClient()
+    _vault.start_auto_rotation(interval=900)
+except Exception as _vault_exc:  # pragma: no cover
+    logger.warning("Vault init skipped: %s", _vault_exc)
+    _vault = None
 
 
 @app.route("/")
@@ -430,6 +476,8 @@ def _run_playbook_job(
         job["state"] = "FAILURE"
         job["error"] = str(exc)
         add_log(f"Playbook failed for {target}: {exc}", level="ERROR")
+        # Audit log for failure
+        audit_log("PLAYBOOK_FAILED", {"job_id": job_id, "target": target, "error": str(exc)}, severity="high")
 
 
 @app.route("/api/run", methods=["POST"])
@@ -496,10 +544,12 @@ def api_run():
                 )
                 job["state"] = "SUCCESS"
                 add_log(f"AI mission finished for {target}")
+                audit_log("AI_MISSION_COMPLETE", {"job_id": job_id, "target": target})
             except Exception as exc:
                 job["state"] = "FAILURE"
                 job["error"] = str(exc)
                 add_log(f"AI mission failed for {target}: {exc}", level="ERROR")
+                audit_log("AI_MISSION_FAILED", {"job_id": job_id, "target": target, "error": str(exc)}, severity="high")
 
         threading.Thread(target=_ai_job, daemon=True).start()
         add_log(
@@ -531,6 +581,7 @@ def api_run():
         f"Submitted playbook job {job_id} for {target} "
         f"(proxy={use_proxy}/{proxy_protocol})"
     )
+    audit_log("PLAYBOOK_SUBMITTED", {"job_id": job_id, "target": target, "playbook": playbook_path})
     return jsonify({"task_id": job_id, "target": target, "state": "PENDING"})
 
 

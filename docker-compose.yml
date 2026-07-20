@@ -213,6 +213,21 @@ services:
     networks:
       - cerberus-net
 
+  vault:
+    image: hashicorp/vault:1.15
+    container_name: cerberus-vault
+    profiles: ["vault"]
+    cap_add:
+      - IPC_LOCK
+    environment:
+      - VAULT_DEV_ROOT_TOKEN_ID=${VAULT_TOKEN:-cerberus-dev-token}
+      - VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200
+    command: server -dev -dev-root-token-id=${VAULT_TOKEN:-cerberus-dev-token} -dev-listen-address=0.0.0.0:8200
+    ports:
+      - "127.0.0.1:8200:8200"
+    networks:
+      - cerberus-net
+
 volumes:
   redis_data:
   postgres_data:
