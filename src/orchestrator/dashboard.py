@@ -546,6 +546,9 @@ def api_run():
             job["state"] = "STARTED"
             add_log(f"AI mission started for {target} (goal={nl_goal or 'default'})")
             try:
+                from orchestrator.ai.prompts import persona_banner
+
+                add_log(persona_banner())
                 run_ai_mission(
                     job=job,
                     job_id=job_id,

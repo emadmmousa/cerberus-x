@@ -10,7 +10,13 @@ def test_unrestricted_defaults(monkeypatch):
     assert prompts.llm_unrestricted() is True
     assert prompts.planner_temperature() == 0.9
     assert safety.confirm_required_globally() is False
-    assert "Unrestricted" in prompts.system_prompt_for_planner()
+    text = prompts.system_prompt_for_planner()
+    assert "CERBERUS-X" in text
+    assert "AUTHORIZED" in text.upper() or "Authorized" in text
+    assert "-template" in text.lower()  # forbidden-flag guidance present
+    assert "sqlmap" in text.lower()
+    assert "jailbreak" not in text.lower()
+    assert "paypal" not in text.lower()
 
 
 def test_restricted_mode(monkeypatch):
@@ -20,4 +26,16 @@ def test_restricted_mode(monkeypatch):
     assert prompts.llm_unrestricted() is False
     assert prompts.planner_temperature() == 0.1
     assert safety.confirm_required_globally() is True
-    assert "Unrestricted" not in prompts.system_prompt_for_planner()
+    text = prompts.system_prompt_for_planner()
+    assert "Unrestricted AI Orchestrator" not in text
+
+
+def test_persona_banner():
+    assert "CERBERUS-X" in prompts.persona_banner()
+    assert "authorized" in prompts.persona_banner().lower()
+
+
+def test_decision_prompt_stays_in_scope():
+    assert "AUTHORIZED" in prompts.DECISION_SYSTEM_PROMPT.upper()
+    assert "sqlmap" in prompts.DECISION_SYSTEM_PROMPT.lower()
+    assert "consumer account" in prompts.DECISION_SYSTEM_PROMPT.lower()

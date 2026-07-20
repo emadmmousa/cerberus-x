@@ -46,7 +46,7 @@ Default playbooks use **`evasion: aggressive`** and heavy web/CVE coverage.
 
 | Env | Default | Meaning |
 |-----|---------|---------|
-| `CERBERUS_LLM_MODEL` | `cerberus-x` | Unrestricted offensive persona Modelfile |
+| `CERBERUS_LLM_MODEL` | `cerberus-x` | Aggressive **authorized** red-team persona (Modelfile) |
 | `CERBERUS_LLM_UNRESTRICTED` | `true` | Aggressive prompts + higher temperature |
 | `CERBERUS_AI_REQUIRE_CONFIRM` | `false` | High-risk tools run without extra confirm |
 
