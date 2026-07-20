@@ -486,12 +486,15 @@ docker compose logs -f orchestrator worker
 
 | Doc | Topic |
 |-----|--------|
+| [`docs/README.md`](docs/README.md) | Documentation index |
+| [`docs/user_manual.md`](docs/user_manual.md) | Operator quick start |
+| [`docs/api_reference.md`](docs/api_reference.md) | HTTP / MCP API |
+| [`docs/developer_guide.md`](docs/developer_guide.md) | Contributor layout & tests |
+| [`docs/waf_evasion.md`](docs/waf_evasion.md) | Outbound WAF evasion |
+| [`docs/sql_injection.md`](docs/sql_injection.md) | SQLi → sqlmap strategy |
 | `docs/superpowers/specs/2026-07-20-ai-mcp-orchestration-design.md` | AI + MCP design |
-| `docs/superpowers/plans/2026-07-20-ai-mcp-orchestration.md` | Implementation plan |
 | `docs/superpowers/specs/2026-07-20-payload-strategy-design.md` | Payload LHOST/LPORT strategy |
-| `src/tools/cve_exploit_map.py` | CVE + open-port → Metasploit exploit map (2024–2026) |
-| `src/tools/waf_evasion.py` | WAF evasion profiles + technique inventory |
-| `src/tools/sql_injection.py` | SQLi technique catalog → sqlmap strategy |
+| `src/tools/cve_exploit_map.py` | CVE + open-port → Metasploit map |
 | `.env.example` | Full env reference |
 | `authorized_targets.example.json` | Optional scan allowlist |
 

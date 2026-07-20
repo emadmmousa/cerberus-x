@@ -1,5 +1,11 @@
 # Maximum Evasion Default
 
+## Status (2026-07-20)
+
+Shipped. Default playbooks and Focus Launch use `evasion: aggressive`. Full technique
+inventory and wiring are documented in [`docs/waf_evasion.md`](../../waf_evasion.md)
+(`src/tools/waf_evasion.py`).
+
 ## Goal
 
 Make the existing `aggressive` WAF-evasion profile the default for unified

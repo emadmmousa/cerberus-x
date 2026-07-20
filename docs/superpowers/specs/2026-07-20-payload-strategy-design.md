@@ -15,11 +15,11 @@ confirmation gate**.
    so manual/API runs also get sane defaults; keeps MSF built-in handler
    (`DisablePayloadHandler=false`).
 4. Post-ex modules follow session/platform (Linux gather vs Windows gather);
-   unknown platforms get non-destructive `post/multi/gather/env` only.
+   unknown platforms get three non-destructive multi modules (`env`, `checkvm`,
+   `local_exploit_suggester`).
 5. Config: `CERBERUS_LHOST`, `CERBERUS_LPORT_START`, `CERBERUS_PAYLOAD_PREFER`.
 
-## Out of scope
+## Status
 
-- Custom exploit code / novel payloads outside Metasploit modules
-- Starting a separate `multi/handler` job (MSF exploit handler is used)
-- Confirmation UI (explicitly disabled per operator choice)
+Shipped in `src/tools/payload_strategy.py` and wired through decision engine +
+metasploit wrapper. CVE map: `src/tools/cve_exploit_map.py`.

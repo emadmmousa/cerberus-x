@@ -1,5 +1,10 @@
 # AI MCP Orchestration — Full Implementation Plan (Phases 1–5)
 
+## Status (2026-07-20)
+
+**Shipped** (Phases 1–5). Confirm gate defaults **off**. Unrestricted Ollama persona:
+`docker/ollama/Modelfile` → `cerberus-x`. See [`docs/user_manual.md`](../../user_manual.md).
+
 > **For agentic workers:** Execute tasks in order. Prefer inline execution for this plan (user requested implement-all-at-once).
 
 **Goal:** Ship adaptive AI orchestration on Cerberus-X: MCP tool surface, LLM/heuristic planner, mission memory, NL mission entry, and operator safety/UI — while keeping YAML playbooks + DecisionEngine as fallback.
@@ -12,7 +17,7 @@
 
 - Never execute a tool name outside `_TASK_MAP`.
 - MCP requires `CERBERUS_MCP_API_KEY` + `session_id` (except `session_create`).
-- High-risk tools require `confirm=true` when `CERBERUS_AI_REQUIRE_CONFIRM=true` (default true for AI/MCP exploit path in Phase 5).
+- High-risk tools require `confirm=true` when `CERBERUS_AI_REQUIRE_CONFIRM=true` (**default false** as of 2026-07-20 unrestricted orchestration).
 - If LLM unavailable/malformed → DecisionEngine / heuristic planner fallback.
 - No credentials or `.env` secrets in prompts sent to cloud LLMs (sanitize).
 - Preserve existing `/api/run` playbook behavior when `ai_mode` is false/absent.

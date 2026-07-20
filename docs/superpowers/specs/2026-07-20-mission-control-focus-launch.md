@@ -1,7 +1,7 @@
 # Mission Control UI — Focus Launch
 
 **Date:** 2026-07-20  
-**Status:** Approved (Approach 1)
+**Status:** Shipped
 
 ## Goal
 Simplify Cerberus-X Mission Control to a single primary action: enter target → Start. Advanced controls live in a collapsed Options panel.
