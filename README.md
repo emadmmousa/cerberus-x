@@ -70,6 +70,24 @@ Playbook Metasploit args:
 
 `RHOSTS` is derived from the CLI/API target unless provided explicitly.
 
+## MCP + AI Mode
+
+Cerberus-X exposes a Model Context Protocol façade on the orchestrator:
+
+- `POST /mcp` — JSON-RPC (`initialize`, `tools/list`, `tools/call`)
+- `GET /mcp/sse` — SSE heartbeat stream
+- Auth: `Authorization: Bearer <CERBERUS_MCP_API_KEY>` or `X-API-Key`
+- Tools: `session_create`, `list_tools`, `run_tool`, `get_job_status`, `get_findings`, `list_sessions`, `suggest_next_phase`
+
+Set `CERBERUS_MCP_API_KEY` in `.env`. High-risk tools (`sqlmap`, `metasploit`, …) require `"confirm": true` when `CERBERUS_AI_REQUIRE_CONFIRM=true`.
+
+Mission Control **AI Mode** posts `ai_mode: true` to `/api/run` and uses the heuristic planner (or an OpenAI-compatible LLM if `CERBERUS_LLM_BASE_URL` is set).
+
+Design/plan docs:
+
+- `docs/superpowers/specs/2026-07-20-ai-mcp-orchestration-design.md`
+- `docs/superpowers/plans/2026-07-20-ai-mcp-orchestration.md`
+
 ## Development
 
 ```bash

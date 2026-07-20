@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { AiModeToggle } from "../components/AiModeToggle";
 import { MissionSummary } from "../components/MissionSummary";
 import { PhaseCard } from "../components/PhaseCard";
 import { ProxyToggle } from "../components/ProxyToggle";
@@ -22,6 +23,9 @@ export function MissionControl({ target, onTargetChange }: Props) {
   const [evasion, setEvasion] = useState<
     "low" | "medium" | "high" | "aggressive" | "off"
   >("aggressive");
+  const [aiMode, setAiMode] = useState(false);
+  const [nlGoal, setNlGoal] = useState("");
+  const [confirmHighRisk, setConfirmHighRisk] = useState(false);
   const {
     status,
     error,
@@ -43,6 +47,9 @@ export function MissionControl({ target, onTargetChange }: Props) {
       use_proxy: useProxy,
       proxy_protocol: protocol,
       evasion,
+      ai_mode: aiMode,
+      nl_goal: nlGoal.trim() || undefined,
+      confirm_high_risk: confirmHighRisk,
     });
   }
 
@@ -57,6 +64,8 @@ export function MissionControl({ target, onTargetChange }: Props) {
       activeTarget ?? target.trim(),
     );
   }, [activeTarget, status, results, target]);
+
+  const aiSteps = status?.ai?.steps ?? [];
 
   return (
     <div className={launchFlash ? "launch-confirm" : undefined}>
@@ -85,7 +94,11 @@ export function MissionControl({ target, onTargetChange }: Props) {
             onClick={() => void handleLaunch()}
             disabled={!target.trim() || isActive}
           >
-            {isActive ? "Operation Running\u2026" : "Launch Full Spectrum"}
+            {isActive
+              ? "Operation Running\u2026"
+              : aiMode
+                ? "Launch AI Mission"
+                : "Launch Full Spectrum"}
           </button>
         </div>
 
@@ -122,6 +135,16 @@ export function MissionControl({ target, onTargetChange }: Props) {
           disabled={isActive}
         />
 
+        <AiModeToggle
+          enabled={aiMode}
+          onChange={setAiMode}
+          nlGoal={nlGoal}
+          onNlGoalChange={setNlGoal}
+          confirmHighRisk={confirmHighRisk}
+          onConfirmHighRiskChange={setConfirmHighRisk}
+          disabled={isActive}
+        />
+
         {error && <p className="error-text">{error}</p>}
       </div>
 
@@ -136,6 +159,20 @@ export function MissionControl({ target, onTargetChange }: Props) {
       )}
       {status?.error && <p className="error-text">{status.error}</p>}
 
+      {aiSteps.length > 0 && (
+        <div className="panel" style={{ marginBottom: "1rem" }}>
+          <div className="panel__title">AI decisions</div>
+          <ul className="result-card__bullets">
+            {aiSteps.map((step, idx) => (
+              <li key={`${step.phase_name ?? "step"}-${idx}`}>
+                <strong>{step.phase_name ?? `step ${idx + 1}`}</strong>
+                {step.source ? ` [${step.source}]` : ""}: {step.reason ?? "—"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="grid-mission">
         <section className="phase-timeline">
           <div className="panel__title">Attack Pipeline</div>
@@ -149,16 +186,17 @@ export function MissionControl({ target, onTargetChange }: Props) {
 
         <aside className="mission-log">
           <div className="panel__title">Live Event Stream</div>
-          <div className="scroll-box scroll-box--tall">
+          <div className="log-scroll">
             {entries.length === 0 && (
-              <p className="result-card__meta">Awaiting telemetry…</p>
+              <p className="result-card__meta">Waiting for events…</p>
             )}
-            {entries.map((entry) => (
-              <div
-                key={entry.id}
-                className={`log-entry log-entry--${entry.level ?? "INFO"}`}
-              >
-                [{formatTime(entry.timestamp)}] {entry.level}: {entry.message}
+            {entries.map((entry, i) => (
+              <div key={`${entry.timestamp}-${i}`} className="log-line">
+                <span className="log-line__time">{formatTime(entry.timestamp)}</span>
+                <span className={`log-line__lvl log-line__lvl--${entry.level}`}>
+                  {entry.level}
+                </span>
+                <span>{entry.message}</span>
               </div>
             ))}
           </div>

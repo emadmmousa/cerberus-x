@@ -3,24 +3,35 @@ export type RunRequest = {
   use_proxy?: boolean;
   proxy_protocol?: "http" | "https" | "socks5h";
   evasion?: "low" | "medium" | "high" | "aggressive" | "off";
+  ai_mode?: boolean;
+  nl_goal?: string;
+  confirm_high_risk?: boolean;
 };
 
 export type RunResponse = {
   task_id: string;
   target: string;
   state: string;
+  ai_mode?: boolean;
 };
 
 export type TaskStatus = {
   task_id: string;
   state: string;
   target?: string;
-  phases?: Array<{ phase: string; task_id?: string; error?: string }>;
+  phases?: Array<{ phase: string; task_id?: string; error?: string; reason?: string }>;
   results?: Record<string, unknown>;
   error?: string;
   info?: unknown;
   use_proxy?: boolean;
   proxy_protocol?: string;
+  ai_mode?: boolean;
+  nl_goal?: string;
+  ai?: {
+    goal?: string;
+    mode?: string;
+    steps?: Array<{ phase_name?: string; reason?: string; source?: string }>;
+  };
 };
 
 export type ResultRow = {

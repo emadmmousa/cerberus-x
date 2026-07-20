@@ -1,0 +1,211 @@
+"""AI phase planner — heuristic + optional LLM (Phases 2 & 4)."""
+
+from __future__ import annotations
+
+from typing import Any, Optional
+
+from orchestrator.ai import llm, memory
+from orchestrator.mcp.registry import known_tools
+
+
+SYSTEM_PROMPT = """You are the Cerberus-X AI Orchestrator.
+Propose the next scan phase as JSON only:
+{
+  "phase_name": "string",
+  "reason": "short human explanation",
+  "parallel": true,
+  "stop": false,
+  "tools": [{"tool": "nmap", "args": ["-sV", "-T4"]}]
+}
+Only use tools from the provided allowlist. Prefer recon before exploitation.
+If the objective is complete, set stop=true and tools=[].
+"""
+
+
+def _ports_from_results(results_by_phase: dict) -> set[str]:
+    ports: set[str] = set()
+    for payload in results_by_phase.values():
+        items = payload if isinstance(payload, list) else [payload]
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            for p in item.get("ports") or []:
+                if isinstance(p, dict) and p.get("port") is not None:
+                    ports.add(str(p["port"]))
+                elif p is not None:
+                    ports.add(str(p))
+    return ports
+
+
+def _sanitize_plan(plan: dict, allow: set[str]) -> Optional[dict]:
+    if not isinstance(plan, dict):
+        return None
+    tools_in = plan.get("tools") or []
+    if not isinstance(tools_in, list):
+        return None
+    tools = []
+    for entry in tools_in:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get("tool") or "").strip()
+        if name not in allow:
+            continue
+        args = entry.get("args") or []
+        if not isinstance(args, list):
+            args = []
+        tools.append(
+            {
+                "tool": name,
+                "args": [str(a) for a in args if isinstance(a, (str, int, float))],
+            }
+        )
+    return {
+        "phase_name": str(plan.get("phase_name") or "ai_phase")[:80],
+        "reason": str(plan.get("reason") or "AI suggested next actions")[:500],
+        "parallel": bool(plan.get("parallel", True)),
+        "stop": bool(plan.get("stop", False)),
+        "tools": tools,
+    }
+
+
+def heuristic_plan(
+    target: str,
+    results_by_phase: dict,
+    *,
+    nl_goal: str = "",
+    step: int = 0,
+) -> dict:
+    """Deterministic planner used when LLM is unavailable."""
+    allow = known_tools()
+    ports = _ports_from_results(results_by_phase)
+    done_tools = set()
+    for payload in results_by_phase.values():
+        items = payload if isinstance(payload, list) else [payload]
+        for item in items:
+            if isinstance(item, dict) and item.get("tool"):
+                done_tools.add(item["tool"])
+
+    goal = (nl_goal or "").lower()
+    prefer_sqli = "sql" in goal
+    prefer_xss = "xss" in goal
+    prefer_shell = "shell" in goal or "exploit" in goal
+
+    if step == 0 or not results_by_phase:
+        tools = []
+        for name, args in (
+            ("rustscan", ["--ulimit", "5000", "--top"]),
+            ("nmap", ["-sV", "-p21,22,80,443,8080,8443", "-T4"]),
+            ("whatweb", ["-a", "3"]),
+        ):
+            if name in allow:
+                tools.append({"tool": name, "args": args})
+        return {
+            "phase_name": "ai_recon",
+            "reason": "Initial reconnaissance of ports and web stack.",
+            "parallel": True,
+            "stop": False,
+            "tools": tools,
+        }
+
+    web_open = bool(ports & {"80", "443", "8080", "8443"}) or not ports
+    if web_open and not ({"nuclei", "nikto", "ffuf"} & done_tools):
+        tools = []
+        for name, args in (
+            ("ffuf", ["-u", f"https://{target}/FUZZ", "-w", "/usr/share/dirb/wordlists/common.txt", "-ac"]),
+            ("nuclei", ["-t", "http/cves/", "-severity", "critical,high", "-silent"]),
+            ("nikto", ["-maxtime", "60"]),
+        ):
+            if name in allow and name not in done_tools:
+                # ffuf target URL may be wrong if target already has scheme — keep simple
+                if name == "ffuf":
+                    args = ["-ac"]
+                tools.append({"tool": name, "args": args})
+        if tools:
+            return {
+                "phase_name": "ai_vuln",
+                "reason": "Web ports observed; running vulnerability and content discovery.",
+                "parallel": False,
+                "stop": False,
+                "tools": tools,
+            }
+
+    if prefer_xss and "xsstrike" in allow and "xsstrike" not in done_tools:
+        return {
+            "phase_name": "ai_xss",
+            "reason": "Goal prefers XSS checks.",
+            "parallel": False,
+            "stop": False,
+            "tools": [{"tool": "xsstrike", "args": ["--timeout", "20", "--skip"]}],
+        }
+
+    if prefer_sqli and "sqlmap" in allow and "sqlmap" not in done_tools:
+        return {
+            "phase_name": "ai_sqli",
+            "reason": "Goal prefers SQL injection testing.",
+            "parallel": False,
+            "stop": False,
+            "tools": [{"tool": "sqlmap", "args": ["--batch", "--level=2", "--risk=1"]}],
+        }
+
+    if prefer_shell and "metasploit" in allow and "metasploit" not in done_tools:
+        return {
+            "phase_name": "ai_exploit",
+            "reason": "Goal requests exploitation; proposing Metasploit probe (confirm may be required).",
+            "parallel": False,
+            "stop": False,
+            "tools": [{"tool": "metasploit", "args": []}],
+        }
+
+    return {
+        "phase_name": "ai_done",
+        "reason": "No further high-value automated steps suggested.",
+        "parallel": False,
+        "stop": True,
+        "tools": [],
+    }
+
+
+def suggest_next_phase(
+    target: str,
+    results_by_phase: dict,
+    *,
+    nl_goal: str = "",
+    step: int = 0,
+) -> dict:
+    allow = known_tools()
+    recalled = memory.recall(f"{target} {nl_goal}", k=3)
+    memory_bits = "; ".join(r["summary"] for r in recalled) if recalled else ""
+
+    if llm.llm_configured():
+        user = {
+            "target": target,
+            "nl_goal": nl_goal,
+            "step": step,
+            "results_keys": list(results_by_phase.keys()),
+            "open_ports": sorted(_ports_from_results(results_by_phase)),
+            "allowlist": sorted(allow),
+            "memory": memory_bits,
+        }
+        content = llm.chat_completion(
+            [
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": str(user)},
+            ]
+        )
+        parsed = llm.parse_json_object(content or "")
+        cleaned = _sanitize_plan(parsed or {}, allow) if parsed else None
+        if cleaned is not None:
+            if cleaned["stop"] or cleaned["tools"]:
+                cleaned["source"] = "llm"
+                return cleaned
+
+    plan = heuristic_plan(target, results_by_phase, nl_goal=nl_goal, step=step)
+    plan["source"] = "heuristic"
+    if memory_bits:
+        plan["reason"] = f"{plan['reason']} Memory: {memory_bits[:160]}"
+    return plan
+
+
+def plan_from_nl(target: str, nl_goal: str) -> dict:
+    """Phase 4: natural-language mission → initial plan."""
+    return suggest_next_phase(target, {}, nl_goal=nl_goal, step=0)

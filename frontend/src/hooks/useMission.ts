@@ -45,7 +45,7 @@ export function derivePhases(
       .filter((name) => !staticNames.has(name)),
   )].map((name) => ({
     name,
-    tools: ["metasploit"],
+    tools: status?.ai_mode ? ["ai"] : ["adaptive"],
     parallel: false,
     depends_on: [],
     when: null,

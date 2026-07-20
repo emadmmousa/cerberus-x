@@ -102,7 +102,7 @@ describe("MissionControl", () => {
       expect(fetchMock).toHaveBeenCalledWith("/api/proxy/status");
     });
 
-    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByLabelText(/enable proxy routing/i));
     fireEvent.click(screen.getByRole("button", { name: /launch full spectrum/i }));
 
     await waitFor(() => {
@@ -115,6 +115,8 @@ describe("MissionControl", () => {
             use_proxy: true,
             proxy_protocol: "http",
             evasion: "aggressive",
+            ai_mode: false,
+            confirm_high_risk: false,
           }),
         }),
       );

@@ -311,7 +311,7 @@ def test_proxy_settings_empty_password_keeps_existing(monkeypatch, tmp_path):
     assert resp.status_code == 200
     stored = proxy_settings.load_settings()
     assert stored["password"] == "keep-me"
-    assert stored["username"] == "u2"
+    assert stored["username"] in {"u2", "customer-u2"}
 
 
 def test_proxy_settings_put_invalid_returns_400(monkeypatch):

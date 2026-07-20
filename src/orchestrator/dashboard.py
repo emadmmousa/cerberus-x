@@ -18,6 +18,7 @@ from .decision_engine import DecisionEngine
 from .elasticsearch_client import ElasticsearchClient
 from .metasploit_api import msf_bp
 from .metasploit_socketio import register_metasploit_socketio
+from .mcp import mcp_bp
 from .prometheus_metrics import metrics_endpoint, update_queue_length
 from .tasks import build_phase_workflow
 from tools.proxy_config import ALLOWED_PROTOCOLS, credentials_configured
@@ -44,6 +45,7 @@ def _resolve_evasion(playbook: dict, override=None) -> dict:
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "cerberus-x-secret"
 app.register_blueprint(msf_bp)
+app.register_blueprint(mcp_bp)
 
 es_client = ElasticsearchClient()
 socketio = SocketIO(app, cors_allowed_origins="*")
@@ -62,6 +64,7 @@ _SPA_RESERVED = {
     "health",
     "ready",
     "socket.io",
+    "mcp",
 }
 
 
@@ -431,7 +434,7 @@ def _run_playbook_job(
 
 @app.route("/api/run", methods=["POST"])
 def api_run():
-    """Submit a playbook for a target; phases run in order."""
+    """Submit a playbook or AI-mode mission for a target."""
     body = request.get_json(silent=True) or {}
     target = request.args.get("target") or body.get("target")
     if not target:
@@ -441,6 +444,10 @@ def api_run():
     proxy_protocol = body.get("proxy_protocol") or "http"
     if proxy_protocol not in ALLOWED_PROTOCOLS:
         return jsonify({"error": "invalid proxy_protocol"}), 400
+
+    ai_mode = bool(body.get("ai_mode", False))
+    nl_goal = str(body.get("nl_goal") or body.get("goal") or "").strip()
+    confirm_high_risk = bool(body.get("confirm_high_risk", False))
 
     playbook_path = request.args.get("playbook", DEFAULT_PLAYBOOK)
     try:
@@ -464,7 +471,50 @@ def api_run():
         "phases": [],
         "use_proxy": use_proxy,
         "proxy_protocol": proxy_protocol,
+        "ai_mode": ai_mode,
+        "nl_goal": nl_goal,
     }
+
+    if ai_mode:
+        from .ai.runner import run_ai_mission
+
+        def _ai_job():
+            job = playbook_jobs[job_id]
+            job["state"] = "STARTED"
+            add_log(f"AI mission started for {target} (goal={nl_goal or 'default'})")
+            try:
+                run_ai_mission(
+                    job=job,
+                    job_id=job_id,
+                    target=target,
+                    use_proxy=use_proxy,
+                    proxy_protocol=proxy_protocol,
+                    evasion=resolved_evasion,
+                    nl_goal=nl_goal,
+                    confirm_high_risk=confirm_high_risk,
+                    add_log=add_log,
+                )
+                job["state"] = "SUCCESS"
+                add_log(f"AI mission finished for {target}")
+            except Exception as exc:
+                job["state"] = "FAILURE"
+                job["error"] = str(exc)
+                add_log(f"AI mission failed for {target}: {exc}", level="ERROR")
+
+        threading.Thread(target=_ai_job, daemon=True).start()
+        add_log(
+            f"Submitted AI job {job_id} for {target} "
+            f"(proxy={use_proxy}/{proxy_protocol})"
+        )
+        return jsonify(
+            {
+                "task_id": job_id,
+                "target": target,
+                "state": "PENDING",
+                "ai_mode": True,
+            }
+        )
+
     threading.Thread(
         target=_run_playbook_job,
         args=(
@@ -483,6 +533,42 @@ def api_run():
     )
     return jsonify({"task_id": job_id, "target": target, "state": "PENDING"})
 
+
+@app.route("/api/ai/sessions", methods=["GET"])
+def api_ai_sessions():
+    from .mcp import sessions as mcp_sessions
+
+    return jsonify({"sessions": mcp_sessions.list_sessions(limit=50)})
+
+
+@app.route("/api/ai/audit/<session_id>", methods=["GET"])
+def api_ai_audit(session_id: str):
+    from .mcp import sessions as mcp_sessions
+
+    return jsonify(
+        {
+            "session_id": session_id,
+            "audit": mcp_sessions.list_audit(session_id, limit=100),
+        }
+    )
+
+
+@app.route("/api/ai/plan", methods=["POST"])
+def api_ai_plan():
+    """Dry-run planner for UI / debugging."""
+    body = request.get_json(silent=True) or {}
+    target = (body.get("target") or "").strip()
+    if not target:
+        return jsonify({"error": "target is required"}), 400
+    from .ai import planner
+
+    plan = planner.suggest_next_phase(
+        target,
+        body.get("results") if isinstance(body.get("results"), dict) else {},
+        nl_goal=str(body.get("nl_goal") or ""),
+        step=int(body.get("step") or 0),
+    )
+    return jsonify(plan)
 
 @app.route("/<path:path>")
 def spa_fallback(path: str):
