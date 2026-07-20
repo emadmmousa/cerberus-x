@@ -5,23 +5,11 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from orchestrator.ai import llm, memory
+from orchestrator.ai.prompts import system_prompt_for_planner
 from orchestrator.mcp.registry import known_tools
 
 
-SYSTEM_PROMPT = """You are the Cerberus-X AI Orchestrator.
-Propose the next scan phase as JSON only:
-{
-  "phase_name": "string",
-  "reason": "short human explanation",
-  "parallel": true,
-  "stop": false,
-  "tools": [{"tool": "nmap", "args": ["-sV", "-T4"]}]
-}
-Only use tools from the provided allowlist. Prefer recon before exploitation.
-Do NOT invent tool flags from other scanners (e.g. never pass -sV to masscan).
-For masscan use only: -pPORTLIST --rate=1000 --wait=0 with a small port list.
-If the objective is complete, set stop=true and tools=[].
-"""
+SYSTEM_PROMPT = system_prompt_for_planner()  # legacy alias for tests/imports
 
 
 def _ports_from_results(results_by_phase: dict) -> set[str]:
@@ -146,13 +134,44 @@ def heuristic_plan(
             "reason": "Goal prefers SQL injection testing.",
             "parallel": False,
             "stop": False,
-            "tools": [{"tool": "sqlmap", "args": ["--batch", "--level=2", "--risk=1"]}],
+            "tools": [{"tool": "sqlmap", "args": ["--batch", "--forms", "--technique=BEUSTQ"]}],
         }
 
     if prefer_shell and "metasploit" in allow and "metasploit" not in done_tools:
         return {
             "phase_name": "ai_exploit",
-            "reason": "Goal requests exploitation; proposing Metasploit probe (confirm may be required).",
+            "reason": "Goal requests exploitation; proposing Metasploit probe.",
+            "parallel": False,
+            "stop": False,
+            "tools": [{"tool": "metasploit", "args": []}],
+        }
+
+    # Aggressive default: keep pushing sqlmap / metasploit / hydra before stopping.
+    if "sqlmap" in allow and "sqlmap" not in done_tools and web_open:
+        return {
+            "phase_name": "ai_sqli",
+            "reason": "Aggressive follow-up: SQL injection checks.",
+            "parallel": False,
+            "stop": False,
+            "tools": [
+                {
+                    "tool": "sqlmap",
+                    "args": [
+                        "--batch",
+                        "--forms",
+                        "--crawl=2",
+                        "--level=5",
+                        "--risk=3",
+                        "--technique=BEUSTQ",
+                    ],
+                }
+            ],
+        }
+
+    if "metasploit" in allow and "metasploit" not in done_tools:
+        return {
+            "phase_name": "ai_exploit",
+            "reason": "Aggressive follow-up: Metasploit module against observed surface.",
             "parallel": False,
             "stop": False,
             "tools": [{"tool": "metasploit", "args": []}],
@@ -190,7 +209,7 @@ def suggest_next_phase(
         }
         content = llm.chat_completion(
             [
-                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt_for_planner()},
                 {"role": "user", "content": str(user)},
             ]
         )

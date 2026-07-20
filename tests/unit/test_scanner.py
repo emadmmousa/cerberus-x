@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from scanner.authorization import AuthorizationEnforcer
 from scanner.vulnerability_scanner import VulnerabilityScanner
 
@@ -18,20 +16,53 @@ class _FakeResp:
 
 
 class _FakeSession:
-    def __init__(self, responses):
-        self.responses = list(responses)
+    """URL-aware fake: enough responses for expanded SQLi/NoSQL probe loops."""
+
+    def __init__(self, overrides=None):
+        self.overrides = list(overrides or [])
         self.headers = {}
         self.verify = True
         self.proxies = {}
+        self.cookies = {}
         self.calls = []
 
-    def get(self, url, params=None, timeout=5, allow_redirects=True):
-        self.calls.append(("GET", url, params, allow_redirects))
-        return self.responses.pop(0) if self.responses else None
+    def _next(self, method, url, allow_redirects=True, **_kwargs):
+        self.calls.append((method, url, _kwargs.get("params"), allow_redirects))
+        if self.overrides:
+            return self.overrides.pop(0)
+        if "/redirect" in url and allow_redirects is False:
+            return _FakeResp(302, "", {"Location": "https://example.invalid/x"})
+        params = _kwargs.get("params") or {}
+        if "input" in params and "<script>" in str(params.get("input", "")):
+            return _FakeResp(200, f"hello {params['input']}")
+        return _FakeResp(200, "clean")
 
-    def post(self, url, params=None, data=None, timeout=5, allow_redirects=True):
-        self.calls.append(("POST", url, data, allow_redirects))
-        return self.responses.pop(0) if self.responses else None
+    def get(self, url, params=None, timeout=5, allow_redirects=True, **kwargs):
+        return self._next(
+            "GET", url, allow_redirects=allow_redirects, params=params, **kwargs
+        )
+
+    def post(
+        self,
+        url,
+        params=None,
+        data=None,
+        json=None,
+        timeout=5,
+        allow_redirects=True,
+        headers=None,
+        **kwargs,
+    ):
+        return self._next(
+            "POST",
+            url,
+            allow_redirects=allow_redirects,
+            params=params,
+            data=data,
+            json=json,
+            headers=headers,
+            **kwargs,
+        )
 
 
 def test_authz_default_allows(monkeypatch):
@@ -49,35 +80,24 @@ def test_authz_enforced_allowlist(tmp_path, monkeypatch):
 
 
 def test_scanner_detects_reflected_xss():
-    session = _FakeSession(
-        [
-            _FakeResp(200, "ok", {}),  # waf
-            _FakeResp(200, "clean"),  # sqli 1
-            _FakeResp(200, "clean"),  # sqli 2
-            _FakeResp(200, "hello <script>alert(1)</script>"),  # xss hit
-            _FakeResp(200, "nope"),  # path
-            _FakeResp(200, "nope", {}),  # redirect
-        ]
+    session = _FakeSession()
+    scanner = VulnerabilityScanner(
+        "https://lab.example",
+        session=session,
+        evasion={"random_headers": False, "obfuscate_payloads": False},
     )
-    scanner = VulnerabilityScanner("https://lab.example", session=session)
     findings = scanner.scan_all()
     types = {f["type"] for f in findings}
     assert "XSS" in types
 
 
 def test_scanner_open_redirect_respects_allow_redirects_false():
-    session = _FakeSession(
-        [
-            _FakeResp(200, "ok"),  # waf
-            _FakeResp(200, "clean"),  # sqli 1
-            _FakeResp(200, "clean"),  # sqli 2
-            _FakeResp(200, "clean"),  # xss 1
-            _FakeResp(200, "clean"),  # xss 2
-            _FakeResp(200, "clean"),  # path
-            _FakeResp(302, "", {"Location": "https://example.invalid/x"}),  # redirect
-        ]
+    session = _FakeSession()
+    scanner = VulnerabilityScanner(
+        "lab.example",
+        session=session,
+        evasion={"random_headers": False, "obfuscate_payloads": False},
     )
-    scanner = VulnerabilityScanner("lab.example", session=session)
     findings = scanner.scan_all()
     assert any(f["type"] == "Open Redirect" for f in findings)
     assert any(call[3] is False for call in session.calls if call[0] == "GET")

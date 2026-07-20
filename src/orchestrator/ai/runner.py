@@ -72,7 +72,7 @@ def run_ai_mission(
     (Celery enqueue path still enforces confirm for MCP; here we filter tools).
     """
     log = add_log or (lambda msg: None)
-    from orchestrator.ai.safety import is_high_risk
+    from orchestrator.ai.safety import require_confirm_for_tool
 
     decision_engine = DecisionEngine(target, job_id=job_id)
     results_by_phase: dict[str, Any] = {}
@@ -92,7 +92,8 @@ def run_ai_mission(
         tools = []
         for entry in plan["tools"]:
             name = entry["tool"]
-            if is_high_risk(name) and not confirm_high_risk:
+            # When CERBERUS_AI_REQUIRE_CONFIRM=false, high-risk tools always run.
+            if require_confirm_for_tool(name) and not confirm_high_risk:
                 log(f"Skipping high-risk tool {name} (confirm_high_risk=false)")
                 continue
             tools.append(entry)

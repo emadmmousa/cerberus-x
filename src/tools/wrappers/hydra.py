@@ -117,6 +117,48 @@ def _parse_credentials(output: str) -> list[dict]:
     return found
 
 
+_SERVICE_DEFAULT_PORTS = {
+    "ssh": 22,
+    "ftp": 21,
+    "rdp": 3389,
+    "smb": 445,
+    "http": 80,
+    "https": 443,
+    "mysql": 3306,
+    "postgres": 5432,
+    "vnc": 5900,
+}
+
+
+def _service_port(service: str, command: list[str]) -> int | None:
+    """Infer TCP port for a preflight connect check."""
+    for arg in command:
+        match = _SERVICE_URL_RE.match(str(arg))
+        if not match:
+            continue
+        rest = str(arg).split("://", 1)[1]
+        host_part = rest.split("/", 1)[0]
+        if host_part.startswith("[") and "]" in host_part:
+            after = host_part.split("]", 1)[1]
+            if after.startswith(":") and after[1:].isdigit():
+                return int(after[1:])
+        elif host_part.count(":") == 1:
+            maybe_host, maybe_port = host_part.rsplit(":", 1)
+            if maybe_port.isdigit():
+                return int(maybe_port)
+    return _SERVICE_DEFAULT_PORTS.get(service.lower())
+
+
+def _tcp_reachable(host: str, port: int, timeout: float = 3.0) -> bool:
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def scan(
     target,
     args=None,
@@ -129,6 +171,23 @@ def scan(
     host, service, command = _build_command(target, list(args) if args else None)
     resolved, meta = proxy_meta("hydra", use_proxy, proxy_protocol)
     env = merge_env(resolved["env"])
+
+    # Skip brute-force when the service port is filtered/closed (common on CDN edges).
+    port = _service_port(service, command)
+    if port is not None and not _tcp_reachable(host, port):
+        return {
+            "tool": "hydra",
+            "target": host,
+            "service": service,
+            "credentials": [],
+            "skipped": True,
+            "raw_output": (
+                f"Skipped: {service}://{host}:{port} is not reachable "
+                f"(filtered/closed). Hydra was not started."
+            ),
+            "proxy": meta,
+        }
+
     try:
         completed = subprocess.run(
             command,

@@ -120,9 +120,13 @@ services:
       - CERBERUS_ENV_FILE=/app/.env
       - CERBERUS_MCP_ENABLED=${CERBERUS_MCP_ENABLED:-true}
       - CERBERUS_MCP_API_KEY=${CERBERUS_MCP_API_KEY:-}
+      - CERBERUS_AI_REQUIRE_CONFIRM=${CERBERUS_AI_REQUIRE_CONFIRM:-false}
       - CERBERUS_LLM_BASE_URL=${CERBERUS_LLM_BASE_URL:-http://ollama:11434/v1}
       - CERBERUS_LLM_API_KEY=${CERBERUS_LLM_API_KEY:-ollama}
-      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-llama3.2}
+      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-cerberus-x}
+      - CERBERUS_LLM_UNRESTRICTED=${CERBERUS_LLM_UNRESTRICTED:-true}
+      - CERBERUS_LLM_TEMPERATURE=${CERBERUS_LLM_TEMPERATURE:-0.9}
+      - CERBERUS_LLM_TOP_P=${CERBERUS_LLM_TOP_P:-0.95}
       # MSF_RPC_USER / MSF_RPC_PASSWORD come from ../.env via env_file
     volumes:
       - ../src:/app/src
@@ -157,14 +161,25 @@ services:
       - ollama
     environment:
       - OLLAMA_HOST=http://ollama:11434
+      - CERBERUS_LLM_BASE_MODEL=${CERBERUS_LLM_BASE_MODEL:-llama3.2}
+      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-cerberus-x}
+    volumes:
+      - ./ollama:/modelfiles:ro
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        for i in 1 2 3 4 5 6 7 8 9 10; do
+        for i in 1 2 3 4 5 6 7 8 9 10 11 12 15 20; do
           ollama list >/dev/null 2>&1 && break
           sleep 2
         done
-        ollama pull "${CERBERUS_LLM_MODEL:-llama3.2}"
+        BASE="${CERBERUS_LLM_BASE_MODEL:-llama3.2}"
+        CUSTOM="${CERBERUS_LLM_MODEL:-cerberus-x}"
+        ollama pull "$${BASE}"
+        if [ -f /modelfiles/Modelfile ]; then
+          sed "s/^FROM .*/FROM $${BASE}/" /modelfiles/Modelfile > /tmp/Modelfile.cerberus
+          ollama create "$${CUSTOM}" -f /tmp/Modelfile.cerberus
+          ollama list
+        fi
     networks:
       - cerberus-net
     restart: "no"

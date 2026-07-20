@@ -1,7 +1,7 @@
 import subprocess
 from urllib.parse import urlparse
 
-from tools.waf_evasion import random_delay, random_headers
+from tools.waf_evasion import build_evasion_headers, random_delay
 from tools.wrappers._proxy import merge_env, proxy_meta
 from tools.wrappers._web_url import canonicalize_web_url
 
@@ -38,7 +38,7 @@ def _normalize_args(url: str, args: list[str], evasion=None) -> list[str]:
     ):
         normalized.extend(["-maxtime", "60"])
     if evasion.get("random_headers", False):
-        headers = random_headers()
+        headers = build_evasion_headers(evasion)
         for key, value in headers.items():
             # Nikto 2.5+ uses -Add-header (not -header).
             normalized.extend(["-Add-header", f"{key}: {value}"])

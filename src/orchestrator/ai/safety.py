@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import os
 
-from orchestrator.mcp.registry import HIGH_RISK
+
+def _high_risk() -> set[str]:
+    # Lazy import avoids circular import: mcp.actions → safety → mcp.registry.
+    from orchestrator.mcp.registry import HIGH_RISK
+
+    return HIGH_RISK
 
 
 def confirm_required_globally() -> bool:
-    return os.environ.get("CERBERUS_AI_REQUIRE_CONFIRM", "true").lower() not in {
+    # Default OFF — unrestricted orchestration unless explicitly re-enabled.
+    return os.environ.get("CERBERUS_AI_REQUIRE_CONFIRM", "false").lower() not in {
         "0",
         "false",
         "no",
@@ -17,7 +23,7 @@ def confirm_required_globally() -> bool:
 
 
 def is_high_risk(tool: str) -> bool:
-    return tool in HIGH_RISK
+    return tool in _high_risk()
 
 
 def require_confirm_for_tool(tool: str) -> bool:

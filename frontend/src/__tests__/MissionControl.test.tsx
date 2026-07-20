@@ -151,7 +151,7 @@ describe("MissionControl", () => {
             proxy_protocol: "http",
             evasion: "aggressive",
             ai_mode: false,
-            confirm_high_risk: false,
+            confirm_high_risk: true,
           }),
         }),
       );

@@ -17,8 +17,12 @@ output/*
 
 # Frontend
 frontend/node_modules/
+node_modules/
 
 # Local dumps / OS junk
 cerberus-x-codebase-*.txt
 .DS_Store
 *.log
+results.db
+*.db-journal
+authorized_targets.json

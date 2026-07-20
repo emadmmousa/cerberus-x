@@ -188,6 +188,35 @@ describe("summarizeFinding", () => {
     expect(s.bullets.join(" ").toLowerCase()).toMatch(/timeout/);
   });
 
+  it("marks gobuster path discoveries as worked even after proxy fallback", () => {
+    const s = summarizeFinding("gobuster", {
+      tool: "gobuster",
+      directories: [
+        { path: "/about", status: "200" },
+        { path: "/contact", status: "200" },
+      ],
+      proxy: {
+        enabled: false,
+        mode: "direct_fallback",
+        note: "oxylabs upstream unreachable: TimeoutError",
+      },
+    });
+    expect(s.status).toBe("ok");
+    expect(s.bullets.join(" ")).toMatch(/2 path/);
+  });
+
+  it("marks ffuf CDN stall as needs attention without blaming proxy", () => {
+    const s = summarizeFinding("ffuf", {
+      tool: "ffuf",
+      results: [],
+      stalled: true,
+      error: "ffuf stalled under CDN/WAF rate limits (0 req/sec)",
+      proxy: { enabled: false, mode: "direct_fallback" },
+    });
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/cdn|stall/);
+  });
+
   it("reports xsstrike connect failure without calling it a timeout", () => {
     const s = summarizeFinding("xsstrike", {
       tool: "xsstrike",

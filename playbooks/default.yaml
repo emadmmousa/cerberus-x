@@ -1,44 +1,84 @@
 name: "Full Spectrum Attack"
-target: "https://www.takwene.com"
+target: "https://example.com"
 evasion: "aggressive"   # low, medium, high, aggressive
 
 phases:
   - name: "recon"
     tools:
       - tool: masscan
-        args: ["-p80,443,22", "--rate=1000", "--wait=0"]
+        # Include AI/admin/VoIP/dev ports commonly hit by 2024–2026 RCEs.
+        args: ["-p21,22,80,443,445,3389,8000,8080,8443,8888,9000,9200,11434,8161,61616,7001", "--rate=1500", "--wait=0"]
       - tool: rustscan
         args: ["--ulimit", "5000", "--top"]
       - tool: nmap
-        # Full -p- often reports all-filtered from Docker; probe common web/SSH ports.
-        args: ["-sV", "-p21,22,80,443,8080,8443", "-T4"]
+        args: ["-sV", "-p21,22,80,443,445,3389,8000,8080,8443,8888,9000,9200,11434,8161,61616,7001", "-T4"]
       - tool: whatweb
         args: ["-a", "3"]
       - tool: gobuster
         args: ["dir", "-u", "{{target}}", "-w", "/usr/share/dirb/wordlists/common.txt", "-b", "404,301"]
       - tool: theharvester
-        args: ["-d", "{{target}}", "-l", "100", "-b", "crtsh"]
+        args: ["-d", "{{target}}", "-l", "200", "-b", "crtsh"]
       - tool: ffuf
         args: ["-u", "{{target}}/FUZZ", "-w", "/usr/share/dirb/wordlists/common.txt", "-ac"]
     parallel: true
 
   - name: "vulnerability_scan"
     tools:
+      # Aggressive nuclei: CVEs + KEV + RCE/tech fingerprints.
       - tool: nuclei
-        args: ["-t", "http/cves/", "-severity", "critical,high", "-silent"]
+        args:
+          - "-severity"
+          - "critical,high,medium"
+          - "-tags"
+          - "cve,kev,rce,sqli,xss,lfi,ssrf,exposure"
+          - "-silent"
       - tool: nikto
-        args: ["-maxtime", "60"]
+        args: ["-maxtime", "120"]
       - tool: xsstrike
-        args: ["--timeout", "20", "--skip", "--threads", "5"]
+        args: ["--timeout", "25", "--skip", "--threads", "8"]
     parallel: false
     depends_on: ["recon"]
 
-  - name: "exploitation"
+  - name: "web_exploitation"
     tools:
       - tool: sqlmap
-        args: ["--batch", "--level=2", "--risk=1"]
+        args:
+          # Technique stack (BEUSTQ / enum / dump) is auto-applied by
+          # tools.sql_injection.build_sqlmap_args when evasion is aggressive.
+          - "--batch"
+          - "--forms"
+          - "--crawl=3"
+          - "--threads=4"
+          - "--timeout=25"
+          - "--retries=2"
+      - tool: metasploit
+        args:
+          - "auxiliary/scanner/http/http_version"
+          - "THREADS=10"
+      - tool: metasploit
+        args:
+          - "auxiliary/scanner/http/robots_txt"
+      - tool: metasploit
+        args:
+          - "auxiliary/scanner/http/dir_scanner"
+          - "THREADS=10"
+      - tool: metasploit
+        args:
+          - "auxiliary/scanner/http/http_header"
+      - tool: metasploit
+        args:
+          - "auxiliary/scanner/http/ssl"
+          - "SSL=true"
+      - tool: metasploit
+        args:
+          - "auxiliary/scanner/http/wordpress_scanner"
+          - "THREADS=5"
+      - tool: metasploit
+        args:
+          - "auxiliary/scanner/http/apache_optionsbleed"
+    parallel: false
     depends_on: ["vulnerability_scan"]
-    when: "vuln_found == True"
+    when: "http_open == True"
 
   - name: "credential"
     tools:
@@ -50,4 +90,14 @@ phases:
         args: ["smb", "{{target}}", "-u", "admin", "-p", "password"]
     parallel: false
     depends_on: ["recon"]
-    when: "vuln_found == True"
+    when: "ssh_open == True"
+
+  - name: "smb_credential"
+    tools:
+      - tool: crackmapexec
+        args: ["smb", "{{target}}", "-u", "admin", "-p", "password"]
+      - tool: metasploit
+        args:
+          - "auxiliary/scanner/smb/smb_ms17_010"
+    depends_on: ["recon"]
+    when: "smb_open == True"

@@ -127,7 +127,7 @@ There is no separate “Exploit Ops” console tab in the current SPA; Metasploi
 1. Same `/api/run` entrypoint with optional `nl_goal` and `confirm_high_risk`.
 2. `run_ai_mission` loops: **plan → enqueue phase tools → collect → re-plan** (max steps).
 3. Planner uses LLM when `CERBERUS_LLM_BASE_URL` is set; otherwise a **heuristic** planner (recon → web checks → goal-driven tools).
-4. High-risk tools are skipped unless confirm is on (also enforced on MCP when `CERBERUS_AI_REQUIRE_CONFIRM=true`).
+4. High-risk tools run freely unless `CERBERUS_AI_REQUIRE_CONFIRM=true`.
 5. Phase timeouts continue with partial results instead of killing the whole mission when possible.
 
 Web targets are normalized to **HTTPS** (and often `www` when redirects say so) to avoid ISP HTTP hijacks from residential networks.
@@ -227,9 +227,12 @@ Recommended LLM (compose Ollama):
 ```bash
 CERBERUS_LLM_BASE_URL=http://ollama:11434/v1
 CERBERUS_LLM_API_KEY=ollama
-CERBERUS_LLM_MODEL=llama3.2
-CERBERUS_MCP_API_KEY=<your-key>
+CERBERUS_LLM_MODEL=cerberus-x
+CERBERUS_LLM_UNRESTRICTED=true
+CERBERUS_AI_REQUIRE_CONFIRM=false
 ```
+
+Compose builds the **`cerberus-x`** Ollama persona from `docker/ollama/Modelfile` (aggressive authorized red-team system prompt). High-risk tools run without confirm by default.
 
 Related APIs:
 
@@ -376,8 +379,15 @@ Copy from `.env.example`. Never commit real `.env` files.
 |----------|---------|
 | `CERBERUS_MCP_API_KEY` | MCP auth |
 | `CERBERUS_LLM_BASE_URL` | e.g. `http://ollama:11434/v1` |
-| `CERBERUS_LLM_MODEL` | default `llama3.2` |
-| `CERBERUS_AI_REQUIRE_CONFIRM` | Gate high-risk AI/MCP tools |
+| `CERBERUS_LLM_MODEL` | default `cerberus-x` (Modelfile persona) |
+| `CERBERUS_LLM_UNRESTRICTED` | Aggressive system prompts + higher temperature (default true) |
+| `CERBERUS_AI_REQUIRE_CONFIRM` | Gate high-risk AI/MCP tools (default false) |
+| `CERBERUS_SQLI_INTENSITY` | sqlmap strategy: `off`/`low`/`medium`/`high`/`aggressive` |
+| `CERBERUS_SQLMAP_DNS_DOMAIN` | Optional OOB DNS domain for sqlmap |
+| `CERBERUS_LHOST` | Reverse payload callback IP (required for reliable shells) |
+| `CERBERUS_LHOST` | Reverse payload callback IP (reachable from target) |
+| `CERBERUS_LPORT_START` | Prefer listener ports from this value (default 4444) |
+| `CERBERUS_PAYLOAD_PREFER` | `reverse` (default) or `bind` |
 | `OXYLABS_*` | Residential/datacenter proxy |
 | `CERBERUS_REQUIRE_AUTHZ` | Enforce `authorized_targets.json` for `/api/scan` |
 | `SECRET_KEY` | Flask sessions |
@@ -438,7 +448,7 @@ Package layout under `src/`:
 ```
 src/
   orchestrator/   # Flask app, Celery tasks, AI, MCP package, scan API
-  tools/          # wrappers, proxy, evasion, env helpers
+  tools/          # wrappers, proxy, WAF evasion, SQLi strategy, payloads, CVE map
   scanner/        # lightweight VulnerabilityScanner + authz
   security/       # WAF, audit, vault, auth helpers
   workers/        # dynamic tool runner + scaling helpers
@@ -478,7 +488,10 @@ docker compose logs -f orchestrator worker
 |-----|--------|
 | `docs/superpowers/specs/2026-07-20-ai-mcp-orchestration-design.md` | AI + MCP design |
 | `docs/superpowers/plans/2026-07-20-ai-mcp-orchestration.md` | Implementation plan |
-| `docs/superpowers/specs/2026-07-20-mission-control-focus-launch.md` | Focus Launch UI |
+| `docs/superpowers/specs/2026-07-20-payload-strategy-design.md` | Payload LHOST/LPORT strategy |
+| `src/tools/cve_exploit_map.py` | CVE + open-port → Metasploit exploit map (2024–2026) |
+| `src/tools/waf_evasion.py` | WAF evasion profiles + technique inventory |
+| `src/tools/sql_injection.py` | SQLi technique catalog → sqlmap strategy |
 | `.env.example` | Full env reference |
 | `authorized_targets.example.json` | Optional scan allowlist |
 

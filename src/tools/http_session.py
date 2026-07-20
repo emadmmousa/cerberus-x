@@ -8,7 +8,7 @@ from typing import Any, Dict, Optional
 
 import requests
 
-from tools.waf_evasion import random_delay, random_headers
+from tools.waf_evasion import build_evasion_headers, random_delay, with_static_extension
 
 
 class EvasiveSession:
@@ -21,11 +21,14 @@ class EvasiveSession:
         self.evasion = evasion or {}
         self.session = requests.Session()
         self.session.verify = False
+        cookies = self.evasion.get("session_cookies") or self.evasion.get("cookies")
+        if isinstance(cookies, dict):
+            self.session.cookies.update(cookies)
         self._apply_headers()
 
     def _apply_headers(self) -> None:
         if self.evasion.get("random_headers", False):
-            self.session.headers.update(random_headers())
+            self.session.headers.update(build_evasion_headers(self.evasion))
 
     def _maybe_delay(self) -> None:
         if self.evasion.get("random_delay_min", 0) > 0:
@@ -36,7 +39,20 @@ class EvasiveSession:
 
     def request(self, method: str, url: str, **kwargs: Any) -> requests.Response:
         self._maybe_delay()
-        return self.session.request(method, url, **kwargs)
+        if self.evasion.get("static_extension"):
+            url = with_static_extension(url)
+        # Refresh UA / injection headers each request when rotating.
+        if self.evasion.get("rotate_user_agent") or self.evasion.get("header_injection"):
+            self.session.headers.update(build_evasion_headers(self.evasion, target=url))
+        # Category 2 — prefer POST when method_swap and body present.
+        method_u = method.upper()
+        if (
+            self.evasion.get("method_swap")
+            and method_u == "GET"
+            and (kwargs.get("data") is not None or kwargs.get("json") is not None)
+        ):
+            method_u = "POST"
+        return self.session.request(method_u, url, **kwargs)
 
     def get(self, url: str, **kwargs: Any) -> requests.Response:
         return self.request("GET", url, **kwargs)

@@ -341,10 +341,18 @@ def _run_playbook_job(
     job["proxy_protocol"] = proxy_protocol
     resolved_evasion = evasion if isinstance(evasion, dict) else _resolve_evasion(playbook)
     job["evasion"] = {
+        "level": resolved_evasion.get("level"),
         "random_headers": bool(resolved_evasion.get("random_headers")),
         "obfuscate_payloads": bool(resolved_evasion.get("obfuscate_payloads")),
+        "header_injection": bool(resolved_evasion.get("header_injection")),
+        "parameter_pollution": bool(resolved_evasion.get("parameter_pollution")),
+        "static_extension": bool(resolved_evasion.get("static_extension")),
+        "trusted_user_agent": bool(resolved_evasion.get("trusted_user_agent")),
+        "origin_discovery": bool(resolved_evasion.get("origin_discovery")),
+        "ai_payloads": bool(resolved_evasion.get("ai_payloads")),
         "random_delay_min": resolved_evasion.get("random_delay_min"),
         "random_delay_max": resolved_evasion.get("random_delay_max"),
+        "target_waf": resolved_evasion.get("target_waf"),
     }
     try:
         if use_proxy:

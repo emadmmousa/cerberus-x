@@ -383,7 +383,16 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
         title: titleFor(tool),
         status: "ok",
         bullets: [`Found ${results.length} interesting path(s).`],
-        possibleIssues: results.length,
+      };
+    }
+    if (obj.stalled === true || /stalled under CDN/i.test(blob)) {
+      return {
+        title: titleFor(tool),
+        status: "partial",
+        bullets: [
+          "Web fuzzing stalled under CDN/WAF rate limits.",
+          "Directory results from gobuster are still usable.",
+        ],
       };
     }
     if (blob.includes("errors:") || isProxyReachabilityFailure(result)) {
@@ -495,11 +504,12 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
           bullets: ["No interesting directories reported from the wordlist."],
         };
       }
+      // Discovered paths are recon signal, not a vulnerability — keep status ok
+      // even when proxy fell back to direct.
       return {
         title: titleFor(tool),
-        status: "partial",
+        status: "ok",
         bullets: [`Found ${dirs.length} path(s).`],
-        possibleIssues: dirs.length,
       };
     }
   }

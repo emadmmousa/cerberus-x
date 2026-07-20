@@ -31,7 +31,7 @@ export function MissionControl({ target, onTargetChange }: Props) {
   const [stealth, setStealth] = useState<StealthUi>("high");
   const [aiMode, setAiMode] = useState(false);
   const [nlGoal, setNlGoal] = useState("");
-  const [confirmHighRisk, setConfirmHighRisk] = useState(false);
+  const [confirmHighRisk, setConfirmHighRisk] = useState(true);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const {
     status,

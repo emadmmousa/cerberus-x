@@ -17,7 +17,11 @@ def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http
     env = merge_env(resolved["env"])
     try:
         output = subprocess.check_output(
-            cmd, stderr=subprocess.STDOUT, text=True, env=env
+            cmd,
+            stderr=subprocess.STDOUT,
+            text=True,
+            env=env,
+            timeout=45,
         )
         return {
             "tool": "whatweb",
@@ -30,6 +34,14 @@ def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http
             "tool": "whatweb",
             "target": url,
             "error": "whatweb binary not found",
+            "proxy": meta,
+        }
+    except subprocess.TimeoutExpired:
+        return {
+            "tool": "whatweb",
+            "target": url,
+            "error": "whatweb timed out after 45s",
+            "raw_output": "ERROR Opening: execution expired (wrapper timeout)",
             "proxy": meta,
         }
     except subprocess.CalledProcessError as e:

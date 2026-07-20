@@ -2,7 +2,7 @@ import re
 import subprocess
 from pathlib import Path
 
-from tools.waf_evasion import random_delay, random_headers
+from tools.waf_evasion import build_evasion_headers, random_delay
 from tools.wrappers._proxy import merge_env, proxy_meta
 from tools.wrappers._web_url import canonicalize_web_url
 
@@ -96,10 +96,11 @@ def _normalize_args(args: list[str], evasion: dict) -> list[str]:
         out.append("--skip")
     if evasion.get("random_headers", False):
         # Prefer a browser-like Accept; newline/escaped format for XSStrike parser.
-        headers = random_headers(
-            {
+        headers = build_evasion_headers(
+            evasion,
+            extra={
                 "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            }
+            },
         )
         # XSStrike does not need Upgrade-Insecure-Requests / Cache-Control.
         headers.pop("Upgrade-Insecure-Requests", None)

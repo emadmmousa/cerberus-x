@@ -25,7 +25,7 @@ class AIDecisionEngine:
         self.ollama_url = os.environ.get(
             "CERBERUS_OLLAMA_GENERATE_URL", "http://ollama:11434/api/generate"
         )
-        self.model = os.environ.get("CERBERUS_LLM_MODEL", "llama3.2")
+        self.model = os.environ.get("CERBERUS_LLM_MODEL", "cerberus-x")
 
     def decide(self, session_id: str, scan_results: dict) -> list[dict]:
         services = self._extract_services(scan_results or {})
@@ -69,11 +69,15 @@ class AIDecisionEngine:
         return sorted(set(services))
 
     def _build_prompt(self, results: dict, intel: dict) -> str:
+        from orchestrator.ai.prompts import DECISION_SYSTEM_PROMPT
+
         return (
-            "You are a defensive security orchestrator proposing authorized follow-on checks.\n"
-            "Return JSON only: a list of [tool_name, params_dict] pairs.\n"
-            "Allowed tools: nmap, masscan, rustscan, whatweb, nuclei, nikto, ffuf, sqlmap, xsstrike, hydra.\n"
-            "Prefer recon before exploitation. Keep params small and safe.\n\n"
+            f"{DECISION_SYSTEM_PROMPT}\n"
+            "Return JSON only: a list of [tool_name, params_dict] pairs "
+            "or {\"tools\":[{\"tool\":\"name\",\"args\":[]}]}.\n"
+            "Allowed tools: nmap, masscan, rustscan, whatweb, nuclei, nikto, ffuf, "
+            "sqlmap, xsstrike, hydra, metasploit, gobuster.\n"
+            "Prefer thorough exploitation and credential checks when services are open.\n\n"
             f"Scan results (truncated):\n{json.dumps(results, default=str)[:2000]}\n\n"
             f"Threat intel hints:\n{json.dumps(intel, default=str)[:1000]}\n"
         )
@@ -82,14 +86,16 @@ class AIDecisionEngine:
         # Prefer OpenAI-compatible client already used by AI mode when configured.
         try:
             from orchestrator.ai import llm
+            from orchestrator.ai.prompts import DECISION_SYSTEM_PROMPT, planner_temperature
 
             if llm.llm_configured():
                 content = llm.chat_completion(
                     [
-                        {"role": "system", "content": "Return JSON only."},
+                        {"role": "system", "content": DECISION_SYSTEM_PROMPT},
                         {"role": "user", "content": prompt},
                     ],
-                    timeout=45.0,
+                    temperature=planner_temperature(),
+                    timeout=90.0,
                 )
                 if content:
                     return content
@@ -100,10 +106,13 @@ class AIDecisionEngine:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
-            "options": {"temperature": 0.2},
+            "options": {
+                "temperature": float(os.environ.get("CERBERUS_LLM_TEMPERATURE", "0.9")),
+                "top_p": float(os.environ.get("CERBERUS_LLM_TOP_P", "0.95")),
+            },
         }
         try:
-            resp = requests.post(self.ollama_url, json=payload, timeout=30)
+            resp = requests.post(self.ollama_url, json=payload, timeout=90)
             resp.raise_for_status()
             return resp.json().get("response", "[]")
         except Exception as exc:

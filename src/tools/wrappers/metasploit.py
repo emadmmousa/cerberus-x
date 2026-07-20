@@ -186,6 +186,13 @@ def _new_sessions_for_target(
             {
                 "id": str(session_id),
                 "type": str(metadata.get("type") or "shell"),
+                "platform": str(
+                    metadata.get("platform")
+                    or metadata.get("arch")
+                    or metadata.get("info")
+                    or ""
+                ),
+                "desc": str(metadata.get("desc") or metadata.get("info") or ""),
             }
         )
     return result
@@ -200,6 +207,19 @@ def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
         return _error(target, "invalid_arguments", str(exc))
 
     options.setdefault("RHOSTS", _host(target))
+
+    # For exploits, fill workable PAYLOAD/LHOST/LPORT when callers omitted them
+    # (or passed the historical LHOST=0.0.0.0 stub).
+    if module_type == "exploit":
+        from tools.payload_strategy import resolve_exploit_options
+
+        stubs = [f"{key}={value}" for key, value in options.items()]
+        resolved = resolve_exploit_options(module, target=target, existing=stubs)
+        for item in resolved:
+            if "=" not in item:
+                continue
+            key, value = item.split("=", 1)
+            options[key.strip().upper()] = _coerce_option(value)
 
     try:
         client = MetasploitRpcClient()
@@ -263,6 +283,13 @@ def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
         }
         if sessions and module_type == "exploit":
             result["vulnerable"] = True
+        if module_type == "exploit":
+            result["payload"] = {
+                "PAYLOAD": options.get("PAYLOAD"),
+                "LHOST": options.get("LHOST"),
+                "LPORT": options.get("LPORT"),
+                "RPORT": options.get("RPORT"),
+            }
         return result
     except MetasploitRpcError as exc:
         return _error(target, "rpc_error", str(exc), module=module)

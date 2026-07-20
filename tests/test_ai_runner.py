@@ -6,6 +6,7 @@ from orchestrator.ai.runner import run_ai_mission
 
 
 def test_runner_skips_high_risk_without_confirm(monkeypatch):
+    monkeypatch.setenv("CERBERUS_AI_REQUIRE_CONFIRM", "true")
     plans = [
         {
             "phase_name": "ai_step_0",

@@ -2,7 +2,7 @@ import os
 import re
 import subprocess
 
-from tools.waf_evasion import random_delay, random_headers
+from tools.waf_evasion import build_evasion_headers, random_delay
 from tools.wrappers._proxy import merge_env, proxy_meta
 from tools.wrappers._web_url import canonicalize_web_url, force_url_arg
 
@@ -20,6 +20,71 @@ _RESULT_RE = re.compile(
 
 def _url(target: str) -> str:
     return canonicalize_web_url(target).rstrip("/")
+
+
+def _drop_flag(args: list[str], *flags: str) -> list[str]:
+    """Remove flag and its value when the flag takes one."""
+    value_flags = {"-t", "-rate", "-p", "-maxtime", "-w", "--wordlist", "-u", "--url"}
+    out: list[str] = []
+    skip_next = False
+    for index, arg in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in flags:
+            if arg in value_flags and index + 1 < len(args):
+                skip_next = True
+            continue
+        out.append(arg)
+    return out
+
+
+def _cdn_backoff(args: list[str], evasion: dict) -> list[str]:
+    """
+    Cloudflare/CDN edges often stall ffuf at 0 req/sec when auto-calibrate
+    plus random stealth headers plus high thread counts collide.
+    """
+    stealthy = bool(
+        evasion.get("random_headers")
+        or evasion.get("rotate_user_agent")
+        or float(evasion.get("random_delay_min") or 0) > 0
+    )
+    if not stealthy:
+        return args
+
+    # Auto-calibrate with rotating headers produces unstable baselines → hang.
+    args = _drop_flag(args, "-ac", "--auto-calibrate")
+    args = _drop_flag(args, "-t")
+    args = _drop_flag(args, "-rate")
+    # Slow, small bursts; keep total wall time bounded.
+    args.extend(["-t", "5", "-rate", "8"])
+    if "-maxtime" not in args:
+        args.extend(["-maxtime", "45"])
+    else:
+        # Cap existing maxtime under CDN backoff.
+        idx = args.index("-maxtime")
+        if idx + 1 < len(args):
+            try:
+                if int(args[idx + 1]) > 45:
+                    args[idx + 1] = "45"
+            except ValueError:
+                args[idx + 1] = "45"
+    return args
+
+
+def _looks_like_cdn_stall(output: str) -> bool:
+    text = output or ""
+    if "Maximum running time" not in text and "maxtime" not in text.lower():
+        # Still detect zero-throughput stalls even if process was killed otherwise.
+        pass
+    # Progress stuck near start with mounting Errors and ~0 req/sec.
+    if re.search(r"::\s*0 req/sec\s*::", text) and re.search(
+        r"Errors:\s*([4-9]\d|\d{3,})", text
+    ):
+        return True
+    if re.search(r"Progress:\s*\[\d+/4\d{3}\].*0 req/sec", text) and "Errors:" in text:
+        return True
+    return False
 
 
 def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
@@ -58,10 +123,10 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
     if "-maxtime" not in fixed:
         fixed.extend(["-maxtime", "60"])
     if evasion.get("random_headers", False):
-        headers = random_headers()
+        headers = build_evasion_headers(evasion, target=url)
         for key, value in headers.items():
             fixed.extend(["-H", f"{key}: {value}"])
-    return fixed
+    return _cdn_backoff(fixed, evasion)
 
 
 def _parse_results(output: str) -> list[dict]:
@@ -110,6 +175,11 @@ def scan(
             "60",
             "-ac",
         ]
+        if evasion.get("random_headers", False):
+            headers = build_evasion_headers(evasion, target=url)
+            for key, value in headers.items():
+                args.extend(["-H", f"{key}: {value}"])
+        args = _cdn_backoff(args, evasion)
     else:
         args = _normalize_args(list(args), url, evasion)
     if evasion.get("random_delay_min", 0) > 0:
@@ -123,13 +193,21 @@ def scan(
         output = subprocess.check_output(
             cmd, stderr=subprocess.STDOUT, text=True, env=env
         )
-        return {
+        results = _parse_results(output)
+        payload = {
             "tool": "ffuf",
             "target": url,
-            "results": _parse_results(output),
+            "results": results,
             "raw_output": output,
             "proxy": meta,
         }
+        if not results and _looks_like_cdn_stall(output):
+            payload["stalled"] = True
+            payload["error"] = (
+                "ffuf stalled under CDN/WAF rate limits (0 req/sec); "
+                "use gobuster results or rerun with Stealth off"
+            )
+        return payload
     except FileNotFoundError:
         return {
             "tool": "ffuf",
@@ -138,9 +216,23 @@ def scan(
             "proxy": meta,
         }
     except subprocess.CalledProcessError as e:
-        return {
+        output = str(e.output or "")
+        results = _parse_results(output)
+        payload = {
             "tool": "ffuf",
             "target": url,
-            "error": str(e.output),
+            "results": results,
+            "raw_output": output,
             "proxy": meta,
         }
+        if results:
+            return payload
+        if _looks_like_cdn_stall(output):
+            payload["stalled"] = True
+            payload["error"] = (
+                "ffuf stalled under CDN/WAF rate limits (0 req/sec); "
+                "use gobuster results or rerun with Stealth off"
+            )
+        else:
+            payload["error"] = output or str(e)
+        return payload

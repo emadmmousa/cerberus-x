@@ -130,15 +130,21 @@ def test_scan_waits_for_job_and_returns_sessions(monkeypatch):
     )
     install_client(monkeypatch, client)
     monkeypatch.setattr(metasploit.time, "sleep", lambda *_: None)
+    monkeypatch.setenv("CERBERUS_LHOST", "10.9.8.7")
 
     result = metasploit.scan(
         "https://scanner.example.test",
         ["exploit/multi/http/apache_path_traversal"],
     )
 
-    assert result["sessions"] == [{"id": "42", "type": "meterpreter"}]
+    assert result["sessions"] == [
+        {"id": "42", "type": "meterpreter", "platform": "", "desc": ""}
+    ]
     assert result["vulnerable"] is True
     assert client.list_job_calls >= 1
+    assert result.get("payload", {}).get("PAYLOAD")
+    assert result["payload"]["LHOST"] not in {None, "0.0.0.0", ""}
+    assert result["payload"]["LHOST"] == "10.9.8.7"
 
 
 def test_scan_returns_only_sessions_created_by_exploit_job(monkeypatch):
@@ -161,7 +167,9 @@ def test_scan_returns_only_sessions_created_by_exploit_job(monkeypatch):
         ["exploit/multi/http/apache_path_traversal"],
     )
 
-    assert result["sessions"] == [{"id": "2", "type": "meterpreter"}]
+    assert result["sessions"] == [
+        {"id": "2", "type": "meterpreter", "platform": "", "desc": ""}
+    ]
 
 
 def test_scan_reports_job_timeout_when_job_never_completes(monkeypatch):

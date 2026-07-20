@@ -57,7 +57,7 @@ export function AiModeToggle({
               onChange={(e) => onConfirmHighRiskChange(e.target.checked)}
               disabled={disabled}
             />{" "}
-            Allow risky tools
+            Allow risky tools (on by default)
           </label>
         </div>
       )}

@@ -1,6 +1,6 @@
 name: Ultimate Aggression
 description: Aggressive authorized engagement using installed Cerberus tools
-evasion: high
+evasion: aggressive   # low, medium, high, aggressive — full WAF evasion stack
 phases:
   - name: recon
     tools:
@@ -24,15 +24,15 @@ phases:
   - name: vulnerability_checks
     tools:
       - tool: nuclei
-        args: ["-severity", "critical,high,medium", "-silent"]
+        args: ["-severity", "critical,high,medium", "-tags", "cve,kev,rce", "-silent"]
       - tool: nikto
-        args: ["-maxtime", "90"]
+        args: ["-maxtime", "120"]
       - tool: xsstrike
-        args: ["--timeout", "20", "--skip"]
+        args: ["--timeout", "25", "--skip"]
     parallel: false
     depends_on: ["web_discovery"]
   - name: exploitation_checks
     tools:
       - tool: sqlmap
-        args: ["--batch", "--level=2", "--risk=1"]
+        args: ["--batch", "--forms", "--crawl=3", "--threads=4"]
     depends_on: ["vulnerability_checks"]

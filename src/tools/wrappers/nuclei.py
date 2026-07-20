@@ -2,7 +2,7 @@ import os
 import re
 import subprocess
 
-from tools.waf_evasion import random_delay, random_headers
+from tools.waf_evasion import build_evasion_headers, random_delay
 from tools.wrappers._proxy import merge_env, proxy_meta
 from tools.wrappers._web_url import canonicalize_web_url
 
@@ -58,7 +58,7 @@ def _normalize_args(args: list[str], evasion=None) -> list[str]:
             continue
         normalized.append(arg)
     if evasion.get("random_headers", False):
-        headers = random_headers()
+        headers = build_evasion_headers(evasion)
         for key, value in headers.items():
             normalized.extend(["-H", f"{key}: {value}"])
     return normalized
@@ -159,6 +159,10 @@ def scan(
         finding = {"severity": severity, "title": title}
         if match.group("url"):
             finding["url"] = match.group("url")
+        # Capture template / CVE ids from the title blob for decision engine mapping.
+        cve_hit = re.search(r"CVE-\d{4}-\d+", title, re.IGNORECASE)
+        if cve_hit:
+            finding["template_id"] = cve_hit.group(0).upper()
         findings.append(finding)
     return {
         "tool": "nuclei",

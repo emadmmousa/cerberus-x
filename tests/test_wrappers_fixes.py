@@ -164,6 +164,7 @@ def test_hydra_default_args_target_only(monkeypatch):
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     monkeypatch.setattr(hydra, "_default_wordlist", lambda: "/tmp/passes.txt")
+    monkeypatch.setattr(hydra, "_tcp_reachable", lambda *a, **k: True)
 
     result = hydra.scan("lab.example")
 
@@ -188,6 +189,7 @@ def test_hydra_builds_command_with_normalized_target(monkeypatch):
         return Result()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(hydra, "_tcp_reachable", lambda *a, **k: True)
 
     result = hydra.scan(
         "ssh://lab.example:22/path",
@@ -225,6 +227,7 @@ def test_hydra_accepts_native_service_url_args(monkeypatch):
         return Result()
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(hydra, "_tcp_reachable", lambda *a, **k: True)
 
     result = hydra.scan(
         "takwene.com",
@@ -242,11 +245,38 @@ def test_hydra_accepts_native_service_url_args(monkeypatch):
     assert result["service"] == "ssh"
 
 
+def test_hydra_skips_when_ssh_filtered(monkeypatch):
+    called = []
+
+    def fake_run(command, **kwargs):
+        called.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(hydra, "_tcp_reachable", lambda *a, **k: False)
+
+    result = hydra.scan(
+        "www.cdn.example",
+        ["-l", "admin", "-P", "/tmp/passes.txt", "ssh://www.cdn.example"],
+    )
+
+    assert result.get("skipped") is True
+    assert called == []
+    assert "not reachable" in result["raw_output"].lower()
+
+
 def test_hydra_reports_missing_binary(monkeypatch):
     def missing_binary(*args, **kwargs):
         raise FileNotFoundError
 
     monkeypatch.setattr(subprocess, "run", missing_binary)
+    monkeypatch.setattr(hydra, "_tcp_reachable", lambda *a, **k: True)
 
     result = hydra.scan("lab.example", ["ssh", "-l", "operator", "-p", "test"])
 
@@ -423,6 +453,27 @@ def test_ffuf_custom_args_receive_a_runtime_limit():
         "https://takwene.com",
     )
     assert args[args.index("-maxtime") + 1] == "60"
+
+
+def test_ffuf_cdn_backoff_drops_autocalibrate_under_stealth():
+    args = ffuf._normalize_args(
+        ["-u", "{{target}}/FUZZ", "-w", "/tmp/words.txt", "-ac", "-t", "40"],
+        "https://takwene.com",
+        evasion={"random_headers": True, "random_delay_min": 1.0},
+    )
+    assert "-ac" not in args
+    assert args[args.index("-t") + 1] == "5"
+    assert args[args.index("-rate") + 1] == "8"
+    assert int(args[args.index("-maxtime") + 1]) <= 45
+
+
+def test_ffuf_detects_cdn_stall_output():
+    stalled = (
+        ":: Progress: [40/4614] :: Job [1/1] :: 0 req/sec :: Duration: [0:00:20] :: Errors: 40 ::\n"
+        "[WARN] Maximum running time for entire process reached, exiting.\n"
+    )
+    assert ffuf._looks_like_cdn_stall(stalled) is True
+    assert ffuf._looks_like_cdn_stall(":: Progress: [100/100] :: 50 req/sec :: Errors: 0 ::") is False
 
 
 def test_crackmapexec_strips_url_target_args():

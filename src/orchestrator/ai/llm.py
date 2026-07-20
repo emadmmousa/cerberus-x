@@ -9,6 +9,8 @@ from typing import Any, Optional
 
 import requests
 
+from orchestrator.ai.prompts import llm_unrestricted, planner_temperature
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,8 +34,8 @@ def completions_url(base: Optional[str] = None) -> Optional[str]:
 def chat_completion(
     messages: list[dict[str, str]],
     *,
-    temperature: float = 0.2,
-    timeout: float = 60.0,
+    temperature: float | None = None,
+    timeout: float = 90.0,
 ) -> Optional[str]:
     """
     Call an OpenAI-compatible /v1/chat/completions endpoint.
@@ -42,8 +44,19 @@ def chat_completion(
     url = completions_url()
     if not url:
         return None
-    model = os.environ.get("CERBERUS_LLM_MODEL", "llama3.2")
+    model = os.environ.get("CERBERUS_LLM_MODEL", "cerberus-x")
     api_key = os.environ.get("CERBERUS_LLM_API_KEY", "ollama")
+    temp = planner_temperature() if temperature is None else temperature
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": temp,
+    }
+    # Ollama OpenAI-compat accepts these; ignored by strict OpenAI servers.
+    if llm_unrestricted():
+        body["top_p"] = float(os.environ.get("CERBERUS_LLM_TOP_P", "0.95"))
+        body["frequency_penalty"] = 0.0
+        body["presence_penalty"] = 0.1
     try:
         resp = requests.post(
             url,
@@ -51,11 +64,7 @@ def chat_completion(
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
-            },
+            json=body,
             timeout=timeout,
         )
         resp.raise_for_status()
