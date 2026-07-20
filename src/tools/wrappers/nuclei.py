@@ -4,6 +4,7 @@ import subprocess
 
 from tools.waf_evasion import random_delay, random_headers
 from tools.wrappers._proxy import merge_env, proxy_meta
+from tools.wrappers._web_url import canonicalize_web_url
 
 TEMPLATE_ROOTS = (
     os.environ.get("NUCLEI_TEMPLATES_DIR", "/root/nuclei-templates"),
@@ -13,9 +14,7 @@ TEMPLATE_ROOTS = (
 
 
 def _url(target: str) -> str:
-    if "://" in target:
-        return target
-    return f"https://{target}"
+    return canonicalize_web_url(target)
 
 
 def _resolve_template_arg(value: str) -> str:

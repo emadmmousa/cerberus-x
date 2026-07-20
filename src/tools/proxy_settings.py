@@ -14,6 +14,55 @@ REDIS_KEY = "cerberus:proxy:settings"
 _REQUIRED = ("username", "password", "host", "port", "protocol")
 _memory_store: dict[str, str] = {}
 
+# Oxylabs product entry points (host -> default port, username prefix).
+OXYLABS_PRODUCTS: dict[str, dict[str, Any]] = {
+    "residential": {
+        "host": "pr.oxylabs.io",
+        "port": 7777,
+        "prefix": "customer-",
+        "label": "Residential / Mobile",
+    },
+    "datacenter": {
+        "host": "dc.oxylabs.io",
+        "port": 8000,
+        "prefix": "user-",
+        "label": "Datacenter",
+    },
+    "isp": {
+        "host": "isp.oxylabs.io",
+        "port": 8000,
+        "prefix": "user-",
+        "label": "ISP",
+    },
+}
+
+
+def normalize_oxylabs_username(username: str, host: str) -> str:
+    """Normalize Oxylabs proxy usernames; reject dashboard emails."""
+    user = (username or "").strip()
+    host_l = (host or "").strip().lower()
+    if not user:
+        raise ValueError("username is required")
+    if "@" in user:
+        raise ValueError(
+            "use Oxylabs proxy username (customer-… / user-…), "
+            "not the dashboard login email"
+        )
+
+    if host_l in {"pr.oxylabs.io", "socks.oxylabs.io"} or host_l.endswith(
+        ".pr.oxylabs.io"
+    ):
+        if not user.startswith("customer-") and not user.startswith("user-"):
+            return f"customer-{user}"
+        return user
+
+    if host_l in {"dc.oxylabs.io", "ddc.oxylabs.io", "isp.oxylabs.io", "disp.oxylabs.io"}:
+        if not user.startswith("user-") and not user.startswith("customer-"):
+            return f"user-{user}"
+        return user
+
+    return user
+
 
 def _memory_clear() -> None:
     _memory_store.clear()
@@ -112,6 +161,8 @@ def merge_put_body(body: dict[str, Any], existing: dict[str, Any] | None) -> dic
         raise ValueError("port is required")
     if not password_final:
         raise ValueError("password is required")
+
+    username = normalize_oxylabs_username(username, host)
 
     return {
         "username": username,

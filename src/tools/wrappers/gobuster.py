@@ -6,6 +6,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
 from tools.wrappers._proxy import merge_env, proxy_meta
+from tools.wrappers._web_url import canonicalize_web_url, force_url_arg
 
 WORDLIST = "/usr/share/dirb/wordlists/common.txt"
 _WILDCARD_LENGTH_RE = re.compile(r"Length:\s*(\d+)", re.IGNORECASE)
@@ -13,9 +14,7 @@ _WILDCARD_STATUS_RE = re.compile(r"=>\s*(\d{3})\s*\(Length:", re.IGNORECASE)
 
 
 def _url(target: str) -> str:
-    if "://" in target:
-        return target
-    return f"https://{target}"
+    return canonicalize_web_url(target)
 
 
 def _probe_exclude_length(url: str, env: dict[str, str] | None = None) -> int | None:
@@ -125,10 +124,12 @@ def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http
     if args is None:
         args = ["dir", "-u", url, "-w", WORDLIST, "-q", "-t", "20", "-b", "404"]
     else:
+        # tasks.py may already expand {{target}} to http://… — rewrite -u.
         args = [
             arg.replace("{{target}}", url) if isinstance(arg, str) else arg
             for arg in args
         ]
+        args = force_url_arg(args, url, flags=("-u", "--url"))
 
     args = list(args)
     args = [*args, *resolved["flags"]]

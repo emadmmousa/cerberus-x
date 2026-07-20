@@ -168,6 +168,16 @@ def proxy_settings_put():
     return jsonify(view)
 
 
+@app.route("/api/proxy/test", methods=["POST"])
+def proxy_settings_test():
+    """Probe saved Oxylabs credentials (CONNECT to ip.oxylabs.io)."""
+    from tools.wrappers._proxy import probe_upstream
+
+    result = probe_upstream()
+    status = 200 if result.get("ok") else 502
+    return jsonify(result), status
+
+
 @app.route("/api/proxy/settings", methods=["DELETE"])
 def proxy_settings_delete():
     purge = request.args.get("purge", "").lower() in {"1", "true", "yes"}

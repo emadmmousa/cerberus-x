@@ -76,7 +76,40 @@ def test_merge_put_body_empty_password_keeps_existing():
         existing=existing,
     )
     assert merged["password"] == "keep-me"
-    assert merged["username"] == "u2"
+    assert merged["username"] == "customer-u2"
+
+
+def test_normalize_rejects_dashboard_email():
+    with pytest.raises(ValueError, match="dashboard login email"):
+        proxy_settings.normalize_oxylabs_username("ceo@wksagency.com", "pr.oxylabs.io")
+
+
+def test_normalize_adds_customer_prefix():
+    assert (
+        proxy_settings.normalize_oxylabs_username("emadmousa_AJjFI", "pr.oxylabs.io")
+        == "customer-emadmousa_AJjFI"
+    )
+
+
+def test_normalize_adds_user_prefix_for_datacenter():
+    assert (
+        proxy_settings.normalize_oxylabs_username("scanner", "dc.oxylabs.io")
+        == "user-scanner"
+    )
+
+
+def test_merge_put_body_rejects_email_username():
+    with pytest.raises(ValueError, match="dashboard login email"):
+        proxy_settings.merge_put_body(
+            {
+                "username": "ceo@wksagency.com",
+                "password": "secret",
+                "host": "pr.oxylabs.io",
+                "port": 7777,
+                "protocol": "http",
+            },
+            existing=None,
+        )
 
 
 def test_public_view_never_includes_password():

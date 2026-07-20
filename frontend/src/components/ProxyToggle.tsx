@@ -3,8 +3,33 @@ import {
   getProxySettings,
   getProxyStatus,
   putProxySettings,
+  testProxySettings,
   type ProxySettings,
 } from "../api/client";
+
+const OXYLABS_PRESETS = [
+  {
+    id: "residential",
+    label: "Residential",
+    host: "pr.oxylabs.io",
+    port: "7777",
+    hint: "Username must be customer-… (proxy user, not dashboard email)",
+  },
+  {
+    id: "datacenter",
+    label: "Datacenter",
+    host: "dc.oxylabs.io",
+    port: "8000",
+    hint: "Username must be user-… (proxy user from Oxylabs dashboard)",
+  },
+  {
+    id: "isp",
+    label: "ISP",
+    host: "isp.oxylabs.io",
+    port: "8000",
+    hint: "Username must be user-… (proxy user from Oxylabs dashboard)",
+  },
+] as const;
 
 type Props = {
   enabled: boolean;
@@ -60,6 +85,7 @@ export function ProxyToggle({
     "http",
   );
   const [saving, setSaving] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [saveResult, setSaveResult] = useState<ProxySettings | null>(null);
 
@@ -104,6 +130,34 @@ export function ProxyToggle({
       setCredProtocol(parsed.protocol);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "Invalid proxy URL");
+    }
+  };
+
+  const applyPreset = (id: (typeof OXYLABS_PRESETS)[number]["id"]) => {
+    const preset = OXYLABS_PRESETS.find((p) => p.id === id);
+    if (!preset) return;
+    setHost(preset.host);
+    setPort(preset.port);
+    setCredProtocol("http");
+    setMessage(preset.hint);
+  };
+
+  const onTest = async () => {
+    setTesting(true);
+    setMessage(null);
+    try {
+      const result = await testProxySettings();
+      if (result.ok) {
+        setMessage(
+          `Upstream OK${result.username ? ` as ${result.username}` : ""} @ ${result.host}:${result.port}`,
+        );
+      } else {
+        setMessage(result.note || "Upstream probe failed");
+      }
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : "Probe failed");
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -211,6 +265,25 @@ export function ProxyToggle({
 
         {open && (
           <div className="proxy-settings__body">
+            <p className="proxy-settings__msg muted">
+              Use Oxylabs <strong>proxy user</strong> credentials from the
+              dashboard (My Products → Users), not the account email login.
+              Example residential URL:{" "}
+              <code>http://customer-USER:PASS@pr.oxylabs.io:7777</code>
+            </p>
+            <div className="row" style={{ marginBottom: "0.75rem" }}>
+              {OXYLABS_PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  className="btn"
+                  onClick={() => applyPreset(preset.id)}
+                  disabled={disabled || saving}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
             <div className="field">
               <label htmlFor="proxy-url">Full proxy URL</label>
               <div className="row" style={{ marginBottom: 0 }}>
@@ -319,6 +392,14 @@ export function ProxyToggle({
                 disabled={disabled || saving || !username.trim() || !host.trim()}
               >
                 {saving ? "Saving…" : "Save credentials"}
+              </button>
+              <button
+                type="button"
+                className="btn"
+                onClick={onTest}
+                disabled={disabled || saving || testing}
+              >
+                {testing ? "Testing…" : "Test upstream"}
               </button>
             </div>
 

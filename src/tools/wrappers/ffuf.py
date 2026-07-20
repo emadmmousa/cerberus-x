@@ -4,13 +4,14 @@ import subprocess
 
 from tools.waf_evasion import random_delay, random_headers
 from tools.wrappers._proxy import merge_env, proxy_meta
+from tools.wrappers._web_url import canonicalize_web_url, force_url_arg
 
 WORDLIST = "/usr/share/dirb/wordlists/common.txt"
 _WORDLIST_ALIASES = {
     "/usr/share/wordlists/dirb/common.txt": WORDLIST,
     "/usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt": WORDLIST,
 }
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 _RESULT_RE = re.compile(
     r"^(?P<path>.+?)\s+\[Status:\s*(?P<status>\d+)(?:,\s*Size:\s*(?P<size>\d+))?.*?\]",
     re.IGNORECASE,
@@ -18,9 +19,7 @@ _RESULT_RE = re.compile(
 
 
 def _url(target: str) -> str:
-    if "://" in target:
-        return target.rstrip("/")
-    return f"https://{target}".rstrip("/")
+    return canonicalize_web_url(target).rstrip("/")
 
 
 def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
@@ -37,10 +36,7 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
             skip_next = False
             continue
         if arg in {"-u", "--url"} and index + 1 < len(normalized):
-            target_url = str(normalized[index + 1])
-            if "://" not in target_url:
-                target_url = f"https://{target_url.lstrip('/')}"
-            fixed.extend([arg, target_url])
+            # Ignore pre-expanded playbook hosts; always use canonical HTTPS (+ FUZZ).
             skip_next = True
             continue
         if arg in {"-w", "--wordlist"} and index + 1 < len(normalized):
@@ -53,8 +49,7 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
             continue
         fixed.append(arg)
 
-    if "-u" not in fixed and "--url" not in fixed:
-        fixed.extend(["-u", f"{url}/FUZZ"])
+    fixed = force_url_arg(fixed, url, flags=("-u", "--url"), with_fuzz=True)
     if "-w" not in fixed and "--wordlist" not in fixed:
         if os.path.isfile(WORDLIST):
             fixed.extend(["-w", WORDLIST])

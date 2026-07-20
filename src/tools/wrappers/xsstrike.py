@@ -2,15 +2,13 @@ import subprocess
 
 from tools.waf_evasion import random_delay, random_headers
 from tools.wrappers._proxy import merge_env, proxy_meta
+from tools.wrappers._web_url import canonicalize_web_url
 
 DEFAULT_TIMEOUT_SECONDS = 90
 
 
 def _url(target: str) -> str:
-    if "://" in target:
-        url = target
-    else:
-        url = f"https://{target}"
+    url = canonicalize_web_url(target)
     if "?" not in url:
         url = f"{url.rstrip('/')}/?q=test"
     return url

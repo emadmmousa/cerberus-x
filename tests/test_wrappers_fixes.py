@@ -262,7 +262,7 @@ def test_rustscan_parses_open_host_port_lines():
 def test_ffuf_parses_status_lines_with_spaces():
     output = (
         "Documents and Settings  [Status: 301, Size: 168, Words: 11, Lines: 2]\n"
-        "Program Files           [Status: 301, Size: 159, Words: 10, Lines: 2]\n"
+        "\x1b[2KProgram Files           [Status: 301, Size: 159, Words: 10, Lines: 2]\n"
     )
     assert ffuf._parse_results(output) == [
         {"path": "Documents and Settings", "status": "301", "size": "168"},
@@ -320,11 +320,11 @@ def test_nuclei_resolves_short_template_paths(tmp_path, monkeypatch):
 
 def test_ffuf_rewrites_common_wordlist_aliases():
     args = ffuf._normalize_args(
-        ["-u", "{{target}}/FUZZ", "-w", "/usr/share/wordlists/dirb/common.txt"],
-        "https://takwene.com",
+        ["-u", "http://takwene.com/FUZZ", "-w", "/usr/share/wordlists/dirb/common.txt"],
+        "https://www.takwene.com",
     )
-    assert args[1] == "https://takwene.com/FUZZ"
-    assert args[3] == "/usr/share/dirb/wordlists/common.txt"
+    assert args[args.index("-u") + 1] == "https://www.takwene.com/FUZZ"
+    assert args[args.index("-w") + 1] == "/usr/share/dirb/wordlists/common.txt"
     assert "-ac" in args
 
 

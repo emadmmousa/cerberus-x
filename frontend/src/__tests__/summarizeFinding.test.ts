@@ -45,6 +45,18 @@ describe("summarizeFinding", () => {
     expect(s.bullets.join(" ")).toMatch(/no open ports/i);
   });
 
+  it("marks nmap filtered empty results as partial", () => {
+    const s = summarizeFinding("nmap", {
+      tool: "nmap",
+      ports: [],
+      raw_output:
+        "All 65535 scanned ports on takwene.com are in ignored states.\nNot shown: 65535 filtered tcp ports (no-response)",
+    });
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/filtered|confirm/);
+    expect(s.bullets.join(" ").toLowerCase()).not.toMatch(/no open ports found/);
+  });
+
   it("explains proxy timeout for gobuster", () => {
     const s = summarizeFinding("gobuster", {
       tool: "gobuster",
@@ -118,6 +130,60 @@ describe("summarizeFinding", () => {
     expect(s.bullets.join(" ").toLowerCase()).toMatch(/didn.?t run|incorrectly|failed/);
   });
 
+  it("counts only real nikto findings, not banner lines", () => {
+    const s = summarizeFinding("nikto", {
+      tool: "nikto",
+      issues: [
+        "+ Target IP:          1.2.3.4",
+        "+ Server: Microsoft-IIS/10.0",
+        "+ [999986] /: Retrieved x-powered-by header: ASP.NET.",
+        "+ ERROR: Host maximum execution time of 60 seconds reached",
+      ],
+      raw_output: "ERROR: Host maximum execution time of 60 seconds reached",
+    });
+    expect(s.status).toBe("partial");
+    expect(s.possibleIssues).toBe(2);
+    expect(s.bullets.join(" ")).toMatch(/2 possible|time limit/i);
+  });
+
+  it("surfaces whatweb stack instead of empty ok", () => {
+    const s = summarizeFinding("whatweb", {
+      tool: "whatweb",
+      raw_output: "https://www.example.com [200 OK] ASP_NET, Microsoft-IIS/10.0, Bootstrap",
+      proxy: { enabled: false, mode: "direct_fallback", note: "oxylabs upstream unreachable: TimeoutError" },
+    });
+    expect(s.status).toBe("ok");
+    expect(s.bullets.join(" ")).toMatch(/IIS|ASP\.NET/i);
+  });
+
+  it("marks gobuster empty+timeouts as partial", () => {
+    const s = summarizeFinding("gobuster", {
+      tool: "gobuster",
+      directories: [],
+      raw_output: "context deadline exceeded\n".repeat(6),
+      proxy: { enabled: false, mode: "direct_fallback" },
+    });
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/timeout/);
+  });
+
+  it("reports xsstrike connect failure without calling it a timeout", () => {
+    const s = summarizeFinding("xsstrike", {
+      tool: "xsstrike",
+      findings: ["Unable to connect to the target."],
+      raw_output: "[!!] Unable to connect to the target.\nValueError: invalid literal for int()",
+      error: "xsstrike failed to connect or crashed while probing the target",
+      proxy: {
+        enabled: false,
+        mode: "direct_fallback",
+        note: "oxylabs upstream unreachable: TimeoutError",
+      },
+    });
+    expect(s.status).toBe("failed");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/connect/);
+    expect(s.bullets.join(" ").toLowerCase()).not.toMatch(/timed out/);
+  });
+
   it("counts theHarvester hosts and ignores banner email", () => {
     const s = summarizeFinding("theHarvester", {
       tool: "theHarvester",
@@ -127,6 +193,33 @@ describe("summarizeFinding", () => {
     expect(s.status).toBe("ok");
     expect(s.bullets.join(" ")).toMatch(/2 related hostname/i);
     expect(s.bullets.join(" ")).not.toMatch(/cmartorella/i);
+  });
+
+  it("does not count the target hostname as related intel", () => {
+    const s = summarizeFinding("theHarvester", {
+      tool: "theHarvester",
+      target: "takwene.com",
+      emails: ["cmartorella@edge-security.com"],
+      hosts: ["takwene.com"],
+    });
+    expect(s.status).toBe("ok");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/no public hostnames|no public/);
+    expect(s.bullets.join(" ")).not.toMatch(/related hostname/i);
+  });
+
+  it("does not blame proxy after direct_fallback", () => {
+    const s = summarizeFinding("ffuf", {
+      tool: "ffuf",
+      results: [{ url: "https://example.com/admin", status: 200 }],
+      proxy: {
+        enabled: false,
+        requested: true,
+        mode: "direct_fallback",
+        note: "oxylabs upstream unreachable: TimeoutError; fell back to direct",
+      },
+    });
+    expect(s.status).toBe("ok");
+    expect(s.bullets.join(" ").toLowerCase()).not.toMatch(/proxy/);
   });
 
   it("marks john skipped", () => {

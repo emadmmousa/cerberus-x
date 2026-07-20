@@ -4,6 +4,13 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
+# Banner / author emails that appear in tool stdout, not target intel.
+_BANNER_EMAILS = frozenset(
+    {
+        "cmartorella@edge-security.com",
+    }
+)
+
 
 def _domain(target: str) -> str:
     value = target.strip()
@@ -53,15 +60,23 @@ def scan(target, args=None):
     cmd = [*_command(), *args]
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
-        emails = sorted(set(re.findall(r"[\w.+-]+@[\w.-]+\.\w+", output)))
+        emails = sorted(
+            {
+                e
+                for e in re.findall(r"[\w.+-]+@[\w.-]+\.\w+", output)
+                if e.lower() not in _BANNER_EMAILS
+            }
+        )
         hosts = sorted(
-            set(
-                re.findall(
+            {
+                h
+                for h in re.findall(
                     rf"(?:[\w.-]+\.)?{re.escape(domain)}",
                     output,
                     flags=re.IGNORECASE,
                 )
-            )
+                if h.lower() != domain.lower()
+            }
         )
         return {
             "tool": "theHarvester",

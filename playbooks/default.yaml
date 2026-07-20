@@ -1,5 +1,5 @@
 name: "Full Spectrum Attack"
-target: "https://takwene.com"
+target: "https://www.takwene.com"
 evasion: "aggressive"   # low, medium, high, aggressive
 
 phases:
@@ -10,7 +10,8 @@ phases:
       - tool: rustscan
         args: ["--ulimit", "5000", "--top"]
       - tool: nmap
-        args: ["-sV", "-p-", "-T4"]
+        # Full -p- often reports all-filtered from Docker; probe common web/SSH ports.
+        args: ["-sV", "-p21,22,80,443,8080,8443", "-T4"]
       - tool: whatweb
         args: ["-a", "3"]
       - tool: gobuster

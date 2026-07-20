@@ -3,14 +3,13 @@ from urllib.parse import urlparse
 
 from tools.waf_evasion import random_delay, random_headers
 from tools.wrappers._proxy import merge_env, proxy_meta
+from tools.wrappers._web_url import canonicalize_web_url
 
 DEFAULT_TIMEOUT_SECONDS = 120
 
 
 def _url(target: str) -> str:
-    if "://" in target:
-        return target
-    return f"https://{target}"
+    return canonicalize_web_url(target)
 
 
 def _normalize_args(url: str, args: list[str], evasion=None) -> list[str]:

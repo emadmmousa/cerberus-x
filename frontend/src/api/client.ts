@@ -136,6 +136,23 @@ export async function putProxySettings(
   return res.json() as Promise<ProxySettings>;
 }
 
+export type ProxyTestResult = {
+  ok: boolean;
+  note?: string | null;
+  host?: string;
+  port?: number;
+  username?: string;
+};
+
+export async function testProxySettings(): Promise<ProxyTestResult> {
+  const res = await fetch("/api/proxy/test", { method: "POST" });
+  const data = (await res.json()) as ProxyTestResult;
+  if (!res.ok && data?.note == null && !("ok" in data)) {
+    throw new Error(await parseError(res));
+  }
+  return data;
+}
+
 export async function getPlaybook(): Promise<PlaybookSummary> {
   const res = await fetch("/api/playbook");
   if (!res.ok) throw new Error(await parseError(res));

@@ -94,6 +94,10 @@ function isProxyEnabled(result: unknown): boolean {
 }
 
 function hasProxyUpstreamFailure(result: unknown): boolean {
+  const meta = proxyMeta(result);
+  // After auto-fallback to direct, note may still mention Oxylabs — do not
+  // treat successful/failed direct runs as "couldn't reach through proxy".
+  if (meta?.mode === "direct_fallback") return false;
   const note = proxyNote(result);
   if (!note) return false;
   return (
@@ -137,6 +141,14 @@ function reachabilityFail(result: unknown, tool: string): FindingSummary {
       title: titleFor(tool),
       status: "failed",
       bullets: ["Couldn't complete a secure connection to the site."],
+    };
+  }
+  // Prefer explicit connect failures over proxy-note "TimeoutError" noise.
+  if (blob.includes("unable to connect") || blob.includes("couldn't connect")) {
+    return {
+      title: titleFor(tool),
+      status: "failed",
+      bullets: ["Couldn't connect to the site."],
     };
   }
   if (blob.includes("timeout") || blob.includes("deadline")) {
@@ -188,6 +200,18 @@ function summarizePorts(tool: string, result: unknown): FindingSummary {
     };
   }
   if (ports.length === 0) {
+    const blob = textBlob(result);
+    if (
+      tool === "nmap" &&
+      (blob.includes("filtered") || blob.includes("ignored states"))
+    ) {
+      return {
+        title: titleFor(tool),
+        status: "partial",
+        bullets: ["Couldn't confirm open ports (responses filtered)."],
+        openPorts: [],
+      };
+    }
     return {
       title: titleFor(tool),
       status: "ok",
@@ -212,8 +236,16 @@ function summarizeHarvester(result: unknown): FindingSummary {
       bullets: ["Public information search did not finish."],
     };
   }
+  const targetHost = String(obj.target ?? "")
+    .toLowerCase()
+    .replace(/^www\./, "");
   const hosts = Array.isArray(obj.hosts)
-    ? (obj.hosts as unknown[]).map(String)
+    ? (obj.hosts as unknown[])
+        .map(String)
+        .filter((h) => {
+          const normalized = h.toLowerCase().replace(/^www\./, "");
+          return normalized !== targetHost && normalized !== "";
+        })
     : [];
   const emails = Array.isArray(obj.emails)
     ? (obj.emails as unknown[])
@@ -266,12 +298,33 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
       };
     }
     const issues = Array.isArray(obj.issues) ? obj.issues : [];
-    if (issues.length && !blob.includes("unknown option")) {
+    // Nikto wrappers often put banner/metadata lines in `issues`; count OSVDB-style hits.
+    const realIssues = issues.filter((line) => {
+      const s = String(line);
+      return (
+        /\[\d{5,}\]/.test(s) ||
+        /OSVDB/i.test(s) ||
+        /Retrieved .+ header/i.test(s) ||
+        /\+ ERROR:/i.test(s)
+      );
+    });
+    const timedOut = /maximum execution time/i.test(blob);
+    if (realIssues.length && !blob.includes("unknown option")) {
       return {
         title: titleFor(tool),
         status: "partial",
-        bullets: [`Reported ${issues.length} possible web issue(s).`],
-        possibleIssues: issues.length,
+        bullets: [
+          `Reported ${realIssues.length} possible web issue(s).`,
+          ...(timedOut ? ["Scan stopped early (time limit)."] : []),
+        ],
+        possibleIssues: realIssues.length,
+      };
+    }
+    if (timedOut) {
+      return {
+        title: titleFor(tool),
+        status: "partial",
+        bullets: ["Scan stopped early (time limit) with no clear findings."],
       };
     }
   }
@@ -339,11 +392,20 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
   }
 
   if (tool === "xsstrike") {
-    if (blob.includes("unable to connect") || isProxyReachabilityFailure(result)) {
+    if (
+      blob.includes("unable to connect") ||
+      blob.includes("invalid literal for int") ||
+      (typeof obj.error === "string" && obj.error.toLowerCase().includes("failed to connect")) ||
+      isProxyReachabilityFailure(result)
+    ) {
       return reachabilityFail(result, tool);
     }
     const findings = Array.isArray(obj.findings) ? obj.findings : [];
-    if (findings.length && !blob.includes("unable to connect")) {
+    const realFindings = findings.filter((line) => {
+      const s = String(line);
+      return /Payload:|Vulnerable|XSS/i.test(s) && !/Unable to connect/i.test(s);
+    });
+    if (realFindings.length) {
       return {
         title: titleFor(tool),
         status: "partial",
@@ -362,6 +424,50 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
     }
     if (tool === "gobuster" && typeof obj.error === "string") {
       return reachabilityFail(result, tool);
+    }
+    if (tool === "whatweb") {
+      const stack: string[] = [];
+      const raw = stripAnsi(typeof obj.raw_output === "string" ? obj.raw_output : blob);
+      if (/Microsoft-IIS/i.test(raw)) stack.push("Microsoft IIS");
+      if (/ASP\.?NET/i.test(raw)) stack.push("ASP.NET");
+      if (/Bootstrap/i.test(raw)) stack.push("Bootstrap");
+      if (/JQuery/i.test(raw)) stack.push("jQuery");
+      return {
+        title: titleFor(tool),
+        status: "ok",
+        bullets: stack.length
+          ? [`Stack signals: ${stack.slice(0, 4).join(", ")}.`]
+          : ["Website fingerprint collected."],
+      };
+    }
+    if (tool === "gobuster") {
+      const dirs = Array.isArray(obj.directories) ? obj.directories : [];
+      const timeoutHeavy =
+        (blob.match(/context deadline exceeded/gi) || []).length >= 5 ||
+        (blob.match(/Client\.Timeout exceeded/gi) || []).length >= 5;
+      if (dirs.length === 0 && timeoutHeavy) {
+        return {
+          title: titleFor(tool),
+          status: "partial",
+          bullets: [
+            "Directory scan hit many timeouts (often HTTP hijack or rate limits).",
+            "Prefer HTTPS www targets; empty result is not proof nothing exists.",
+          ],
+        };
+      }
+      if (dirs.length === 0) {
+        return {
+          title: titleFor(tool),
+          status: "ok",
+          bullets: ["No interesting directories reported from the wordlist."],
+        };
+      }
+      return {
+        title: titleFor(tool),
+        status: "partial",
+        bullets: [`Found ${dirs.length} path(s).`],
+        possibleIssues: dirs.length,
+      };
     }
   }
 

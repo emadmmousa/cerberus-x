@@ -14,9 +14,22 @@ def test_random_headers_include_user_agent():
     assert headers["User-Agent"]
 
 
+def test_random_headers_are_safe_for_cli_http_clients():
+    for _ in range(20):
+        headers = random_headers()
+        assert "Connection" not in headers
+        assert "Proxy-Connection" not in headers
+        assert "Transfer-Encoding" not in headers
+        assert not any(k.lower().startswith("sec-") for k in headers)
+        encoding = headers.get("Accept-Encoding", "")
+        assert encoding != "br"
+        assert "br" not in encoding.split(",")
+
+
 def test_random_headers_merge_extra():
-    headers = random_headers({"X-Custom": "1"})
+    headers = random_headers({"X-Custom": "1", "Connection": "close"})
     assert headers["X-Custom"] == "1"
+    assert "Connection" not in headers
 
 
 def test_obfuscate_sql_changes_or_keeps_payload():

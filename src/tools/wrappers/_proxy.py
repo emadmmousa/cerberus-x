@@ -22,14 +22,17 @@ def ensure_worker_proxy(use_proxy: bool) -> None:
         raise ProxyForwardError("local proxy forwarder unhealthy")
 
 
-def _preflight_upstream_note() -> str | None:
-    """Probe Oxylabs CONNECT once; return an operator-facing note on failure."""
+def probe_upstream() -> dict[str, Any]:
+    """Probe Oxylabs CONNECT once; never include secrets in the result."""
     try:
         from tools.proxy_settings import load_credentials
 
         creds = load_credentials()
         if not creds:
-            return "proxy credentials not configured on worker"
+            return {
+                "ok": False,
+                "note": "proxy credentials not configured on worker",
+            }
         parsed = urlparse(upstream_proxy_url())
         host = parsed.hostname or "pr.oxylabs.io"
         port = parsed.port or 7777
@@ -58,17 +61,69 @@ def _preflight_upstream_note() -> str | None:
             sock.close()
         status = data.split(b"\r\n", 1)[0].decode("latin-1", errors="replace")
         if " 200 " in status:
-            return None
+            return {
+                "ok": True,
+                "note": None,
+                "host": host,
+                "port": port,
+                "username": user,
+            }
         if " 407 " in status:
-            return (
-                "oxylabs rejected credentials (407) — refresh "
-                "OXYLABS_PROXY_USERNAME/PASSWORD on workers"
-            )
+            return {
+                "ok": False,
+                "note": (
+                    "oxylabs rejected credentials (407) — use proxy user "
+                    "credentials from the Oxylabs dashboard (customer-… / user-…), "
+                    "not the dashboard email login"
+                ),
+                "host": host,
+                "port": port,
+                "username": user,
+            }
         if not status:
-            return "oxylabs CONNECT timed out or returned empty response"
-        return f"oxylabs CONNECT failed: {status}"
+            return {
+                "ok": False,
+                "note": "oxylabs CONNECT timed out or returned empty response",
+                "host": host,
+                "port": port,
+                "username": user,
+            }
+        return {
+            "ok": False,
+            "note": f"oxylabs CONNECT failed: {status}",
+            "host": host,
+            "port": port,
+            "username": user,
+        }
     except Exception as exc:
-        return f"oxylabs upstream unreachable: {type(exc).__name__}"
+        return {
+            "ok": False,
+            "note": f"oxylabs upstream unreachable: {type(exc).__name__}",
+        }
+
+
+def _preflight_upstream_note() -> str | None:
+    """Probe Oxylabs CONNECT once; return an operator-facing note on failure."""
+    result = probe_upstream()
+    if result.get("ok"):
+        return None
+    return result.get("note")
+
+
+def _should_fallback_direct(note: str | None) -> bool:
+    if not note:
+        return False
+    lowered = note.lower()
+    markers = (
+        "unreachable",
+        "timed out",
+        "timeout",
+        "empty response",
+        "rejected credentials",
+        "connect failed",
+        "not configured",
+    )
+    return any(marker in lowered for marker in markers)
 
 
 def proxy_meta(
@@ -80,6 +135,27 @@ def proxy_meta(
     note = resolved["note"]
     if use_proxy and resolved["mode"] == "local_proxy" and note is None:
         note = _preflight_upstream_note()
+
+    # When Oxylabs/local forwarder cannot be used, run the tool directly so
+    # recon/vuln scans still produce useful results.
+    if use_proxy and _should_fallback_direct(note):
+        fallback_note = f"{note}; fell back to direct"
+        resolved = {
+            "mode": "direct_fallback",
+            "flags": [],
+            "env": {},
+            "note": fallback_note,
+            "local_proxy_url": None,
+        }
+        meta = {
+            "enabled": False,
+            "requested": True,
+            "protocol": proxy_protocol,
+            "mode": "direct_fallback",
+            "note": fallback_note,
+        }
+        return resolved, meta
+
     meta = {
         "enabled": use_proxy,
         "protocol": proxy_protocol,
