@@ -11,9 +11,9 @@ _WORDLIST_ALIASES = {
     "/usr/share/wordlists/dirb/common.txt": WORDLIST,
     "/usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt": WORDLIST,
 }
-_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
 _RESULT_RE = re.compile(
-    r"^(?P<path>.+?)\s+\[Status:\s*(?P<status>\d+)(?:,\s*Size:\s*(?P<size>\d+))?.*?\]",
+    r"^(?P<path>.*?)\s*\[Status:\s*(?P<status>\d+)(?:,\s*Size:\s*(?P<size>\d+))?.*?\]",
     re.IGNORECASE,
 )
 
@@ -74,6 +74,7 @@ def _parse_results(output: str) -> list[dict]:
         if not match:
             continue
         path = match.group("path").strip()
+        # Empty FUZZ / blank wordlist line often matches the site root.
         if not path or path.startswith(":: Progress"):
             continue
         results.append(

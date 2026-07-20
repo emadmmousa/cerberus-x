@@ -29,7 +29,7 @@ phases:
       - tool: nikto
         args: ["-maxtime", "60"]
       - tool: xsstrike
-        args: ["--level", "3"]
+        args: ["--timeout", "20", "--skip", "--threads", "5"]
     parallel: false
     depends_on: ["recon"]
 

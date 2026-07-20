@@ -156,6 +156,27 @@ describe("summarizeFinding", () => {
     expect(s.bullets.join(" ")).toMatch(/IIS|ASP\.NET/i);
   });
 
+  it("marks whatweb execution expired as failed", () => {
+    const s = summarizeFinding("whatweb", {
+      tool: "whatweb",
+      raw_output: "ERROR Opening: https://www.takwene.com - execution expired",
+      proxy: { enabled: false, mode: "direct_fallback" },
+    });
+    expect(s.status).toBe("failed");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/timed out/);
+  });
+
+  it("marks hydra ssh disconnect as failed", () => {
+    const s = summarizeFinding("hydra", {
+      tool: "hydra",
+      credentials: [],
+      raw_output: "[ERROR] could not connect to ssh://34.72.42.51:22 - Socket error: disconnected",
+      proxy: { enabled: true, mode: "local_proxy" },
+    });
+    expect(s.status).toBe("failed");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/could not reach|ssh/);
+  });
+
   it("marks gobuster empty+timeouts as partial", () => {
     const s = summarizeFinding("gobuster", {
       tool: "gobuster",
@@ -182,6 +203,20 @@ describe("summarizeFinding", () => {
     expect(s.status).toBe("failed");
     expect(s.bullets.join(" ").toLowerCase()).toMatch(/connect/);
     expect(s.bullets.join(" ").toLowerCase()).not.toMatch(/timed out/);
+  });
+
+  it("summarizes successful xsstrike reflection without vector", () => {
+    const s = summarizeFinding("xsstrike", {
+      tool: "xsstrike",
+      findings: [
+        "[-] WAF detected: ASP.NET RequestValidationMode (Microsoft)",
+        "[!] Reflections found: 1",
+        "[-] No vectors were crafted.",
+      ],
+      raw_output: "WAF detected\nReflections found: 1\nNo vectors were crafted.",
+    });
+    expect(s.status).toBe("ok");
+    expect(s.bullets.join(" ")).toMatch(/ASP\.NET|reflection|vector/i);
   });
 
   it("counts theHarvester hosts and ignores banner email", () => {

@@ -12,6 +12,20 @@ from tools.wrappers import (
 )
 
 
+def test_gobuster_parses_ansi_status_lines():
+    output = (
+        "\x1b[2K/careers              (Status: 200) [Size: 16974]\n"
+        "\x1b[2K/default              (Status: 200) [Size: 65238]\n"
+        "\x1b[2K/Default              (Status: 200) [Size: 65238]\n"
+        "\x1b[2K/robots.txt           (Status: 200) [Size: 0]\n"
+    )
+    assert gobuster._parse_directories(output) == [
+        {"path": "/careers", "status": "200", "size": "16974"},
+        {"path": "/default", "status": "200", "size": "65238"},
+        {"path": "/robots.txt", "status": "200", "size": "0"},
+    ]
+
+
 def test_gobuster_length_from_error():
     msg = (
         "Error: the server returns a status code that matches the provided options "
@@ -227,6 +241,46 @@ def test_nikto_and_xsstrike_url_helpers():
     assert "?q=test" in xsstrike._url("takwene.com")
 
 
+def test_xsstrike_headers_use_escaped_newlines():
+    from tools.wrappers import xsstrike
+
+    encoded = xsstrike._headers_arg(
+        {
+            "User-Agent": "Mozilla/5.0",
+            "Accept": "text/html,application/xhtml+xml,*/*;q=0.8",
+        }
+    )
+    assert "\\n" in encoded
+    assert "," not in encoded.split("\\n")[0] or encoded.startswith("User-Agent:")
+    assert "Accept: text/html,application/xhtml+xml,*/*;q=0.8" in encoded
+
+
+def test_xsstrike_normalize_args_adds_timeout_skip_and_safe_headers():
+    from tools.wrappers import xsstrike
+
+    args = xsstrike._normalize_args(["--threads", "3"], {"random_headers": True})
+    assert "--timeout" in args
+    assert args[args.index("--timeout") + 1] == "20"
+    assert "--skip" in args
+    assert "--headers" in args
+    header_blob = args[args.index("--headers") + 1]
+    assert "\\n" in header_blob
+    assert "User-Agent:" in header_blob
+
+
+def test_xsstrike_parse_findings_strips_ansi():
+    from tools.wrappers import xsstrike
+
+    output = (
+        "\x1b[91m[-]\x1b[0m WAF detected: ASP.NET\n"
+        "\x1b[93m[!]\x1b[0m Reflections found: 1\n"
+        "[-] No vectors were crafted.\n"
+    )
+    findings = xsstrike._parse_findings(output)
+    assert any("WAF detected" in f for f in findings)
+    assert any("Reflections found" in f for f in findings)
+    assert any("No vectors were crafted" in f for f in findings)
+
 def test_impacket_and_cme_host_helpers():
     from tools.wrappers import impacket, crackmapexec
 
@@ -263,10 +317,13 @@ def test_ffuf_parses_status_lines_with_spaces():
     output = (
         "Documents and Settings  [Status: 301, Size: 168, Words: 11, Lines: 2]\n"
         "\x1b[2KProgram Files           [Status: 301, Size: 159, Words: 10, Lines: 2]\n"
+        "\x1b[2K                        [Status: 200, Size: 65306, Words: 27760, Lines: 979]\n"
+        "\x1b[2Kcareers                 [Status: 200, Size: 17049, Words: 5297, Lines: 278]\n"
     )
     assert ffuf._parse_results(output) == [
         {"path": "Documents and Settings", "status": "301", "size": "168"},
         {"path": "Program Files", "status": "301", "size": "159"},
+        {"path": "careers", "status": "200", "size": "17049"},
     ]
 
 

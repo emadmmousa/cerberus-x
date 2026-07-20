@@ -76,6 +76,10 @@ RUN set -eux; \
     printf '%s\n' '#!/bin/sh' 'exec python /opt/XSStrike/xsstrike.py "$@"' > /usr/local/bin/xsstrike; \
     chmod +x /usr/local/bin/xsstrike
 
+# Harden XSStrike against empty responses / 10-minute WAF sleeps
+COPY docker/patches/xsstrike_harden.py /tmp/xsstrike_harden.py
+RUN python /tmp/xsstrike_harden.py && rm -f /tmp/xsstrike_harden.py
+
 # theHarvester + Impacket (system Python)
 RUN pip install --no-cache-dir \
       "git+https://github.com/laramies/theHarvester.git" \

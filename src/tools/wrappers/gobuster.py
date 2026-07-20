@@ -11,6 +11,12 @@ from tools.wrappers._web_url import canonicalize_web_url, force_url_arg
 WORDLIST = "/usr/share/dirb/wordlists/common.txt"
 _WILDCARD_LENGTH_RE = re.compile(r"Length:\s*(\d+)", re.IGNORECASE)
 _WILDCARD_STATUS_RE = re.compile(r"=>\s*(\d{3})\s*\(Length:", re.IGNORECASE)
+_ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
+_DIR_RE = re.compile(
+    r"(?P<path>/[^\s]*)\s+\(Status:\s*(?P<status>\d+)\)"
+    r"(?:\s+\[Size:\s*(?P<size>\d+)\])?",
+    re.IGNORECASE,
+)
 
 
 def _url(target: str) -> str:
@@ -61,19 +67,26 @@ def _with_exclude_length(args: list[str], length: int) -> list[str]:
 
 def _parse_directories(output: str) -> list[dict]:
     directories = []
-    for line in output.split("\n"):
-        if "Status:" not in line and "(Status:" not in line:
+    seen: set[tuple[str, str]] = set()
+    for raw_line in (output or "").splitlines():
+        line = _ANSI_RE.sub("", raw_line).strip()
+        if "Status:" not in line:
             continue
-        parts = line.split()
-        if not parts:
+        match = _DIR_RE.search(line)
+        if not match:
             continue
-        path = parts[0]
-        status = None
-        for part in parts:
-            if part.startswith("(Status:") or part.startswith("Status:"):
-                status = part.split(":", 1)[1].rstrip(")")
-        if status:
-            directories.append({"path": path, "status": status})
+        path = match.group("path").strip()
+        status = match.group("status")
+        if not path or not status:
+            continue
+        key = (path.lower(), status)
+        if key in seen:
+            continue
+        seen.add(key)
+        item = {"path": path, "status": status}
+        if match.group("size") is not None:
+            item["size"] = match.group("size")
+        directories.append(item)
     return directories
 
 

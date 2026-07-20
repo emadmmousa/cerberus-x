@@ -151,6 +151,12 @@ def scan(
         # a completed run unless there is no usable output at all.
         if completed.returncode != 0 and not output.strip():
             result["error"] = f"hydra exited with code {completed.returncode}"
+        elif re.search(
+            r"could not connect|socket error|connection refused|disconnected",
+            output,
+            re.IGNORECASE,
+        ):
+            result["error"] = f"hydra could not connect to {service}://{host}"
         return result
     except FileNotFoundError:
         return {

@@ -403,7 +403,7 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
     const findings = Array.isArray(obj.findings) ? obj.findings : [];
     const realFindings = findings.filter((line) => {
       const s = String(line);
-      return /Payload:|Vulnerable|XSS/i.test(s) && !/Unable to connect/i.test(s);
+      return /Payload:|Vulnerable/i.test(s) && !/Unable to connect/i.test(s);
     });
     if (realFindings.length) {
       return {
@@ -411,6 +411,21 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
         status: "partial",
         bullets: ["XSS check reported possible issues."],
         possibleIssues: 1,
+      };
+    }
+    const reflections = findings.some((line) => /Reflections found:\s*[1-9]/i.test(String(line)));
+    const waf = findings.find((line) => /WAF detected/i.test(String(line)));
+    if (reflections || waf || /No vectors were crafted/i.test(blob)) {
+      const bullets: string[] = [];
+      if (waf) bullets.push(String(waf).replace(/^\[[^\]]+\]\s*/, ""));
+      if (reflections) bullets.push("Parameter reflection seen; no exploitable vector crafted.");
+      else if (/No vectors were crafted/i.test(blob)) {
+        bullets.push("No exploitable XSS vectors crafted.");
+      }
+      return {
+        title: titleFor(tool),
+        status: "ok",
+        bullets: bullets.length ? bullets : ["XSS check finished with no confirmed vector."],
       };
     }
   }
@@ -426,12 +441,30 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
       return reachabilityFail(result, tool);
     }
     if (tool === "whatweb") {
-      const stack: string[] = [];
       const raw = stripAnsi(typeof obj.raw_output === "string" ? obj.raw_output : blob);
+      if (
+        /ERROR Opening/i.test(raw) ||
+        /execution expired/i.test(raw) ||
+        /timed?\s*out/i.test(raw)
+      ) {
+        return {
+          title: titleFor(tool),
+          status: "failed",
+          bullets: ["Website fingerprint timed out before finishing."],
+        };
+      }
+      const stack: string[] = [];
       if (/Microsoft-IIS/i.test(raw)) stack.push("Microsoft IIS");
       if (/ASP\.?NET/i.test(raw)) stack.push("ASP.NET");
       if (/Bootstrap/i.test(raw)) stack.push("Bootstrap");
       if (/JQuery/i.test(raw)) stack.push("jQuery");
+      if (!stack.length && !raw.trim()) {
+        return {
+          title: titleFor(tool),
+          status: "failed",
+          bullets: ["Website fingerprint returned no data."],
+        };
+      }
       return {
         title: titleFor(tool),
         status: "ok",
@@ -516,6 +549,20 @@ function summarizeCred(tool: string, result: unknown): FindingSummary {
       title: titleFor(tool),
       status: "failed",
       bullets: ["Credential check did not finish successfully."],
+    };
+  }
+  const blob = textBlob(result);
+  if (
+    tool === "hydra" &&
+    (/could not connect/i.test(blob) ||
+      /socket error/i.test(blob) ||
+      /disconnected/i.test(blob) ||
+      /connection refused/i.test(blob))
+  ) {
+    return {
+      title: titleFor(tool),
+      status: "failed",
+      bullets: ["Could not reach the login service (SSH/host closed the connection)."],
     };
   }
   const creds = Array.isArray(obj.credentials) ? obj.credentials : [];
