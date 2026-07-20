@@ -34,7 +34,7 @@ def test_runner_skips_high_risk_without_confirm(monkeypatch):
 
     monkeypatch.setattr("orchestrator.ai.planner.suggest_next_phase", fake_plan)
     monkeypatch.setattr(
-        "orchestrator.tasks.build_phase_workflow",
+        "orchestrator.ai.runner.build_phase_workflow",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not enqueue")),
     )
 
@@ -97,7 +97,7 @@ def test_runner_continues_after_phase_timeout(monkeypatch):
 
     monkeypatch.setattr("orchestrator.ai.planner.suggest_next_phase", fake_plan)
     monkeypatch.setattr(
-        "orchestrator.tasks.build_phase_workflow", lambda *a, **k: FakeWorkflow()
+        "orchestrator.ai.runner.build_phase_workflow", lambda *a, **k: FakeWorkflow()
     )
     monkeypatch.setattr(
         "orchestrator.ai.runner.collect_group_results",
