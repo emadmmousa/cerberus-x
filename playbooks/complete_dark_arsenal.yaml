@@ -1,0 +1,50 @@
+name: Complete Dark Arsenal
+description: Full-spectrum authorized playbook mapped to installed wrappers
+evasion: medium
+phases:
+  - name: recon
+    tools:
+      - tool: rustscan
+        args: ["--ulimit", "5000", "--top"]
+      - tool: nmap
+        args: ["-sV", "-T4"]
+      - tool: whatweb
+        args: ["-a", "3"]
+      - tool: theharvester
+        args: ["-b", "bing"]
+    parallel: true
+  - name: discovery
+    tools:
+      - tool: gobuster
+        args: ["dir", "-w", "/usr/share/dirb/wordlists/common.txt"]
+      - tool: ffuf
+        args: ["-ac"]
+      - tool: zmap
+        args: ["-p", "80,443"]
+    parallel: true
+    depends_on: ["recon"]
+  - name: vulnerability_checks
+    tools:
+      - tool: nuclei
+        args: ["-severity", "critical,high", "-silent"]
+      - tool: nikto
+        args: ["-maxtime", "60"]
+      - tool: xsstrike
+        args: ["--timeout", "20", "--skip"]
+    parallel: false
+    depends_on: ["discovery"]
+  - name: credential_checks
+    tools:
+      - tool: hydra
+        args: []
+      - tool: john
+        args: []
+    parallel: true
+    depends_on: ["vulnerability_checks"]
+  - name: exploitation_checks
+    tools:
+      - tool: sqlmap
+        args: ["--batch", "--level=2", "--risk=1"]
+      - tool: metasploit
+        args: []
+    depends_on: ["credential_checks"]

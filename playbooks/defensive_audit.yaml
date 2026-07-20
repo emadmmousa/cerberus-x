@@ -1,0 +1,21 @@
+name: Defensive Audit
+description: Read-only style checks using installed scanners
+evasion: off
+phases:
+  - name: recon
+    tools:
+      - tool: rustscan
+        args: ["--ulimit", "5000", "--top"]
+      - tool: nmap
+        args: ["-sV", "-p21,22,80,443,8080,8443", "-T4"]
+      - tool: whatweb
+        args: ["-a", "3"]
+    parallel: true
+  - name: vulnerability_checks
+    tools:
+      - tool: nuclei
+        args: ["-severity", "critical,high", "-silent"]
+      - tool: nikto
+        args: ["-maxtime", "60"]
+    parallel: false
+    depends_on: ["recon"]

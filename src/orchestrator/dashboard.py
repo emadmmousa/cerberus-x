@@ -35,6 +35,7 @@ from security.rate_limit import limiter
 from security.vault_integration import VaultClient
 from security.waf import WAFMiddleware
 from security.auth import oauth
+from scanner import AuthorizationEnforcer
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,11 @@ from .aggressive_api import agg as aggressive_blueprint
 
 app.register_blueprint(aggressive_blueprint, url_prefix="/api")
 
+# Lightweight active scan API
+from .scan_api import scan_bp
+
+app.register_blueprint(scan_bp, url_prefix="/api")
+
 # Auth routes
 from .auth_routes import auth_bp
 
@@ -75,6 +81,7 @@ app.register_blueprint(auth_bp, url_prefix="/auth")
 # Security middleware (scoped WAF; optional limiter)
 app.before_request(WAFMiddleware.before_request)
 app.after_request(WAFMiddleware.after_request)
+app.before_request(AuthorizationEnforcer.before_request)
 try:
     limiter.init_app(app)
 except Exception:

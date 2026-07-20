@@ -1,0 +1,38 @@
+name: Ultimate Aggression
+description: Aggressive authorized engagement using installed Cerberus tools
+evasion: high
+phases:
+  - name: recon
+    tools:
+      - tool: masscan
+        args: ["-p80,443,22,8080,8443", "--rate=1000", "--wait=0"]
+      - tool: nmap
+        args: ["-sV", "-p21,22,80,443,8080,8443,3389", "-T4"]
+      - tool: theharvester
+        args: ["-b", "bing"]
+    parallel: true
+  - name: web_discovery
+    tools:
+      - tool: whatweb
+        args: ["-a", "3"]
+      - tool: ffuf
+        args: ["-ac"]
+      - tool: gobuster
+        args: ["dir", "-w", "/usr/share/dirb/wordlists/common.txt"]
+    parallel: true
+    depends_on: ["recon"]
+  - name: vulnerability_checks
+    tools:
+      - tool: nuclei
+        args: ["-severity", "critical,high,medium", "-silent"]
+      - tool: nikto
+        args: ["-maxtime", "90"]
+      - tool: xsstrike
+        args: ["--timeout", "20", "--skip"]
+    parallel: false
+    depends_on: ["web_discovery"]
+  - name: exploitation_checks
+    tools:
+      - tool: sqlmap
+        args: ["--batch", "--level=2", "--risk=1"]
+    depends_on: ["vulnerability_checks"]
