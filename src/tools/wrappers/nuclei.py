@@ -3,6 +3,7 @@ import re
 import subprocess
 
 from tools.waf_evasion import build_evasion_headers, random_delay
+from tools.wrappers._argv import coerce_argv
 from tools.wrappers._proxy import merge_env, proxy_meta
 from tools.wrappers._web_url import canonicalize_web_url
 
@@ -11,6 +12,9 @@ TEMPLATE_ROOTS = (
     "/home/nuclei/nuclei-templates",
     os.path.expanduser("~/nuclei-templates"),
 )
+
+# LLM often invents -template; nuclei wants -t / --templates
+_TEMPLATE_FLAGS = {"-t", "--templates", "-template", "--template", "-templates"}
 
 
 def _url(target: str) -> str:
@@ -41,25 +45,40 @@ def _resolve_template_arg(value: str) -> str:
 def _normalize_args(args: list[str], evasion=None) -> list[str]:
     if evasion is None:
         evasion = {}
+    args = coerce_argv(args)
     normalized: list[str] = []
     skip_next = False
     for index, arg in enumerate(args):
         if skip_next:
             skip_next = False
             continue
+        # Rewrite LLM aliases to real nuclei flags
+        if arg in _TEMPLATE_FLAGS or arg.startswith("-template=") or arg.startswith(
+            "--template="
+        ):
+            if "=" in arg:
+                value = arg.split("=", 1)[1]
+                normalized.extend(["-t", _resolve_template_arg(value)])
+                continue
+            if index + 1 < len(args) and not str(args[index + 1]).startswith("-"):
+                normalized.extend(["-t", _resolve_template_arg(str(args[index + 1]))])
+                skip_next = True
+            continue
         if arg in ("-t", "--templates"):
             if index + 1 < len(args):
-                normalized.extend([arg, _resolve_template_arg(str(args[index + 1]))])
+                normalized.extend(["-t", _resolve_template_arg(str(args[index + 1]))])
                 skip_next = True
             continue
         if arg.startswith("--templates="):
-            key, value = arg.split("=", 1)
-            normalized.append(f"{key}={_resolve_template_arg(value)}")
+            _key, value = arg.split("=", 1)
+            normalized.append(f"--templates={_resolve_template_arg(value)}")
             continue
         normalized.append(arg)
     if evasion.get("random_headers", False):
         headers = build_evasion_headers(evasion)
         for key, value in headers.items():
+            if "HTTP/" in str(value):
+                continue
             normalized.extend(["-H", f"{key}: {value}"])
     return normalized
 
@@ -143,6 +162,7 @@ def scan(
                 "Could not run nuclei",
                 "no templates provided",
                 "No results found",
+                "flag provided but not defined",
             )
         ):
             continue
@@ -159,11 +179,22 @@ def scan(
         finding = {"severity": severity, "title": title}
         if match.group("url"):
             finding["url"] = match.group("url")
-        # Capture template / CVE ids from the title blob for decision engine mapping.
         cve_hit = re.search(r"CVE-\d{4}-\d+", title, re.IGNORECASE)
         if cve_hit:
             finding["template_id"] = cve_hit.group(0).upper()
         findings.append(finding)
+
+    if "flag provided but not defined" in output.lower() and not findings:
+        return {
+            "tool": "nuclei",
+            "target": url,
+            "findings": [],
+            "error": output.strip().splitlines()[0]
+            if output.strip()
+            else "invalid nuclei flags",
+            "raw_output": output,
+            "proxy": meta,
+        }
     return {
         "tool": "nuclei",
         "target": url,

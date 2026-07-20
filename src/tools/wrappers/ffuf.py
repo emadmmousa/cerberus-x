@@ -3,6 +3,7 @@ import re
 import subprocess
 
 from tools.waf_evasion import build_evasion_headers, random_delay
+from tools.wrappers._argv import coerce_argv
 from tools.wrappers._proxy import merge_env, proxy_meta
 from tools.wrappers._web_url import canonicalize_web_url, force_url_arg
 
@@ -90,9 +91,10 @@ def _looks_like_cdn_stall(output: str) -> bool:
 def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
     if evasion is None:
         evasion = {}
+    # Expand glued LLM tokens like "-w /tmp/w.txt http://x HTTP/1.1"
     normalized = [
         arg.replace("{{target}}", url) if isinstance(arg, str) else arg
-        for arg in args
+        for arg in coerce_argv(args)
     ]
     fixed: list[str] = []
     skip_next = False
@@ -100,24 +102,48 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
         if skip_next:
             skip_next = False
             continue
+        # Drop HTTP request-line junk masquerading as flags/values
+        if re.match(
+            r"^(GET|POST|PUT|HEAD|OPTIONS|DELETE|PATCH)\s+\S+\s+HTTP/",
+            str(arg),
+            re.IGNORECASE,
+        ):
+            continue
         if arg in {"-u", "--url"} and index + 1 < len(normalized):
             # Ignore pre-expanded playbook hosts; always use canonical HTTPS (+ FUZZ).
             skip_next = True
             continue
         if arg in {"-w", "--wordlist"} and index + 1 < len(normalized):
-            wordlist = str(normalized[index + 1])
+            wordlist = str(normalized[index + 1]).split()[0]
+            # Strip accidental "HTTP/1.1" debris from wordlist path
+            wordlist = wordlist.split("HTTP/")[0].strip()
+            if not wordlist.startswith("/") and not os.path.isfile(wordlist):
+                wordlist = WORDLIST
             fixed.extend([arg, _WORDLIST_ALIASES.get(wordlist, wordlist)])
             skip_next = True
             continue
         if isinstance(arg, str) and arg in _WORDLIST_ALIASES:
             fixed.append(_WORDLIST_ALIASES[arg])
             continue
+        # Drop bare host/URL tokens that are not flags
+        if isinstance(arg, str) and not arg.startswith("-"):
+            if "://" in arg or arg.lower().endswith(("http/1.0", "http/1.1", "http/2")):
+                continue
         fixed.append(arg)
 
     fixed = force_url_arg(fixed, url, flags=("-u", "--url"), with_fuzz=True)
     if "-w" not in fixed and "--wordlist" not in fixed:
         if os.path.isfile(WORDLIST):
             fixed.extend(["-w", WORDLIST])
+        else:
+            # Ephemeral fallback so LLM /dev/shm paths don't break the run
+            fallback = "/tmp/cerberus-ffuf-words.txt"
+            try:
+                with open(fallback, "w", encoding="utf-8") as handle:
+                    handle.write("admin\nlogin\napi\nrobots.txt\n.git\n")
+                fixed.extend(["-w", fallback])
+            except OSError:
+                pass
     if "-ac" not in fixed and "--auto-calibrate" not in fixed:
         fixed.append("-ac")
     if "-maxtime" not in fixed:
@@ -125,6 +151,8 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
     if evasion.get("random_headers", False):
         headers = build_evasion_headers(evasion, target=url)
         for key, value in headers.items():
+            if "HTTP/" in str(value) or "\n" in str(value) or "\r" in str(value):
+                continue
             fixed.extend(["-H", f"{key}: {value}"])
     return _cdn_backoff(fixed, evasion)
 

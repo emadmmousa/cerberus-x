@@ -68,7 +68,27 @@ def _normalize_service_url(arg: str, host: str) -> str:
     return f"{service}://{host}{port}"
 
 
+def _ensure_login_and_wordlist(command: list[str]) -> list[str]:
+    """Hydra requires -l/-L/-C and a password source; LLMs often omit them."""
+    has_login = any(
+        a in {"-l", "-L", "-C"} or str(a).startswith(("-l=", "-L=", "-C="))
+        for a in command
+    )
+    has_pass = any(
+        a in {"-p", "-P"} or str(a).startswith(("-p=", "-P=")) for a in command
+    )
+    insert_at = 1  # after "hydra"
+    if not has_login:
+        command[insert_at:insert_at] = ["-l", DEFAULT_LOGIN]
+        insert_at += 2
+    if not has_pass:
+        command[insert_at:insert_at] = ["-P", _default_wordlist()]
+    return command
+
+
 def _build_command(target: str, args: list[str] | None) -> tuple[str, str, list[str]]:
+    from tools.wrappers._argv import coerce_argv
+
     host = _host(target)
 
     if not args:
@@ -88,6 +108,7 @@ def _build_command(target: str, args: list[str] | None) -> tuple[str, str, list[
         ]
         return host, service, command
 
+    args = coerce_argv(args)
     args = [
         _normalize_service_url(arg, host) if isinstance(arg, str) else arg
         for arg in args
@@ -97,17 +118,25 @@ def _build_command(target: str, args: list[str] | None) -> tuple[str, str, list[
     for arg in args:
         service = _service_from_url_arg(str(arg))
         if service:
-            return host, service, ["hydra", *args]
+            return host, service, _ensure_login_and_wordlist(["hydra", *args])
 
     # Wrapper style: service first, then options.
-    first = str(args[0])
+    first = str(args[0]) if args else ""
     if first and not first.startswith("-"):
         service = first
         options = list(args[1:])
-        return host, service, ["hydra", *options, host, service]
+        return (
+            host,
+            service,
+            _ensure_login_and_wordlist(["hydra", *options, host, service]),
+        )
 
     # Options only — default to ssh against the normalized host.
-    return host, DEFAULT_SERVICE, ["hydra", *args, host, DEFAULT_SERVICE]
+    return (
+        host,
+        DEFAULT_SERVICE,
+        _ensure_login_and_wordlist(["hydra", *args, host, DEFAULT_SERVICE]),
+    )
 
 
 def _parse_credentials(output: str) -> list[dict]:

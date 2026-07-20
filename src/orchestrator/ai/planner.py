@@ -41,13 +41,47 @@ def _sanitize_plan(plan: dict, allow: set[str]) -> Optional[dict]:
         if name not in allow:
             continue
         args = entry.get("args") or []
-        if not isinstance(args, list):
-            args = []
-        clean_args = [str(a) for a in args if isinstance(a, (str, int, float))]
+        if isinstance(args, str):
+            from tools.wrappers._argv import coerce_argv
+
+            clean_args = coerce_argv(args)
+        elif isinstance(args, dict):
+            from tools.wrappers._argv import coerce_argv
+
+            clean_args = coerce_argv(args)
+        elif isinstance(args, list):
+            clean_args = [str(a) for a in args if isinstance(a, (str, int, float))]
+        else:
+            clean_args = []
+        # Tool-specific sanitizers (LLM invents illegal flags frequently).
         if name == "masscan":
             from tools.wrappers import masscan as masscan_mod
 
             clean_args = masscan_mod.sanitize_args(clean_args)
+        elif name == "nmap":
+            from tools.wrappers import nmap as nmap_mod
+
+            clean_args = nmap_mod.sanitize_args(clean_args)
+        elif name == "nuclei":
+            # Drop invented -template; wrapper also rewrites, but keep plan clean.
+            rewritten: list[str] = []
+            skip = False
+            for i, a in enumerate(clean_args):
+                if skip:
+                    skip = False
+                    continue
+                if a in {"-template", "--template", "-templates"}:
+                    rewritten.append("-t")
+                    if i + 1 < len(clean_args) and not str(clean_args[i + 1]).startswith(
+                        "-"
+                    ):
+                        rewritten.append(str(clean_args[i + 1]))
+                        skip = True
+                    else:
+                        rewritten.append("http/cves/")
+                    continue
+                rewritten.append(a)
+            clean_args = rewritten
         tools.append({"tool": name, "args": clean_args})
     return {
         "phase_name": str(plan.get("phase_name") or "ai_phase")[:80],

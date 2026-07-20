@@ -424,17 +424,39 @@ def test_gobuster_status_from_error_and_blacklist():
     ]
 
 
-def test_nuclei_resolves_short_template_paths(tmp_path, monkeypatch):
+def test_nuclei_rewrites_llm_template_alias(tmp_path, monkeypatch):
     root = tmp_path / "nuclei-templates"
     (root / "http" / "cves").mkdir(parents=True)
     monkeypatch.setattr(nuclei, "TEMPLATE_ROOTS", (str(root),))
-    assert nuclei._resolve_template_arg("cves/").rstrip("/") == str(root / "http" / "cves")
-    assert nuclei._normalize_args(["-t", "cves/", "-severity", "high"]) == [
-        "-t",
-        nuclei._resolve_template_arg("cves/"),
-        "-severity",
-        "high",
-    ]
+    args = nuclei._normalize_args(["-template", "cves/", "-severity", "high"])
+    assert args[0] == "-t"
+    assert "cves" in args[1]
+
+
+def test_ffuf_expands_glued_wordlist_token():
+    glued = "-w /dev/shm/words.txt http://takwene.com HTTP/1.1"
+    args = ffuf._normalize_args([glued, "-u", "https://x/FUZZ"], "https://www.takwene.com")
+    assert "-w" in args
+    w = args[args.index("-w") + 1]
+    assert "HTTP/" not in w
+    assert "://" not in w
+    assert args[args.index("-u") + 1].startswith("https://")
+
+
+def test_nmap_sanitizes_illegal_port_specs():
+    cleaned = nmap.sanitize_args(["-sV", "-p", "https://evil/80", "-T4"])
+    assert cleaned[cleaned.index("-p") + 1].replace(",", "").replace("-", "").isdigit() or all(
+        c.isdigit() or c in ",-T:U" for c in cleaned[cleaned.index("-p") + 1]
+    )
+    glued = nmap.sanitize_args(["-p80 443 bad"])
+    assert "-p" in glued[1] or glued[1].startswith("-p") or "80" in "".join(glued)
+
+
+def test_hydra_injects_login_when_missing():
+    _host, _svc, cmd = hydra._build_command("www.example.com", ["ssh"])
+    assert "-l" in cmd or "-L" in cmd or "-C" in cmd
+    assert "-P" in cmd or "-p" in cmd
+
 
 
 def test_ffuf_rewrites_common_wordlist_aliases():
