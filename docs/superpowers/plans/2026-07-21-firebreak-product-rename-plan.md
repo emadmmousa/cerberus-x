@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Hard-cutover rename of the entire product from Cerberus-X to Firebreak, with AI Lab at `/ai-lab`, domains centered on `firebreak.com`, and zero tracked Cerberus identifiers remaining.
+**Goal:** Hard-cutover rename of the entire product from Firebreak to Firebreak, with AI Lab at `/ai-lab`, domains centered on `firebreak.com`, and zero tracked Firebreak identifiers remaining.
 
 **Architecture:** Dependency-ordered mechanical rename: core libraries (env/Redis/headers/metrics) first, then APIs/model, frontend (rebuild static), deploy manifests, docs/CI scan. No dual-read aliases. Python import paths (`orchestrator`, `security`, `tools`) stay.
 
@@ -12,12 +12,12 @@
 
 ## Global Constraints
 
-- Hard cutover: no `CERBERUS_*` fallbacks.
+- Hard cutover: no `FIREBREAK_*` fallbacks.
 - Canonical site: `https://firebreak.com`; app: `https://app.firebreak.com`.
 - Redirects: `firebreak.net` / `.org` / `.info` → `https://firebreak.com` (docs + runbook).
 - AI feature: **AI Lab**, route `/ai-lab`, API `/api/ai-lab/status`.
 - Model id: `firebreak`; scaffold: `ollama-primary`.
-- Env: `CERBERUS_*` → `FIREBREAK_*`; Redis `cerberus:` → `firebreak:`; headers `X-Cerberus-*` → `X-Firebreak-*`.
+- Env: `FIREBREAK_*` → `FIREBREAK_*`; Redis `firebreak:` → `firebreak:`; headers `X-Firebreak-*` → `X-Firebreak-*`.
 - npm: `firebreak-console`; images: `emadmmousa/firebreak-*`; Helm chart/dir: `firebreak`.
 - Rebuild Vite static assets; do not hand-edit hashed bundles.
 - Forbidden-name scan must pass on tracked sources.
@@ -31,14 +31,14 @@
 | AI Lab API | `api/scaffolds.py`, frontend routes/views/components/client |
 | Model | `docker/ollama/Modelfile`, `scaffold_client.py`, `marketplace.py`, `prompts.py`, training scripts/seeds |
 | Frontend brand | `frontend/index.html`, `AppShell.tsx`, `Login.tsx`, `package.json`, static rebuild |
-| Deploy | `docker-compose.yml`, `docker/docker-compose.yml`, `helm/cerberus` → `helm/firebreak`, `k8s/*` |
+| Deploy | `docker-compose.yml`, `docker/docker-compose.yml`, `helm/firebreak` → `helm/firebreak`, `k8s/*` |
 | Docs / CI | README, manuals, `docs/RENAME_CUTOVER.md`, CI forbidden-name job |
 
 ---
 
 ### Task 1: Core identifiers (env, Redis, headers, metrics, secrets)
 
-**Files:** All Python modules reading `CERBERUS_*` / `cerberus:` / `X-Cerberus-*` / `cerberus_*` metrics; `.env.example`; `session_config.py` insecure defaults.
+**Files:** All Python modules reading `FIREBREAK_*` / `firebreak:` / `X-Firebreak-*` / `firebreak_*` metrics; `.env.example`; `session_config.py` insecure defaults.
 
 - [ ] **Step 1:** Write/extend a small test asserting `FIREBREAK_*` env resolution and insecure secret `firebreak-secret` / `change-me`.
 - [ ] **Step 2:** RED then GREEN — replace env prefixes, Redis prefixes, header names, claim keys, metric names, default secrets across `src/` and `.env.example`.
@@ -71,10 +71,10 @@
 
 ### Task 4: Docker Compose + Helm + K8s
 
-**Files:** compose files, `helm/cerberus` → `helm/firebreak` (git mv), Chart.yaml, values, templates, `k8s/*`, deploy scripts, Dockerfiles user/image names.
+**Files:** compose files, `helm/firebreak` → `helm/firebreak` (git mv), Chart.yaml, values, templates, `k8s/*`, deploy scripts, Dockerfiles user/image names.
 
 - [ ] **Step 1:** Rename containers/images/env in compose.
-- [ ] **Step 2:** `git mv helm/cerberus helm/firebreak`; update chart name, helpers, namespace examples.
+- [ ] **Step 2:** `git mv helm/firebreak helm/firebreak`; update chart name, helpers, namespace examples.
 - [ ] **Step 3:** Update k8s manifests and deploy scripts.
 - [ ] **Step 4:** Commit `refactor(deploy): rename compose helm and k8s to firebreak`
 
@@ -86,7 +86,7 @@
 
 - [ ] **Step 1:** Add `docs/RENAME_CUTOVER.md` with domain/DNS/Auth0/Helm/Redis flush checklist.
 - [ ] **Step 2:** Sweep docs for Firebreak branding and domains.
-- [ ] **Step 3:** Add CI step: fail if tracked sources match Cerberus tokens (exclude `.git`, `node_modules`, `.venv`, maybe historical plan filenames only if body already updated — prefer zero matches including bodies).
+- [ ] **Step 3:** Add CI step: fail if tracked sources match Firebreak tokens (exclude `.git`, `node_modules`, `.venv`, maybe historical plan filenames only if body already updated — prefer zero matches including bodies).
 - [ ] **Step 4:** Commit `docs: cutover runbook and firebreak branding sweep`
 
 ---
@@ -95,7 +95,7 @@
 
 - [ ] **Step 1:** `rg` forbidden tokens on tracked files; fix stragglers (tests, seeds, comments, init scripts).
 - [ ] **Step 2:** Run backend pytest batch + frontend vitest + confirm static build present.
-- [ ] **Step 3:** Commit any fixes `fix: clear remaining cerberus identifiers`
+- [ ] **Step 3:** Commit any fixes `fix: clear remaining firebreak identifiers`
 - [ ] **Step 4:** Report remaining **external** steps (GitHub repo rename, DNS, image push) — do not claim those done unless executed with user approval.
 
 ## Spec coverage

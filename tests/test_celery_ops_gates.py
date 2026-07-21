@@ -13,9 +13,9 @@ def _clean_admin_store(monkeypatch):
         pass
     admin_store._settings.clear()
     for key in (
-        "CERBERUS_AUTO_SCALE",
-        "CERBERUS_AUTO_TRAIN",
-        "CERBERUS_LEARNING_TICK",
+        "FIREBREAK_AUTO_SCALE",
+        "FIREBREAK_AUTO_TRAIN",
+        "FIREBREAK_LEARNING_TICK",
     ):
         monkeypatch.delenv(key, raising=False)
     yield
@@ -46,7 +46,7 @@ def test_scale_tick_skips_when_off(monkeypatch):
 
 
 def test_scale_tick_runs_when_on(monkeypatch):
-    monkeypatch.setenv("CERBERUS_AUTO_SCALE", "true")
+    monkeypatch.setenv("FIREBREAK_AUTO_SCALE", "true")
     from workers.scaling import DynamicScaler
 
     expected = {"scaled": False, "reason": "test"}
@@ -74,8 +74,8 @@ def test_learning_tick_skips_when_off(monkeypatch):
 
 
 def test_learning_tick_runs_when_on(monkeypatch, tmp_path):
-    monkeypatch.setenv("CERBERUS_LEARNING_TICK", "true")
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("FIREBREAK_LEARNING_TICK", "true")
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path))
 
     from orchestrator.job_store import playbook_jobs
 
@@ -102,9 +102,9 @@ def test_daily_pipeline_skips_when_off(monkeypatch):
 
 
 def test_daily_pipeline_runs_when_on(monkeypatch, tmp_path):
-    monkeypatch.setenv("CERBERUS_AUTO_TRAIN", "true")
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path))
-    monkeypatch.delenv("CERBERUS_TRAIN_GPU", raising=False)
+    monkeypatch.setenv("FIREBREAK_AUTO_TRAIN", "true")
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.delenv("FIREBREAK_TRAIN_GPU", raising=False)
 
     from orchestrator.celery_app import run_daily_pipeline
 

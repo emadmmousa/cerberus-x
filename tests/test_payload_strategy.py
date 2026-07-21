@@ -6,9 +6,9 @@ from tools import payload_strategy as ps
 
 
 def test_resolve_strips_broken_lhost_and_sets_reverse(monkeypatch):
-    monkeypatch.setenv("CERBERUS_LHOST", "10.0.0.5")
-    monkeypatch.setenv("CERBERUS_PAYLOAD_PREFER", "reverse")
-    monkeypatch.setenv("CERBERUS_LPORT_START", "4500")
+    monkeypatch.setenv("FIREBREAK_LHOST", "10.0.0.5")
+    monkeypatch.setenv("FIREBREAK_PAYLOAD_PREFER", "reverse")
+    monkeypatch.setenv("FIREBREAK_LPORT_START", "4500")
     monkeypatch.setattr(ps, "allocate_lport", lambda: 4500)
 
     options = ps.resolve_exploit_options(
@@ -26,8 +26,8 @@ def test_resolve_strips_broken_lhost_and_sets_reverse(monkeypatch):
 
 
 def test_resolve_falls_back_to_bind_without_lhost(monkeypatch):
-    monkeypatch.delenv("CERBERUS_LHOST", raising=False)
-    monkeypatch.setenv("CERBERUS_PAYLOAD_PREFER", "reverse")
+    monkeypatch.delenv("FIREBREAK_LHOST", raising=False)
+    monkeypatch.setenv("FIREBREAK_PAYLOAD_PREFER", "reverse")
     monkeypatch.setattr(ps, "detect_lhost", lambda: None)
 
     options = ps.resolve_exploit_options(
@@ -41,8 +41,8 @@ def test_resolve_falls_back_to_bind_without_lhost(monkeypatch):
 
 
 def test_windows_module_gets_windows_payload(monkeypatch):
-    monkeypatch.setenv("CERBERUS_LHOST", "192.168.1.10")
-    monkeypatch.setenv("CERBERUS_PAYLOAD_PREFER", "reverse")
+    monkeypatch.setenv("FIREBREAK_LHOST", "192.168.1.10")
+    monkeypatch.setenv("FIREBREAK_PAYLOAD_PREFER", "reverse")
     monkeypatch.setattr(ps, "allocate_lport", lambda: 4444)
 
     options = ps.resolve_exploit_options(
@@ -66,7 +66,7 @@ def test_decision_engine_emits_payload_options(monkeypatch, tmp_path):
     from orchestrator.decision_engine import DecisionEngine
 
     monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "results.db"))
-    monkeypatch.setenv("CERBERUS_LHOST", "10.9.8.7")
+    monkeypatch.setenv("FIREBREAK_LHOST", "10.9.8.7")
     monkeypatch.setattr(ps, "allocate_lport", lambda: 5555)
 
     eng = DecisionEngine("https://vuln.example", job_id="job-payload")

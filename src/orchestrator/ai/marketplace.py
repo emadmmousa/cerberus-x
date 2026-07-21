@@ -13,17 +13,17 @@ from typing import Any
 
 from security.edition import feature_flags, is_pro
 
-MARKET_KEY = "cerberus:scaffold:marketplace"
+MARKET_KEY = "firebreak:scaffold:marketplace"
 
 
 def builtin_catalog() -> list[dict[str, Any]]:
     """Static catalog of known OpenAI-compatible scaffold recipes."""
     return [
         {
-            "id": "ollama-firebreak",
-            "label": "Cerberus-Firebreak (Ollama)",
+            "id": "ollama-primary",
+            "label": "Firebreak (Ollama)",
             "kind": "openai_compatible",
-            "model": os.environ.get("CERBERUS_LLM_MODEL") or "cerberus-firebreak",
+            "model": os.environ.get("FIREBREAK_LLM_MODEL") or "firebreak",
             "base_url_hint": "http://ollama:11434/v1",
             "tasks": ["plan", "decide", "harden"],
             "license": "Apache-2.0",
@@ -33,7 +33,7 @@ def builtin_catalog() -> list[dict[str, Any]]:
             "id": "ollama-fallback",
             "label": "Ollama fallback (base)",
             "kind": "openai_compatible",
-            "model": os.environ.get("CERBERUS_LLM_BASE_MODEL") or "qwen2.5:7b",
+            "model": os.environ.get("FIREBREAK_LLM_BASE_MODEL") or "qwen2.5:7b",
             "base_url_hint": "http://ollama:11434/v1",
             "tasks": ["plan", "decide"],
             "license": "Apache-2.0",
@@ -48,7 +48,7 @@ def builtin_catalog() -> list[dict[str, Any]]:
             "tasks": ["plan", "decide"],
             "license": "commercial",
             "source": "builtin",
-            "notes": "Set CERBERUS_SCAFFOLD_FALLBACK_* or custom env to wire.",
+            "notes": "Set FIREBREAK_SCAFFOLD_FALLBACK_* or custom env to wire.",
         },
     ]
 
@@ -79,7 +79,7 @@ def list_registered() -> list[dict[str, Any]]:
 def register_scaffold(entry: dict[str, Any]) -> dict[str, Any]:
     """Register a custom scaffold recipe (Pro packaging)."""
     if not feature_flags().get("scaffold_marketplace"):
-        raise PermissionError("scaffold marketplace requires CERBERUS_EDITION=pro")
+        raise PermissionError("scaffold marketplace requires FIREBREAK_EDITION=pro")
     sid = str(entry.get("id") or "").strip()
     model = str(entry.get("model") or "").strip()
     base = str(entry.get("base_url") or entry.get("base_url_hint") or "").strip()
@@ -98,7 +98,7 @@ def register_scaffold(entry: dict[str, Any]) -> dict[str, Any]:
         "model": model[:128],
         "base_url": base[:256],
         "base_url_hint": base[:256],
-        "api_key_env": str(entry.get("api_key_env") or "CERBERUS_LLM_API_KEY")[:64],
+        "api_key_env": str(entry.get("api_key_env") or "FIREBREAK_LLM_API_KEY")[:64],
         "tasks": list(entry.get("tasks") or ["plan"]),
         "license": str(entry.get("license") or "unknown")[:64],
         "cost_per_1k": max(0.0, cost),
@@ -120,7 +120,7 @@ def register_scaffold(entry: dict[str, Any]) -> dict[str, Any]:
 def unregister_scaffold(scaffold_id: str) -> bool:
     """Remove a registered scaffold (Pro). Builtin catalog entries cannot be removed."""
     if not feature_flags().get("scaffold_marketplace"):
-        raise PermissionError("scaffold marketplace requires CERBERUS_EDITION=pro")
+        raise PermissionError("scaffold marketplace requires FIREBREAK_EDITION=pro")
     sid = str(scaffold_id or "").strip()
     if not sid:
         raise ValueError("id is required")

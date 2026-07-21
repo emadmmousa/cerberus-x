@@ -1,23 +1,39 @@
-import subprocess
-import json
-import os
-import tempfile
+"""WinPEAS artifact preparer for authorized Windows post-ex."""
 
-def scan(target, args=None):
-    # WinPEAS is a Windows executable; in a container, we might not run it directly.
-    # Instead, we can provide it as an artifact for later execution.
-    # For the purpose of the orchestrator, we can download it and return a command.
-    # However, we can't execute it against a Windows target from a Linux container.
-    # So we treat this as a "prepare" tool: download the binary and generate a command.
-    # We'll store the binary in a known location.
-    winpeas_url = "https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEASx64.exe"
-    dest = "/app/tools/winPEASx64.exe"
+from __future__ import annotations
+
+import os
+import urllib.request
+from typing import Any
+
+DEST = "/app/tools/winPEASx64.exe"
+URL = "https://github.com/peass-ng/PEASS-ng/releases/latest/download/winPEASx64.exe"
+
+
+def scan(target, args=None) -> dict[str, Any]:
+    dest = DEST
     if not os.path.exists(dest):
         try:
-            import urllib.request
-            urllib.request.urlretrieve(winpeas_url, dest)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            urllib.request.urlretrieve(URL, dest)
             os.chmod(dest, 0o755)
-        except Exception as e:
-            return {'tool': 'winpeas', 'target': target, 'error': f"Failed to download winPEAS: {str(e)}"}
-    # Return the command that could be run on a Windows host (via agent or psexec)
-    return {'tool': 'winpeas', 'target': target, 'download_path': dest, 'command': f"winPEASx64.exe {args if args else ''}"}
+        except Exception as exc:
+            return {
+                "tool": "winpeas",
+                "target": target,
+                "status": "missing_artifact",
+                "ready": False,
+                "error": f"Failed to download winPEAS: {exc}",
+            }
+
+    extra = " ".join(str(a) for a in (args or []))
+    return {
+        "tool": "winpeas",
+        "target": target,
+        "status": "ready",
+        "ready": True,
+        "maturity": "artifact",
+        "download_path": dest,
+        "command": f"winPEASx64.exe {extra}".strip(),
+        "note": "Artifact ready for authorized execution on a Windows host (not run inside Linux worker)",
+    }

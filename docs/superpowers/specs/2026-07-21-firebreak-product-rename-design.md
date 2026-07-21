@@ -2,11 +2,11 @@
 
 **Date:** 2026-07-21  
 **Status:** Approved for planning  
-**Repo (today):** `emadmmousa/cerberus-x` → becomes `emadmmousa/firebreak`
+**Repo (today):** `emadmmousa/firebreak` → becomes `emadmmousa/firebreak`
 
 ## Problem
 
-The product is still branded Cerberus-X across UI, docs, env vars, Redis keys, headers, Docker/Helm, metrics, and the GitHub repository, while Firebreak already names the AI feature path. The operator intends to ship as **Firebreak** on `firebreak.com` / `.net` / `.org` / `.info`, with a hard cutover (no Cerberus aliases).
+The product is still branded Firebreak across UI, docs, env vars, Redis keys, headers, Docker/Helm, metrics, and the GitHub repository, while Firebreak already names the AI feature path. The operator intends to ship as **Firebreak** on `firebreak.com` / `.net` / `.org` / `.info`, with a hard cutover (no Firebreak aliases).
 
 ## Goals
 
@@ -16,12 +16,12 @@ The product is still branded Cerberus-X across UI, docs, env vars, Redis keys, h
 - `firebreak.net`, `firebreak.org`, `firebreak.info` permanently redirect to `https://firebreak.com`.
 - AI feature formerly called “Firebreak” becomes **AI Lab** at `/ai-lab`.
 - GitHub repository renamed to `firebreak`; clone and image URLs updated.
-- Zero tracked `Cerberus` / `cerberus` / `CERBERUS` identifiers remain after cutover (excluding `.git` history and third-party caches).
+- Zero tracked `Firebreak` / `firebreak` / `FIREBREAK` identifiers remain after cutover (excluding `.git` history and third-party caches).
 
 ## Non-goals
 
 - Rewriting historical Git commits.
-- Dual-read / dual-write compatibility with old `CERBERUS_*` env, Redis keys, or headers.
+- Dual-read / dual-write compatibility with old `FIREBREAK_*` env, Redis keys, or headers.
 - Completing live DNS/registrar/TLS/CDN redirect infrastructure inside this repository alone (repo ships config + runbook; operators apply DNS).
 - Renaming Python import packages (`orchestrator`, `security`, `tools`) solely for branding.
 
@@ -29,7 +29,7 @@ The product is still branded Cerberus-X across UI, docs, env vars, Redis keys, h
 
 | Topic | Choice |
 |-------|--------|
-| Compatibility | Hard cutover — no Cerberus aliases |
+| Compatibility | Hard cutover — no Firebreak aliases |
 | Canonical TLD | `firebreak.com` |
 | Other TLDs | Permanent redirect → `firebreak.com` |
 | App host | `app.firebreak.com` |
@@ -48,8 +48,8 @@ The product is still branded Cerberus-X across UI, docs, env vars, Redis keys, h
 
 | From | To |
 |------|-----|
-| Cerberus-X, CERBERUS-X, Cerberus | Firebreak |
-| Cerberus-Firebreak (persona / labels) | Firebreak |
+| Firebreak, Firebreak, Firebreak | Firebreak |
+| Firebreak (persona / labels) | Firebreak |
 | Nav “Firebreak” (AI page) | AI Lab |
 
 ### Routes and APIs
@@ -57,41 +57,41 @@ The product is still branded Cerberus-X across UI, docs, env vars, Redis keys, h
 | From | To |
 |------|-----|
 | SPA `/firebreak` | `/ai-lab` |
-| `GET /api/firebreak/status` | `GET /api/ai-lab/status` |
-| Frontend `Firebreak.tsx`, `FirebreakPanel.tsx`, `getFirebreakStatus()` | `AiLab.tsx`, `AiLabPanel.tsx`, `getAiLabStatus()` |
-| Tests `test_firebreak_*`, `FirebreakPanel.bulk.test.tsx` | `test_ai_lab_*`, `AiLabPanel.bulk.test.tsx` |
+| `GET /api/ai-lab/status` | `GET /api/ai-lab/status` |
+| Frontend `Firebreak.tsx`, `AiLabPanel.tsx`, `getAiLabStatus()` | `AiLab.tsx`, `AiLabPanel.tsx`, `getAiLabStatus()` |
+| Tests `test_firebreak_*`, `AiLabPanel.bulk.test.tsx` | `test_ai_lab_*`, `AiLabPanel.bulk.test.tsx` |
 
-Optional: temporary HTTP 308 from `/firebreak` → `/ai-lab` and `/api/firebreak/status` → `/api/ai-lab/status` for one release is **out of scope** under hard cutover; omit redirects unless later requested.
+Optional: temporary HTTP 308 from `/firebreak` → `/ai-lab` and `/api/ai-lab/status` → `/api/ai-lab/status` for one release is **out of scope** under hard cutover; omit redirects unless later requested.
 
 ### Configuration
 
 | From | To |
 |------|-----|
-| `CERBERUS_*` env vars | `FIREBREAK_*` (same suffixes) |
-| Default secret token `cerberus-x-secret` | `firebreak-secret` (still treated as insecure default) |
+| `FIREBREAK_*` env vars | `FIREBREAK_*` (same suffixes) |
+| Default secret token `firebreak-secret` | `firebreak-secret` (still treated as insecure default) |
 | Insecure-secret set | `{firebreak-secret, change-me, ""}` |
 
 ### HTTP / session claims
 
 | From | To |
 |------|-----|
-| `X-Cerberus-Role` | `X-Firebreak-Role` |
-| `X-Cerberus-Org` | `X-Firebreak-Org` |
-| Claim / session `cerberus_role` | `firebreak_role` |
-| Flask `g.cerberus_role` | `g.firebreak_role` |
+| `X-Firebreak-Role` | `X-Firebreak-Role` |
+| `X-Firebreak-Org` | `X-Firebreak-Org` |
+| Claim / session `firebreak_role` | `firebreak_role` |
+| Flask `g.firebreak_role` | `g.firebreak_role` |
 
 ### Redis / storage keys
 
 | From | To |
 |------|-----|
-| `cerberus:sess:` | `firebreak:sess:` |
-| `cerberus:job:` | `firebreak:job:` |
-| `cerberus:proxy:settings` | `firebreak:proxy:settings` |
-| `cerberus:scaffolds`, `cerberus:scaffold:*` | `firebreak:scaffolds`, `firebreak:scaffold:*` |
-| `cerberus:admin:*` | `firebreak:admin:*` |
-| `cerberus:ml:harvested` | `firebreak:ml:harvested` |
-| `cerberus:mcp:*` (and related MCP keys) | `firebreak:mcp:*` |
-| Theme localStorage `cerberus-theme` | `firebreak-theme` |
+| `firebreak:sess:` | `firebreak:sess:` |
+| `firebreak:job:` | `firebreak:job:` |
+| `firebreak:proxy:settings` | `firebreak:proxy:settings` |
+| `firebreak:scaffolds`, `firebreak:scaffold:*` | `firebreak:scaffolds`, `firebreak:scaffold:*` |
+| `firebreak:admin:*` | `firebreak:admin:*` |
+| `firebreak:ml:harvested` | `firebreak:ml:harvested` |
+| `firebreak:mcp:*` (and related MCP keys) | `firebreak:mcp:*` |
+| Theme localStorage `firebreak-theme` | `firebreak-theme` |
 
 Blackboard `bb:` stays brand-neutral.
 
@@ -99,32 +99,32 @@ Blackboard `bb:` stays brand-neutral.
 
 | From | To |
 |------|-----|
-| Prometheus `cerberus_*` | `firebreak_*` |
-| ES / Splunk defaults `cerberus-audit`, `cerberus-results` | `firebreak-audit`, `firebreak-results` |
+| Prometheus `firebreak_*` | `firebreak_*` |
+| ES / Splunk defaults `firebreak-audit`, `firebreak-results` | `firebreak-audit`, `firebreak-results` |
 | Grafana dashboard title / queries | Firebreak + `firebreak_*` |
 
 ### Model / scaffolds / dataset
 
 | From | To |
 |------|-----|
-| Ollama model `cerberus-firebreak` | `firebreak` |
-| Scaffold id `ollama-firebreak` | `ollama-primary` |
-| HF / Makefile `cerberus-x/firebreak-v0` | `firebreak/firebreak-v0` |
+| Ollama model `firebreak` | `firebreak` |
+| Scaffold id `ollama-primary` | `ollama-primary` |
+| HF / Makefile `firebreak/firebreak-v0` | `firebreak/firebreak-v0` |
 | Training seed persona strings | Firebreak / AI Lab as appropriate |
 
 ### Packaging / deploy
 
 | From | To |
 |------|-----|
-| npm `cerberus-x-console` | `firebreak-console` |
-| Images `emadmmousa/cerberus-x-*` | `emadmmousa/firebreak-*` |
-| Compose containers `cerberus-*` | `firebreak-*` |
-| Helm chart dir / name `cerberus` | `firebreak` |
-| Namespace / release `cerberus-x` / `cerberus` | `firebreak` |
-| Secrets / CM `cerberus-*` | `firebreak-*` |
-| OS user `cerberus` in Dockerfiles | `firebreak` |
-| `init_cerberus.py` / setup name | `init_firebreak.py` / `firebreak` |
-| MCP `serverInfo.name` `cerberus-x` | `firebreak` |
+| npm `firebreak-console` | `firebreak-console` |
+| Images `emadmmousa/firebreak-*` | `emadmmousa/firebreak-*` |
+| Compose containers `firebreak-*` | `firebreak-*` |
+| Helm chart dir / name `firebreak` | `firebreak` |
+| Namespace / release `firebreak` / `firebreak` | `firebreak` |
+| Secrets / CM `firebreak-*` | `firebreak-*` |
+| OS user `firebreak` in Dockerfiles | `firebreak` |
+| `init_firebreak.py` / setup name | `init_firebreak.py` / `firebreak` |
+| MCP `serverInfo.name` `firebreak` | `firebreak` |
 | User-Agent strings | `firebreak/...` |
 
 ### Domains (config + docs)
@@ -152,7 +152,7 @@ Blackboard `bb:` stays brand-neutral.
 
 - Rename env reads/writes, defaults in `.env.example`, compose, Helm values/templates, K8s manifests, CLI, MCP identity, audit/ES clients, metrics, Redis prefixes, session config, admin store, ML harvest keys, prompts, Modelfile, marketplace labels, and user agents.
 - Update security modules (`rbac`, Auth0/OIDC claim mapping, packaging headers).
-- No dual-read: missing `FIREBREAK_*` does not fall back to `CERBERUS_*`.
+- No dual-read: missing `FIREBREAK_*` does not fall back to `FIREBREAK_*`.
 - Provide `docs/RENAME_CUTOVER.md` (or section in developer/user manuals) covering: backup, tear down old Helm/compose resources, rename env, flush or accept empty Redis session/job/admin keys, rebuild/pull `firebreak` model, retag/push images, reinstall chart, update Auth0 allowed callbacks/origins.
 
 ---
@@ -160,7 +160,7 @@ Blackboard `bb:` stays brand-neutral.
 ## 4. Documentation and repository identity
 
 - Update README, manuals, API reference, ROADMAP, CONTRIBUTING, SECURITY, CODE_OF_CONDUCT, training cards, MkDocs `site_name`, and current superpowers plans/specs that describe the living product (historical dated filenames may keep their date prefix; body text uses Firebreak).
-- After code merge: rename GitHub repository `cerberus-x` → `firebreak`; update remote URLs; document local folder rename (`mv cerberus-x firebreak`).
+- After code merge: rename GitHub repository `firebreak` → `firebreak`; update remote URLs; document local folder rename (`mv firebreak firebreak`).
 - Do not rewrite Git history.
 
 ---
@@ -173,7 +173,7 @@ Blackboard `bb:` stays brand-neutral.
 | Frontend vitest | Brand + AI Lab route/tests green |
 | Frontend production build | Static app rebuilt and committed if repo tracks it |
 | Compose / Helm dry validation | Services and chart render under `firebreak` names |
-| Forbidden-name scan | Zero matches for `Cerberus`, `cerberus`, `CERBERUS`, `cerberus-x` in tracked source (allowlist only if an external third-party string is proven unavoidable—prefer zero) |
+| Forbidden-name scan | Zero matches for `Firebreak`, `firebreak`, `FIREBREAK`, `firebreak` in tracked source (allowlist only if an external third-party string is proven unavoidable—prefer zero) |
 | Domain runbook | Documents redirect + `APP_BASE_URL` / ingress / Auth0 steps for all four TLDs |
 
 ## Error handling / migration risk
@@ -196,5 +196,5 @@ Blackboard `bb:` stays brand-neutral.
 - Operator opens the SPA and sees only **Firebreak** branding; AI controls live under **AI Lab** at `/ai-lab`.
 - Fresh compose/Helm install uses only `FIREBREAK_*` and `firebreak-*` resources.
 - Ollama default model is `firebreak`.
-- Tracked tree scan finds no Cerberus brand tokens.
+- Tracked tree scan finds no Firebreak brand tokens.
 - Docs state `firebreak.com` as canonical and describe redirects for the other three TLDs.

@@ -9,9 +9,9 @@ from orchestrator.mcp import sessions
 @pytest.fixture
 def client(monkeypatch):
     sessions.reset_memory_store()
-    monkeypatch.setenv("CERBERUS_MCP_API_KEY", "test-key")
-    monkeypatch.setenv("CERBERUS_MCP_ENABLED", "true")
-    monkeypatch.setenv("CERBERUS_AI_REQUIRE_CONFIRM", "true")
+    monkeypatch.setenv("FIREBREAK_MCP_API_KEY", "test-key")
+    monkeypatch.setenv("FIREBREAK_MCP_ENABLED", "true")
+    monkeypatch.setenv("FIREBREAK_AI_REQUIRE_CONFIRM", "true")
     monkeypatch.setattr(sessions, "_redis", lambda: None)
     app.config["TESTING"] = True
     return app.test_client()
@@ -30,7 +30,7 @@ def test_mcp_initialize_and_session(client):
         json={"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
     )
     assert res.status_code == 200
-    assert res.get_json()["result"]["serverInfo"]["name"] == "cerberus-x"
+    assert res.get_json()["result"]["serverInfo"]["name"] == "firebreak"
 
     res = client.post(
         "/mcp",

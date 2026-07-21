@@ -137,7 +137,7 @@ def mcp_jsonrpc():
                 {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "cerberus-x", "version": "1.0.0"},
+                    "serverInfo": {"name": "firebreak", "version": "1.0.0"},
                 },
                 req_id,
             )

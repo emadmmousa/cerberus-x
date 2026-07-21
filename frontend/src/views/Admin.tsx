@@ -632,7 +632,7 @@ function RbacTab({ flash, onChange }: { flash: FlashFn; onChange: () => void }) 
   const OPTIONS: Array<{ id: string; value: boolean | null; label: string; hint: string }> = [
     { id: "on", value: true, label: "Enforce ON", hint: "Require auth + role on every protected route." },
     { id: "off", value: false, label: "Enforce OFF", hint: "Lab mode — all routes open (no auth required)." },
-    { id: "env", value: null, label: "Defer to environment", hint: "Use CERBERUS_RBAC_ENFORCE from deployment." },
+    { id: "env", value: null, label: "Defer to environment", hint: "Use FIREBREAK_RBAC_ENFORCE from deployment." },
   ];
 
   return (
@@ -726,7 +726,7 @@ function EditionTab({ flash, onChange }: { flash: FlashFn; onChange: () => void 
           onClick={() => void apply(null)}
         >
           <span className="admin-radio__title">Defer to environment</span>
-          <span className="admin-radio__hint">Use CERBERUS_EDITION.</span>
+          <span className="admin-radio__hint">Use FIREBREAK_EDITION.</span>
         </button>
       </div>
     </section>
@@ -747,19 +747,19 @@ const OPS_FLAGS: Array<{
   {
     key: "auto_scale",
     label: "Auto-Scale",
-    env: "CERBERUS_AUTO_SCALE",
+    env: "FIREBREAK_AUTO_SCALE",
     hint: "Celery scale tick for worker pool sizing.",
   },
   {
     key: "auto_train",
     label: "Auto-Train",
-    env: "CERBERUS_AUTO_TRAIN",
+    env: "FIREBREAK_AUTO_TRAIN",
     hint: "Background fine-tune pipeline when dataset grows.",
   },
   {
     key: "learning_tick",
     label: "Learning Tick",
-    env: "CERBERUS_LEARNING_TICK",
+    env: "FIREBREAK_LEARNING_TICK",
     hint: "Periodic learning / memory consolidation jobs.",
   },
 ];
@@ -810,7 +810,7 @@ function OpsTab({ flash }: { flash: FlashFn }) {
       {settings?.secret_key_insecure && (
         <p className="error-text">
           secret_key_insecure: SECRET_KEY is still the default{" "}
-          <span className="mono">cerberus-x-secret</span>. Change it before
+          <span className="mono">firebreak-secret</span>. Change it before
           enforcing RBAC in production.
         </p>
       )}

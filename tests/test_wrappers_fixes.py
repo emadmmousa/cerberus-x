@@ -70,6 +70,38 @@ def test_masscan_sanitize_strips_nmap_flags_and_wide_ranges():
     assert ports
     assert len(ports) <= masscan.MAX_FALLBACK_PORTS
     assert "--wait=0" in cleaned
+    assert "--rate=1000" in cleaned
+
+
+def test_masscan_sanitize_splits_glued_rate_wait_and_drops_output_json():
+    cleaned = masscan.sanitize_args(
+        ["-p80,443,22", "--rate=1000 --wait=0", "output=json"]
+    )
+    assert "output=json" not in cleaned
+    assert "--rate=1000" in cleaned
+    assert "--wait=0" in cleaned
+    # Must be separate tokens — glued form breaks masscan rate parser.
+    assert not any(" " in a for a in cleaned)
+    assert masscan._ports_from_args(cleaned) == [80, 443, 22]
+
+
+def test_gobuster_sanitize_requires_dir_and_maps_url_flag():
+    cleaned = gobuster.sanitize_args(
+        ["--url", "https://example.com", "-w", "/tmp/w.txt"],
+        url="https://www.example.com",
+    )
+    assert cleaned[0] == "dir"
+    assert "-u" in cleaned
+    assert "--url" not in cleaned
+    assert cleaned[cleaned.index("-u") + 1] == "https://www.example.com"
+    assert "-w" in cleaned
+
+
+def test_gobuster_sanitize_injects_dir_when_llm_omits_mode():
+    cleaned = gobuster.sanitize_args(["-u", "https://example.com"])
+    assert cleaned[0] == "dir"
+    assert "-w" in cleaned
+    assert cleaned[cleaned.index("-w") + 1] == gobuster.WORDLIST
 
 
 def test_masscan_tcp_connect_respects_budget(monkeypatch):
@@ -496,6 +528,13 @@ def test_ffuf_detects_cdn_stall_output():
     )
     assert ffuf._looks_like_cdn_stall(stalled) is True
     assert ffuf._looks_like_cdn_stall(":: Progress: [100/100] :: 50 req/sec :: Errors: 0 ::") is False
+    # Early 0 req/sec is normal; do not flag a run that later made progress.
+    progressed = (
+        ":: Progress: [5/4614] :: Job [1/1] :: 0 req/sec :: Duration: [0:00:00] :: Errors: 0 ::\n"
+        ":: Progress: [800/4614] :: Job [1/1] :: 8 req/sec :: Duration: [0:00:45] :: Errors: 2 ::\n"
+        "[WARN] Maximum running time for entire process reached, exiting.\n"
+    )
+    assert ffuf._looks_like_cdn_stall(progressed) is False
 
 
 def test_crackmapexec_strips_url_target_args():

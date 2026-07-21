@@ -8,13 +8,13 @@ import math
 import os
 import sqlite3
 import time
-from typing import Optional
+from urllib.parse import urlparse
 
 from orchestrator.database import DB_PATH
 
 
 def _connect():
-    path = os.environ.get("CERBERUS_DB_PATH", DB_PATH)
+    path = os.environ.get("FIREBREAK_DB_PATH", DB_PATH)
     return sqlite3.connect(path)
 
 
@@ -32,6 +32,21 @@ def init_memory_db() -> None:
             """
         )
         conn.commit()
+
+
+def normalize_target_hint(target: str) -> str:
+    """Collapse URL/host variants to a comparable host key."""
+    raw = (target or "").strip().lower()
+    if not raw:
+        return ""
+    if "://" not in raw:
+        raw = f"https://{raw}"
+    try:
+        host = urlparse(raw).hostname or ""
+    except Exception:
+        host = ""
+    host = host.removeprefix("www.")
+    return host
 
 
 def _embed(text: str, dims: int = 64) -> list[float]:
@@ -55,26 +70,44 @@ def _cosine(a: list[float], b: list[float]) -> float:
 
 def remember(summary: str, target_hint: str = "") -> int:
     init_memory_db()
-    emb = _embed(f"{target_hint} {summary}")
+    hint = normalize_target_hint(target_hint) or (target_hint or "").strip().lower()
+    emb = _embed(f"{hint} {summary}")
     with _connect() as conn:
         cur = conn.execute(
             "INSERT INTO ai_memory (target_hint, summary, embedding, created_at) "
             "VALUES (?, ?, ?, ?)",
-            (target_hint, summary, json.dumps(emb), time.time()),
+            (hint, summary, json.dumps(emb), time.time()),
         )
         conn.commit()
         return int(cur.lastrowid)
 
 
-def recall(query: str, k: int = 3) -> list[dict]:
+def recall(
+    query: str,
+    k: int = 3,
+    *,
+    target_hint: str | None = None,
+) -> list[dict]:
+    """Recall prior strategies.
+
+    When ``target_hint`` is set, only memories for that host are returned so a
+    new mission cannot surface another site's goal/URL in the plan UI.
+    """
     init_memory_db()
     q = _embed(query)
+    want = normalize_target_hint(target_hint or "")
     with _connect() as conn:
         rows = conn.execute(
             "SELECT id, target_hint, summary, embedding, created_at FROM ai_memory"
         ).fetchall()
     scored = []
     for row in rows:
+        stored_hint = normalize_target_hint(row[1] or "") or (row[1] or "").lower()
+        if want and stored_hint and stored_hint != want:
+            continue
+        if want and not stored_hint:
+            # Legacy rows without a usable host — skip when scoping.
+            continue
         emb = json.loads(row[3])
         scored.append(
             {

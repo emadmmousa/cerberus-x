@@ -10,7 +10,7 @@ from flask import Request, jsonify
 
 
 def mcp_enabled() -> bool:
-    return os.environ.get("CERBERUS_MCP_ENABLED", "true").lower() not in {
+    return os.environ.get("FIREBREAK_MCP_ENABLED", "true").lower() not in {
         "0",
         "false",
         "no",
@@ -19,7 +19,7 @@ def mcp_enabled() -> bool:
 
 
 def expected_api_key() -> str:
-    return (os.environ.get("CERBERUS_MCP_API_KEY") or "").strip()
+    return (os.environ.get("FIREBREAK_MCP_API_KEY") or "").strip()
 
 
 def extract_api_key(request: Request) -> Optional[str]:
@@ -35,7 +35,7 @@ def require_api_key(request: Request):
         return jsonify({"error": "MCP disabled"}), 503
     expected = expected_api_key()
     if not expected:
-        return jsonify({"error": "CERBERUS_MCP_API_KEY is not configured"}), 503
+        return jsonify({"error": "FIREBREAK_MCP_API_KEY is not configured"}), 503
     provided = extract_api_key(request)
     if not provided or not hmac.compare_digest(provided, expected):
         return jsonify({"error": "unauthorized"}), 401

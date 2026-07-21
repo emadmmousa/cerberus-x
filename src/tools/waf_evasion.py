@@ -1,5 +1,5 @@
 """
-WAF evasion utilities for Cerberus-X (authorized testing).
+WAF evasion utilities for Firebreak (authorized testing).
 
 Implements encoding/obfuscation, header injection, parameter tricks,
 timing, trusted UA, static-extension suffixes, and WAF-specific profiles
@@ -468,7 +468,7 @@ def multipart_form(
     Category 3 — multipart/form-data body.
     Returns (content_type_header_value, body).
     """
-    boundary = boundary or f"----Cerberus{random.randint(10**8, 10**9 - 1)}"
+    boundary = boundary or f"----Firebreak{random.randint(10**8, 10**9 - 1)}"
     parts: list[str] = []
     for name, value in fields.items():
         parts.append(

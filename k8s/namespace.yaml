@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: cerberus-x
+  name: firebreak
   labels:
-    name: cerberus-x
+    name: firebreak
     environment: production

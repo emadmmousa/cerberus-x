@@ -37,13 +37,13 @@ _WINDOWS_MODULES = (
 
 
 def prefer_mode() -> Prefer:
-    raw = (os.environ.get("CERBERUS_PAYLOAD_PREFER") or "reverse").strip().lower()
+    raw = (os.environ.get("FIREBREAK_PAYLOAD_PREFER") or "reverse").strip().lower()
     return "bind" if raw == "bind" else "reverse"
 
 
 def detect_lhost() -> str | None:
     """Return a host the target can dial back to for reverse payloads."""
-    explicit = (os.environ.get("CERBERUS_LHOST") or "").strip()
+    explicit = (os.environ.get("FIREBREAK_LHOST") or "").strip()
     if explicit and explicit not in {"0.0.0.0", "::", "127.0.0.1", "localhost"}:
         return explicit
 
@@ -67,7 +67,7 @@ def detect_lhost() -> str | None:
 
 
 def allocate_lport() -> int:
-    start = int(os.environ.get("CERBERUS_LPORT_START") or "4444")
+    start = int(os.environ.get("FIREBREAK_LPORT_START") or "4444")
     start = max(1024, min(start, 65000))
     # Prefer an ephemeral free port at/above the configured start.
     for port in range(start, min(start + 200, 65535)):
@@ -231,5 +231,5 @@ def strategy_meta() -> dict[str, Any]:
     return {
         "prefer": prefer_mode(),
         "lhost": detect_lhost(),
-        "lport_start": int(os.environ.get("CERBERUS_LPORT_START") or "4444"),
+        "lport_start": int(os.environ.get("FIREBREAK_LPORT_START") or "4444"),
     }

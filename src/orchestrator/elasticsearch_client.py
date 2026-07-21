@@ -33,7 +33,7 @@ class ElasticsearchClient:
             logger.error("Elasticsearch connection failed: %s", exc)
             self.client = None
 
-    def index_result(self, target, phase, tool, result, job_id=None) -> bool:
+    def index_result(self, target, phase, tool, result, job_id=None, org_id=None) -> bool:
         if not self.client:
             return False
         doc = {
@@ -42,10 +42,11 @@ class ElasticsearchClient:
             "tool": tool,
             "result": result,
             "job_id": job_id,
+            "org_id": org_id or "default",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         try:
-            self.client.index(index="cerberus-results", document=doc)
+            self.client.index(index="firebreak-results", document=doc)
             return True
         except Exception as exc:
             logger.error("Failed to index result: %s", exc)
@@ -56,7 +57,7 @@ class ElasticsearchClient:
             return False
         actions = [
             {
-                "_index": "cerberus-results",
+                "_index": "firebreak-results",
                 "_source": {
                     "target": row.get("target"),
                     "phase": row.get("phase"),
@@ -75,7 +76,9 @@ class ElasticsearchClient:
             logger.error("Bulk index failed: %s", exc)
             return False
 
-    def search_results(self, target=None, phase=None, tool=None, job_id=None, limit=100):
+    def search_results(
+        self, target=None, phase=None, tool=None, job_id=None, org_id=None, limit=100
+    ):
         if not self.client:
             return None
         must = []
@@ -87,10 +90,12 @@ class ElasticsearchClient:
             must.append({"match": {"tool": tool}})
         if job_id:
             must.append({"term": {"job_id.keyword": job_id}})
+        if org_id:
+            must.append({"term": {"org_id.keyword": org_id}})
         query = {"bool": {"must": must}} if must else {"match_all": {}}
         try:
             resp = self.client.search(
-                index="cerberus-results",
+                index="firebreak-results",
                 query=query,
                 size=limit,
                 sort=[{"timestamp": {"order": "desc"}}],

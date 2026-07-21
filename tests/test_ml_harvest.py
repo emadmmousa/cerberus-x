@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 def test_harvest_completed_mission_once(tmp_path, monkeypatch):
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path))
     from orchestrator.job_store import playbook_jobs
     from orchestrator.ml.harvest import run_learning_tick, HARVESTED_KEY
     from utils.redis_utils import get_redis

@@ -23,8 +23,8 @@ This **extends** `2026-07-19-oxylabs-proxy-react-console-design.md`. That doc fo
 Browser (Proxy Settings panel)
   -> PUT /api/proxy/settings  (credentials in body, TLS/local only)
   -> Orchestrator:
-       1. Write Redis cerberus:proxy:settings
-       2. Upsert OXYLABS_PROXY_* in CERBERUS_ENV_FILE
+       1. Write Redis firebreak:proxy:settings
+       2. Upsert OXYLABS_PROXY_* in FIREBREAK_ENV_FILE
        3. Patch K8s Secret + ConfigMap (best-effort)
   -> Workers read Redis first, else env, when building upstream URL
   -> Local forwarder still isolates secrets from tool argv
@@ -34,8 +34,8 @@ Browser (Proxy Settings panel)
 
 | Layer | Role |
 | --- | --- |
-| Redis `cerberus:proxy:settings` | Live source for new scans (no restart) |
-| `.env` (`CERBERUS_ENV_FILE`) | Persist for Compose / local reboot |
+| Redis `firebreak:proxy:settings` | Live source for new scans (no restart) |
+| `.env` (`FIREBREAK_ENV_FILE`) | Persist for Compose / local reboot |
 | K8s Secret + ConfigMap | Persist credentials (Secret) and host/port/protocol (ConfigMap) for new pods |
 | Process env | Fallback when Redis empty |
 
@@ -104,10 +104,10 @@ Rules:
 - Missing required host/username (or unparseable URL) → `400`, no writes.
 - On success, apply in order:
   1. Redis write (required). Failure → `503`, do not touch `.env` or K8s.
-  2. Upsert `.env` keys: `OXYLABS_PROXY_USERNAME`, `OXYLABS_PROXY_PASSWORD`, `OXYLABS_PROXY_HOST`, `OXYLABS_PROXY_PORT`, `OXYLABS_PROXY_PROTOCOL`. Path from `CERBERUS_ENV_FILE` (default `/app/.env`).
+  2. Upsert `.env` keys: `OXYLABS_PROXY_USERNAME`, `OXYLABS_PROXY_PASSWORD`, `OXYLABS_PROXY_HOST`, `OXYLABS_PROXY_PORT`, `OXYLABS_PROXY_PROTOCOL`. Path from `FIREBREAK_ENV_FILE` (default `/app/.env`).
   3. In-cluster best-effort sync:
-     - Patch Secret `cerberus-secrets`: `OXYLABS_PROXY_USERNAME`, `OXYLABS_PROXY_PASSWORD`
-     - Patch ConfigMap `cerberus-config`: `OXYLABS_PROXY_HOST`, `OXYLABS_PROXY_PORT`, `OXYLABS_PROXY_PROTOCOL`
+     - Patch Secret `firebreak-secrets`: `OXYLABS_PROXY_USERNAME`, `OXYLABS_PROXY_PASSWORD`
+     - Patch ConfigMap `firebreak-config`: `OXYLABS_PROXY_HOST`, `OXYLABS_PROXY_PORT`, `OXYLABS_PROXY_PROTOCOL`
      Live workers already prefer Redis; ConfigMap/Secret keep new pods aligned.
 
 Response shape:
@@ -144,13 +144,13 @@ Keep `{ "configured": bool }` for the existing badge; `configured` true if Redis
 - Preserve unrelated keys and comments where practical.
 - Replace existing `OXYLABS_PROXY_*` lines or append if missing.
 - Never write secrets into git-tracked files; only the configured env file path.
-- Compose: mount repo `.env` into orchestrator at `/app/.env` and set `CERBERUS_ENV_FILE=/app/.env`.
+- Compose: mount repo `.env` into orchestrator at `/app/.env` and set `FIREBREAK_ENV_FILE=/app/.env`.
 
 ### Kubernetes
 
-- Orchestrator ServiceAccount + Role/RoleBinding in namespace `cerberus-x` limited to:
-  - Secret `cerberus-secrets`: `get`, `patch`
-  - ConfigMap `cerberus-config`: `get`, `patch`
+- Orchestrator ServiceAccount + Role/RoleBinding in namespace `firebreak` limited to:
+  - Secret `firebreak-secrets`: `get`, `patch`
+  - ConfigMap `firebreak-config`: `get`, `patch`
 - Detect in-cluster via service account token / `KUBERNETES_SERVICE_HOST`.
 - Outside cluster: `k8s.ok=false` with a short “not in cluster” message — not a hard failure.
 - Patching Secret/ConfigMap updates bootstrap for **new** pods; live workers already use Redis, so no forced restart required for new scans.

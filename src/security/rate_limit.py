@@ -38,7 +38,7 @@ class _NoopLimiter:
 
 
 def _build_limiter():
-    if os.environ.get("CERBERUS_RATE_LIMIT_ENABLED", "true").lower() in {
+    if os.environ.get("FIREBREAK_RATE_LIMIT_ENABLED", "true").lower() in {
         "0",
         "false",
         "no",

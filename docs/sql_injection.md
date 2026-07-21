@@ -13,7 +13,7 @@ args = build_sqlmap_args(profile, existing=["--batch", "--forms"], evasion=evasi
 
 | Source | Effect |
 |--------|--------|
-| `CERBERUS_SQLI_INTENSITY` | Forces intensity (`off`/`low`/`medium`/`high`/`aggressive`) |
+| `FIREBREAK_SQLI_INTENSITY` | Forces intensity (`off`/`low`/`medium`/`high`/`aggressive`) |
 | Evasion `level` | Used when env unset (`resolve_sqli_intensity`) |
 | Default | `aggressive` |
 
@@ -24,9 +24,9 @@ Aggressive sqlmap merge includes `--technique=BEUSTQ`, high `--level`/`--risk`, 
 | Family | Mapped to |
 |--------|-----------|
 | Classic in-band | Union / error / boolean / time / conditional → `BEUSTQ` + probe payloads |
-| Out-of-band | `--dns-domain` when `CERBERUS_SQLMAP_DNS_DOMAIN` set; MSSQL UNC / Oracle HTTP probes |
+| Out-of-band | `--dns-domain` when `FIREBREAK_SQLMAP_DNS_DOMAIN` set; MSSQL UNC / Oracle HTTP probes |
 | DB-specific | MySQL / Postgres / MSSQL / Oracle payload sets + `--dbms=` |
-| Advanced | Polyglots, stacked queries, second-order (`CERBERUS_SQLMAP_SECOND_ORDER`), NoSQL probes |
+| Advanced | Polyglots, stacked queries, second-order (`FIREBREAK_SQLMAP_SECOND_ORDER`), NoSQL probes |
 | Blind refinements | Bit/ASCII/`SLEEP`/`BENCHMARK` payloads |
 | Evasion | Comment/case/hex/whitespace + `waf_evasion` tampers |
 | Exfil | Schema/user/db/hash enum + dump |
@@ -34,11 +34,11 @@ Aggressive sqlmap merge includes `--technique=BEUSTQ`, high `--level`/`--risk`, 
 ## Environment
 
 ```bash
-CERBERUS_SQLI_INTENSITY=aggressive
-# CERBERUS_SQLMAP_DNS_DOMAIN=exfil.yourdomain.com
-# CERBERUS_SQLMAP_SECOND_ORDER=https://target/profile
-# CERBERUS_SQLMAP_DUMP_ALL=false
-# CERBERUS_SQLMAP_OS_SHELL=false
+FIREBREAK_SQLI_INTENSITY=aggressive
+# FIREBREAK_SQLMAP_DNS_DOMAIN=exfil.yourdomain.com
+# FIREBREAK_SQLMAP_SECOND_ORDER=https://target/profile
+# FIREBREAK_SQLMAP_DUMP_ALL=false
+# FIREBREAK_SQLMAP_OS_SHELL=false
 ```
 
 ## Wiring

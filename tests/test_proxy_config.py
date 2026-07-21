@@ -5,7 +5,7 @@ from tools import proxy_config, proxy_settings
 
 @pytest.fixture(autouse=True)
 def _memory_proxy_settings(monkeypatch):
-    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    monkeypatch.setenv("FIREBREAK_PROXY_SETTINGS_BACKEND", "memory")
     proxy_settings._memory_clear()
     yield
     proxy_settings._memory_clear()
@@ -24,7 +24,7 @@ def test_disabled_by_default(monkeypatch):
 def test_default_protocol_http(monkeypatch):
     monkeypatch.setenv("OXYLABS_PROXY_USERNAME", "user")
     monkeypatch.setenv("OXYLABS_PROXY_PASSWORD", "p@ss:word")
-    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_PORT", "18080")
+    monkeypatch.setenv("FIREBREAK_LOCAL_PROXY_PORT", "18080")
     result = proxy_config.resolve_for_tool("sqlmap", use_proxy=True)
     assert result["mode"] == "local_proxy"
     assert result["local_proxy_url"] == "http://127.0.0.1:18080"

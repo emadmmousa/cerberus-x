@@ -76,13 +76,13 @@ class VaultClient:
     def start_auto_rotation(self, interval: int = 900) -> None:
         if not self.available:
             return
-        if os.environ.get("CERBERUS_VAULT_AUTO_ROTATE", "false").lower() not in {
+        if os.environ.get("FIREBREAK_VAULT_AUTO_ROTATE", "false").lower() not in {
             "1",
             "true",
             "yes",
             "on",
         }:
-            logger.info("Vault auto-rotation disabled (set CERBERUS_VAULT_AUTO_ROTATE=true)")
+            logger.info("Vault auto-rotation disabled (set FIREBREAK_VAULT_AUTO_ROTATE=true)")
             return
 
         def rotate_loop():

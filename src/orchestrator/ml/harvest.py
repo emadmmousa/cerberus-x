@@ -7,13 +7,13 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-HARVESTED_KEY = "cerberus:ml:harvested"
+HARVESTED_KEY = "firebreak:ml:harvested"
 TERMINAL = frozenset({"SUCCESS", "FAILURE", "STOPPED", "REVOKED"})
 
 
 def _output_dir() -> Path:
     return Path(
-        os.environ.get("CERBERUS_OUTPUT_DIR")
+        os.environ.get("FIREBREAK_OUTPUT_DIR")
         or (Path(__file__).resolve().parents[3] / "output")
     )
 

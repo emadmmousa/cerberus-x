@@ -28,7 +28,7 @@ class JobNotFound(Exception):
 
 
 def configured_admin_user() -> str:
-    return (os.environ.get("CERBERUS_ADMIN_USER") or "admin").strip() or "admin"
+    return (os.environ.get("FIREBREAK_ADMIN_USER") or "admin").strip() or "admin"
 
 
 def rbac_enforce_enabled() -> bool:
@@ -41,7 +41,7 @@ def rbac_enforce_enabled() -> bool:
             return override
     except Exception:
         pass
-    return (os.environ.get("CERBERUS_RBAC_ENFORCE") or "").lower() in {
+    return (os.environ.get("FIREBREAK_RBAC_ENFORCE") or "").lower() in {
         "1",
         "true",
         "yes",
@@ -50,7 +50,7 @@ def rbac_enforce_enabled() -> bool:
 
 
 def service_role_header_enabled() -> bool:
-    return (os.environ.get("CERBERUS_SERVICE_ROLE_HEADER") or "").lower() in {
+    return (os.environ.get("FIREBREAK_SERVICE_ROLE_HEADER") or "").lower() in {
         "1",
         "true",
         "yes",
@@ -59,7 +59,7 @@ def service_role_header_enabled() -> bool:
 
 
 def role_from_session() -> Role:
-    raw = (session.get("role") or os.environ.get("CERBERUS_DEFAULT_ROLE") or "operator").lower()
+    raw = (session.get("role") or os.environ.get("FIREBREAK_DEFAULT_ROLE") or "operator").lower()
     try:
         return Role(raw)
     except ValueError:
@@ -67,29 +67,29 @@ def role_from_session() -> Role:
 
 
 def resolve_role() -> Role:
-    """Session role; optional X-Cerberus-Role only when service header flag is on."""
+    """Session role; optional X-Firebreak-Role only when service header flag is on."""
     role = role_from_session()
     if service_role_header_enabled():
-        hdr = (request.headers.get("X-Cerberus-Role") or "").lower()
+        hdr = (request.headers.get("X-Firebreak-Role") or "").lower()
         if hdr in {r.value for r in Role}:
             role = Role(hdr)
-    g.cerberus_role = role
+    g.firebreak_role = role
     return role
 
 
 def tenant_id() -> str:
     org = (
-        request.headers.get("X-Cerberus-Org")
+        request.headers.get("X-Firebreak-Org")
         or session.get("org_id")
-        or os.environ.get("CERBERUS_DEFAULT_ORG")
+        or os.environ.get("FIREBREAK_DEFAULT_ORG")
         or "default"
     )
     # Non-admins may not spoof org via header when RBAC is enforced.
-    if rbac_enforce_enabled() and request.headers.get("X-Cerberus-Org"):
+    if rbac_enforce_enabled() and request.headers.get("X-Firebreak-Org"):
         if ROLE_RANK[resolve_role()] < ROLE_RANK[Role.ADMIN]:
             return (
                 session.get("org_id")
-                or os.environ.get("CERBERUS_DEFAULT_ORG")
+                or os.environ.get("FIREBREAK_DEFAULT_ORG")
                 or "default"
             )
     return org
@@ -144,11 +144,11 @@ def assert_job_org(job: dict[str, Any], *, allow_missing_org: bool = True) -> No
             return
         raise ForbiddenOrg("mission missing org_id")
     if str(job_org) != str(tenant_id()):
-        # Admins may cross-org when they set X-Cerberus-Org explicitly.
+        # Admins may cross-org when they set X-Firebreak-Org explicitly.
         if (
             rbac_enforce_enabled()
             and ROLE_RANK[resolve_role()] >= ROLE_RANK[Role.ADMIN]
-            and request.headers.get("X-Cerberus-Org")
+            and request.headers.get("X-Firebreak-Org")
         ):
             return
         if str(job_org) != str(tenant_id()):

@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a dedicated Metasploit RPC service to Cerberus-X that supports structured module execution, job and session management, and an interactive RPC console through the localhost-only dashboard.
+Add a dedicated Metasploit RPC service to Firebreak that supports structured module execution, job and session management, and an interactive RPC console through the localhost-only dashboard.
 
 ## Architecture
 

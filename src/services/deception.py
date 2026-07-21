@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 class DeceptionEngine:
     def __init__(self) -> None:
         self._docker = None
-        self.network_name = "cerberus-net"
+        self.network_name = "firebreak-net"
         try:
             import docker
 
@@ -51,7 +51,7 @@ class DeceptionEngine:
                 network=self.network_name,
                 environment={"HONEYPOT_TYPE": service},
                 restart_policy={"Name": "on-failure"},
-                labels={"cerberus.honeypot": "true"},
+                labels={"firebreak.honeypot": "true"},
             )
             return {
                 "container_id": container.id,

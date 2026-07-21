@@ -1,17 +1,39 @@
-import subprocess
-import json
-import os
-import tempfile
+"""LinPEAS artifact preparer for authorized Linux post-ex."""
 
-def scan(target, args=None):
-    # Similar to winpeas, we download the script and provide it.
-    linpeas_url = "https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh"
-    dest = "/app/tools/linpeas.sh"
+from __future__ import annotations
+
+import os
+import urllib.request
+from typing import Any
+
+DEST = "/app/tools/linpeas.sh"
+URL = "https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh"
+
+
+def scan(target, args=None) -> dict[str, Any]:
+    dest = DEST
     if not os.path.exists(dest):
         try:
-            import urllib.request
-            urllib.request.urlretrieve(linpeas_url, dest)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            urllib.request.urlretrieve(URL, dest)
             os.chmod(dest, 0o755)
-        except Exception as e:
-            return {'tool': 'linpeas', 'target': target, 'error': f"Failed to download linPEAS: {str(e)}"}
-    return {'tool': 'linpeas', 'target': target, 'download_path': dest, 'command': f"bash linpeas.sh {args if args else ''}"}
+        except Exception as exc:
+            return {
+                "tool": "linpeas",
+                "target": target,
+                "status": "missing_artifact",
+                "ready": False,
+                "error": f"Failed to download linPEAS: {exc}",
+            }
+
+    extra = " ".join(str(a) for a in (args or []))
+    return {
+        "tool": "linpeas",
+        "target": target,
+        "status": "ready",
+        "ready": True,
+        "maturity": "artifact",
+        "download_path": dest,
+        "command": f"bash linpeas.sh {extra}".strip(),
+        "note": "Artifact ready for authorized execution on a Linux host",
+    }

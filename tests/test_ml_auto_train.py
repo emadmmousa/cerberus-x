@@ -2,8 +2,8 @@ import json
 
 
 def test_daily_pipeline_gpu_passes_no_dry_run(tmp_path, monkeypatch):
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path))
-    monkeypatch.setenv("CERBERUS_TRAIN_GPU", "true")
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("FIREBREAK_TRAIN_GPU", "true")
 
     captured: dict[str, object] = {}
 
@@ -25,8 +25,8 @@ def test_daily_pipeline_gpu_passes_no_dry_run(tmp_path, monkeypatch):
 
 
 def test_daily_pipeline_dry_run(tmp_path, monkeypatch):
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path))
-    monkeypatch.delenv("CERBERUS_TRAIN_GPU", raising=False)
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.delenv("FIREBREAK_TRAIN_GPU", raising=False)
     from orchestrator.ml.auto_train import run_daily_pipeline
 
     result = run_daily_pipeline()

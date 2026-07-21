@@ -4,7 +4,7 @@ apiVersion: keda.sh/v1alpha1
 kind: ScaledObject
 metadata:
   name: worker-scaler
-  namespace: cerberus-x
+  namespace: firebreak
 spec:
   scaleTargetRef:
     name: worker
@@ -25,9 +25,9 @@ apiVersion: keda.sh/v1alpha1
 kind: TriggerAuthentication
 metadata:
   name: keda-redis-auth
-  namespace: cerberus-x
+  namespace: firebreak
 spec:
   secretTargetRef:
   - parameter: password
-    name: cerberus-secrets
+    name: firebreak-secrets
     key: REDIS_PASSWORD

@@ -17,7 +17,7 @@ def _repo_root() -> Path:
 
 
 def _output_dir() -> Path:
-    return Path(os.environ.get("CERBERUS_OUTPUT_DIR") or (_repo_root() / "output"))
+    return Path(os.environ.get("FIREBREAK_OUTPUT_DIR") or (_repo_root() / "output"))
 
 
 def _env_truthy(name: str) -> bool:
@@ -71,7 +71,7 @@ def run_daily_pipeline() -> dict[str, Any]:
     steps["schema_eval"] = _run_script("training/scripts/eval_planner_schema.py")
     steps["security_qa"] = _run_script("training/scripts/eval_security_qa.py")
 
-    gpu = _env_truthy("CERBERUS_TRAIN_GPU")
+    gpu = _env_truthy("FIREBREAK_TRAIN_GPU")
     steps["qlora"] = {
         "gpu_train": gpu,
         "mode": "real" if gpu else "dry_run",

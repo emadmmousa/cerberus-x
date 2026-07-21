@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: elasticsearch
-  namespace: cerberus-x
+  namespace: firebreak
   labels:
     app: elasticsearch
 spec:
@@ -47,7 +47,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: elastic-pvc
-  namespace: cerberus-x
+  namespace: firebreak
 spec:
   accessModes:
     - ReadWriteOnce
@@ -59,7 +59,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: elasticsearch-service
-  namespace: cerberus-x
+  namespace: firebreak
 spec:
   selector:
     app: elasticsearch

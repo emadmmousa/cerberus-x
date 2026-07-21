@@ -1,0 +1,54 @@
+{{- if .Values.elasticsearch.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firebreak.fullname" . }}-elasticsearch
+  labels:
+    {{- include "firebreak.labels" . | nindent 4 }}
+    app: elasticsearch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "firebreak.selectorLabels" . | nindent 6 }}
+      app: elasticsearch
+  template:
+    metadata:
+      labels:
+        {{- include "firebreak.selectorLabels" . | nindent 8 }}
+        app: elasticsearch
+    spec:
+      containers:
+      - name: elasticsearch
+        image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+        env:
+        - name: discovery.type
+          value: single-node
+        - name: xpack.security.enabled
+          value: "false"
+        - name: ES_JAVA_OPTS
+          value: "-Xms512m -Xmx512m"
+        ports:
+        - containerPort: 9200
+          name: http
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 250m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: elasticsearch-service
+  labels:
+    {{- include "firebreak.labels" . | nindent 4 }}
+    app: elasticsearch
+spec:
+  selector:
+    {{- include "firebreak.selectorLabels" . | nindent 4 }}
+    app: elasticsearch
+  ports:
+  - port: 9200
+    targetPort: 9200
+    name: http
+{{- end }}

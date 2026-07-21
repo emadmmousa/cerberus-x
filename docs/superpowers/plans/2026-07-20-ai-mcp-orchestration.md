@@ -3,11 +3,11 @@
 ## Status (2026-07-20)
 
 **Shipped** (Phases 1–5). Confirm gate defaults **off**. Unrestricted Ollama persona:
-`docker/ollama/Modelfile` → `cerberus-x`. See [`docs/user_manual.md`](../../user_manual.md).
+`docker/ollama/Modelfile` → `firebreak`. See [`docs/user_manual.md`](../../user_manual.md).
 
 > **For agentic workers:** Execute tasks in order. Prefer inline execution for this plan (user requested implement-all-at-once).
 
-**Goal:** Ship adaptive AI orchestration on Cerberus-X: MCP tool surface, LLM/heuristic planner, mission memory, NL mission entry, and operator safety/UI — while keeping YAML playbooks + DecisionEngine as fallback.
+**Goal:** Ship adaptive AI orchestration on Firebreak: MCP tool surface, LLM/heuristic planner, mission memory, NL mission entry, and operator safety/UI — while keeping YAML playbooks + DecisionEngine as fallback.
 
 **Architecture:** MCP façade on Flask (`/mcp`) wraps `_TASK_MAP` + Redis sessions. AI planner (OpenAI-compatible LLM with deterministic heuristic fallback) proposes phases; executor validates tools then enqueues Celery. Lightweight local memory (SQLite embeddings via hashing) stores successful strategies. Mission Control gains AI Mode, confirm-for-risk, and MCP/AI activity.
 
@@ -16,8 +16,8 @@
 ## Global Constraints
 
 - Never execute a tool name outside `_TASK_MAP`.
-- MCP requires `CERBERUS_MCP_API_KEY` + `session_id` (except `session_create`).
-- High-risk tools require `confirm=true` when `CERBERUS_AI_REQUIRE_CONFIRM=true` (**default false** as of 2026-07-20 unrestricted orchestration).
+- MCP requires `FIREBREAK_MCP_API_KEY` + `session_id` (except `session_create`).
+- High-risk tools require `confirm=true` when `FIREBREAK_AI_REQUIRE_CONFIRM=true` (**default false** as of 2026-07-20 unrestricted orchestration).
 - If LLM unavailable/malformed → DecisionEngine / heuristic planner fallback.
 - No credentials or `.env` secrets in prompts sent to cloud LLMs (sanitize).
 - Preserve existing `/api/run` playbook behavior when `ai_mode` is false/absent.
@@ -53,7 +53,7 @@
 **Produces:** `require_api_key(request) -> None|Response`, `create_session(target, label=None) -> dict`, `get_session(id) -> dict|None`, `audit(session_id, event)`, `check_rate_limit(session_id) -> bool`
 
 - [ ] Implement Redis-backed sessions (fakeredis or mock in tests)
-- [ ] Rate limit `run_tool` via env `CERBERUS_MCP_RATE_LIMIT_PER_MIN` (default 30)
+- [ ] Rate limit `run_tool` via env `FIREBREAK_MCP_RATE_LIMIT_PER_MIN` (default 30)
 - [ ] Commit
 
 ### Task 2: MCP registry + actions
@@ -92,7 +92,7 @@
 - Test: `tests/test_ai_planner.py`
 
 - [ ] Heuristic planner from open ports / prior results (works offline)
-- [ ] LLM planner when `CERBERUS_LLM_BASE_URL` set; validate JSON schema
+- [ ] LLM planner when `FIREBREAK_LLM_BASE_URL` set; validate JSON schema
 - [ ] Commit
 
 ### Task 5: Memory store

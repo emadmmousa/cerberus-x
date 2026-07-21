@@ -26,7 +26,7 @@ def _sa_namespace() -> str:
         with open(path, encoding="utf-8") as handle:
             return handle.read().strip()
     except FileNotFoundError:
-        return os.getenv("CERBERUS_K8S_NAMESPACE", "cerberus-x")
+        return os.getenv("FIREBREAK_K8S_NAMESPACE", "firebreak")
 
 
 def _api_base() -> str:
@@ -59,7 +59,7 @@ def sync_proxy_to_kubernetes(creds: dict[str, Any]) -> dict[str, Any]:
             }
         }
         secret_url = (
-            f"{base}/api/v1/namespaces/{namespace}/secrets/cerberus-secrets"
+            f"{base}/api/v1/namespaces/{namespace}/secrets/firebreak-secrets"
         )
         secret_resp = requests.patch(
             secret_url,
@@ -82,7 +82,7 @@ def sync_proxy_to_kubernetes(creds: dict[str, Any]) -> dict[str, Any]:
             }
         }
         cm_url = (
-            f"{base}/api/v1/namespaces/{namespace}/configmaps/cerberus-config"
+            f"{base}/api/v1/namespaces/{namespace}/configmaps/firebreak-config"
         )
         cm_resp = requests.patch(
             cm_url,

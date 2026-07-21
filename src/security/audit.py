@@ -86,7 +86,7 @@ def audit_log(event_type: str, data: Any, severity: str = "info") -> dict:
 
             requests.post(
                 hec,
-                json={"event": entry, "sourcetype": "cerberus-audit"},
+                json={"event": entry, "sourcetype": "firebreak-audit"},
                 headers={"Authorization": f"Splunk {token}"},
                 timeout=2,
             )
@@ -100,11 +100,11 @@ def audit_log(event_type: str, data: Any, severity: str = "info") -> dict:
         cfg = get_config()
         es_url = (cfg.get("ELASTICSEARCH_URL") or os.environ.get("ELASTICSEARCH_URL") or "").strip()
         es_index = (
-            cfg.get("CERBERUS_AUDIT_ES_INDEX")
-            or os.environ.get("CERBERUS_AUDIT_ES_INDEX")
-            or "cerberus-audit"
+            cfg.get("FIREBREAK_AUDIT_ES_INDEX")
+            or os.environ.get("FIREBREAK_AUDIT_ES_INDEX")
+            or "firebreak-audit"
         ).strip()
-        if es_url and (os.environ.get("CERBERUS_AUDIT_ES") or "").lower() in {
+        if es_url and (os.environ.get("FIREBREAK_AUDIT_ES") or "").lower() in {
             "1",
             "true",
             "yes",

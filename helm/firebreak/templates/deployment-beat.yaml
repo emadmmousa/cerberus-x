@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firebreak.fullname" . }}-beat
+  labels:
+    {{- include "firebreak.labels" . | nindent 4 }}
+    app: beat
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "firebreak.selectorLabels" . | nindent 6 }}
+      app: beat
+  template:
+    metadata:
+      labels:
+        {{- include "firebreak.selectorLabels" . | nindent 8 }}
+        app: beat
+    spec:
+      containers:
+      - name: beat
+        image: {{ .Values.image.worker }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        command: ["celery", "-A", "orchestrator.celery_app", "beat", "--loglevel=INFO"]
+        env:
+        - name: REDIS_URL
+          value: redis://:{{ .Values.redis.password }}@redis-service:6379/0
+        - name: FIREBREAK_OUTPUT_DIR
+          value: /app/output
+        volumeMounts:
+        - name: output-storage
+          mountPath: /app/output
+      volumes:
+      - name: output-storage
+        persistentVolumeClaim:
+          claimName: {{ include "firebreak.fullname" . }}-output-pvc

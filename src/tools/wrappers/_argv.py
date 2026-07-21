@@ -70,6 +70,10 @@ def expand_glued_argv(args: Iterable[str]) -> List[str]:
             continue
         if _HTTP_REQUEST_LINE.match(token):
             continue
+        # Split long-option glue: "--rate=1000 --wait=0" (common LLM mistake).
+        if " --" in token and token.startswith("-"):
+            out.extend(_split_token(token))
+            continue
         if " " in token and _GLUED_FLAG.match(token):
             out.extend(_split_token(token))
             continue

@@ -14,7 +14,7 @@ from orchestrator.ai.scaffold_client import (
     build_primary_scaffold,
 )
 
-REGISTRY_KEY = "cerberus:scaffolds"
+REGISTRY_KEY = "firebreak:scaffolds"
 
 
 def _redis():
@@ -67,7 +67,7 @@ def default_scaffolds() -> list[dict[str, Any]]:
                 "kind": entry.get("kind") or "openai_compatible",
                 "model": entry.get("model"),
                 "base_url": entry.get("base_url") or entry.get("base_url_hint"),
-                "api_key_env": entry.get("api_key_env") or "CERBERUS_LLM_API_KEY",
+                "api_key_env": entry.get("api_key_env") or "FIREBREAK_LLM_API_KEY",
                 "tasks": list(entry.get("tasks") or ["plan_phase"]),
                 "enabled": entry.get("enabled", True),
                 "cost_per_1k": float(entry.get("cost_per_1k") or 0.0),
@@ -109,12 +109,12 @@ def build_enabled_clients() -> list:
 
 
 def multi_scaffold_enabled() -> bool:
-    raw = (os.environ.get("CERBERUS_MULTI_SCAFFOLD") or "").strip().lower()
+    raw = (os.environ.get("FIREBREAK_MULTI_SCAFFOLD") or "").strip().lower()
     return raw in {"1", "true", "yes", "on"}
 
 
 def _latency_key(scaffold_id: str) -> str:
-    return f"cerberus:scaffold:latency:{scaffold_id}"
+    return f"firebreak:scaffold:latency:{scaffold_id}"
 
 
 def record_latency(scaffold_id: str, latency_ms: float, *, alpha: float = 0.2) -> float:

@@ -5,6 +5,7 @@ import ssl
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
 
+from tools.wrappers._argv import coerce_argv
 from tools.wrappers._proxy import merge_env, proxy_meta
 from tools.wrappers._web_url import canonicalize_web_url, force_url_arg
 
@@ -17,6 +18,67 @@ _DIR_RE = re.compile(
     r"(?:\s+\[Size:\s*(?P<size>\d+)\])?",
     re.IGNORECASE,
 )
+_MODES = frozenset({"dir", "dns", "fuzz", "vhost", "s3", "gcs", "tftp"})
+
+
+def sanitize_args(args: list | None, *, url: str | None = None) -> list[str]:
+    """
+    Ensure gobuster gets a valid subcommand + -u/-w.
+
+    Gobuster v3+ rejects root-level `-u` (`unknown shorthand flag: 'u'`).
+    LLMs also invent `--url`, which does not exist.
+    """
+    cleaned = coerce_argv(args)
+    mode = "dir"
+    body: list[str] = []
+    if cleaned and cleaned[0].lower() in _MODES:
+        mode = cleaned[0].lower()
+        cleaned = cleaned[1:]
+    skip_next = False
+    for index, arg in enumerate(cleaned):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in {"--url"}:
+            body.append("-u")
+            if index + 1 < len(cleaned) and not str(cleaned[index + 1]).startswith("-"):
+                body.append(str(cleaned[index + 1]))
+                skip_next = True
+            continue
+        if arg.startswith("--url="):
+            body.extend(["-u", arg.split("=", 1)[1]])
+            continue
+        # Drop mode repeats mid-argv
+        if arg.lower() in _MODES:
+            continue
+        body.append(arg)
+
+    if url:
+        body = [
+            token.replace("{{target}}", url) if isinstance(token, str) else token
+            for token in body
+        ]
+        body = force_url_arg(body, url, flags=("-u",))
+    elif "-u" not in body and not any(str(a).startswith("-u=") for a in body):
+        # Keep structure; caller will inject URL.
+        pass
+
+    has_wordlist = "-w" in body or "--wordlist" in body or any(
+        str(a).startswith("-w=") or str(a).startswith("--wordlist=") for a in body
+    )
+    if not has_wordlist:
+        body.extend(["-w", WORDLIST])
+
+    # Quiet + bounded threads by default when LLM omitted them.
+    if "-q" not in body and "--quiet" not in body:
+        body.append("-q")
+    if "-t" not in body and "--threads" not in body:
+        body.extend(["-t", "20"])
+    if mode == "dir" and "-b" not in body and "--status-codes-blacklist" not in body:
+        body.extend(["-b", "404"])
+
+    return [mode, *body]
+
 
 
 def _url(target: str) -> str:
@@ -137,15 +199,12 @@ def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http
     if args is None:
         args = ["dir", "-u", url, "-w", WORDLIST, "-q", "-t", "20", "-b", "404"]
     else:
-        # tasks.py may already expand {{target}} to http://… — rewrite -u.
-        args = [
-            arg.replace("{{target}}", url) if isinstance(arg, str) else arg
-            for arg in args
-        ]
-        args = force_url_arg(args, url, flags=("-u", "--url"))
+        args = sanitize_args(args, url=url)
 
     args = list(args)
-    args = [*args, *resolved["flags"]]
+    # Proxy flags belong after the subcommand (dir/fuzz/...).
+    if len(args) >= 1 and resolved["flags"]:
+        args = [args[0], *args[1:], *resolved["flags"]]
     if "--exclude-length" not in args and not any(
         a.startswith("--exclude-length=") for a in args
     ):

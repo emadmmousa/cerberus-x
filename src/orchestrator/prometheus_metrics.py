@@ -1,12 +1,12 @@
 from flask import Response
 from prometheus_client import REGISTRY, Counter, Gauge, Histogram, generate_latest
 
-jobs_total = Counter("cerberus_jobs_total", "Total jobs executed", ["tool", "phase"])
-jobs_success = Counter("cerberus_jobs_success", "Successful jobs", ["tool", "phase"])
-jobs_failed = Counter("cerberus_jobs_failed", "Failed jobs", ["tool", "phase"])
-queue_length = Gauge("cerberus_queue_length", "Celery queue length")
+jobs_total = Counter("firebreak_jobs_total", "Total jobs executed", ["tool", "phase"])
+jobs_success = Counter("firebreak_jobs_success", "Successful jobs", ["tool", "phase"])
+jobs_failed = Counter("firebreak_jobs_failed", "Failed jobs", ["tool", "phase"])
+queue_length = Gauge("firebreak_queue_length", "Celery queue length")
 job_duration = Histogram(
-    "cerberus_job_duration_seconds",
+    "firebreak_job_duration_seconds",
     "Job execution duration",
     ["tool"],
 )

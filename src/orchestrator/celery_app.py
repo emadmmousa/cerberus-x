@@ -54,7 +54,7 @@ def _register_ops_periodic_tasks(sender, **kwargs):
 
     sender.add_periodic_task(30.0, scale_workers_tick.s(), name="scale-workers")
     sender.add_periodic_task(60.0, learning_tick_task.s(), name="learning-tick")
-    hour = int(os.environ.get("CERBERUS_AUTO_TRAIN_HOUR") or "3")
+    hour = int(os.environ.get("FIREBREAK_AUTO_TRAIN_HOUR") or "3")
     sender.add_periodic_task(
         crontab(minute=0, hour=max(0, min(hour, 23))),
         daily_pipeline_task.s(),

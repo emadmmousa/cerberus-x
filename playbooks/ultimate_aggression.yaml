@@ -1,5 +1,5 @@
 name: Ultimate Aggression
-description: Aggressive authorized engagement using installed Cerberus tools
+description: Aggressive authorized engagement using installed Firebreak tools
 evasion: aggressive   # low, medium, high, aggressive — full WAF evasion stack
 phases:
   - name: recon

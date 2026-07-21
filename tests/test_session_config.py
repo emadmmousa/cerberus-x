@@ -13,7 +13,7 @@ def test_configure_sessions_cookie_fallback(monkeypatch):
 def test_default_secret_flag():
     from orchestrator.session_config import secret_key_is_insecure
 
-    assert secret_key_is_insecure("cerberus-x-secret") is True
+    assert secret_key_is_insecure("firebreak-secret") is True
     assert secret_key_is_insecure("change-me") is True
     assert secret_key_is_insecure("") is True
     assert secret_key_is_insecure("real-secret") is False

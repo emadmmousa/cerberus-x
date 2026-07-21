@@ -41,12 +41,12 @@ def create_session(target: str, label: Optional[str] = None) -> dict:
     client = _redis()
     if client is not None:
         client.setex(
-            f"cerberus:mcp:session:{session_id}",
+            f"firebreak:mcp:session:{session_id}",
             86400,
             json.dumps(payload),
         )
-        client.lpush("cerberus:mcp:sessions", session_id)
-        client.ltrim("cerberus:mcp:sessions", 0, 199)
+        client.lpush("firebreak:mcp:sessions", session_id)
+        client.ltrim("firebreak:mcp:sessions", 0, 199)
     else:
         _MEMORY["sessions"][session_id] = payload
         _MEMORY["session_index"].insert(0, session_id)
@@ -60,7 +60,7 @@ def get_session(session_id: str) -> Optional[dict]:
         return None
     client = _redis()
     if client is not None:
-        raw = client.get(f"cerberus:mcp:session:{session_id}")
+        raw = client.get(f"firebreak:mcp:session:{session_id}")
         if not raw:
             return None
         return json.loads(raw)
@@ -71,7 +71,7 @@ def audit(session_id: str, event: dict) -> None:
     entry = {"ts": time.time(), **event}
     client = _redis()
     if client is not None:
-        key = f"cerberus:mcp:audit:{session_id}"
+        key = f"firebreak:mcp:audit:{session_id}"
         client.lpush(key, json.dumps(entry))
         client.ltrim(key, 0, 499)
         client.expire(key, 86400)
@@ -83,7 +83,7 @@ def audit(session_id: str, event: dict) -> None:
 def list_audit(session_id: str, limit: int = 50) -> list[dict]:
     client = _redis()
     if client is not None:
-        rows = client.lrange(f"cerberus:mcp:audit:{session_id}", 0, max(limit - 1, 0))
+        rows = client.lrange(f"firebreak:mcp:audit:{session_id}", 0, max(limit - 1, 0))
         return [json.loads(r) for r in rows]
     return list(_MEMORY["audit"].get(session_id, [])[:limit])
 
@@ -92,7 +92,7 @@ def list_sessions(limit: int = 20) -> list[dict]:
     client = _redis()
     ids: list[str]
     if client is not None:
-        ids = client.lrange("cerberus:mcp:sessions", 0, max(limit - 1, 0))
+        ids = client.lrange("firebreak:mcp:sessions", 0, max(limit - 1, 0))
     else:
         ids = list(_MEMORY["session_index"][:limit])
     out = []
@@ -106,11 +106,11 @@ def list_sessions(limit: int = 20) -> list[dict]:
 
 def check_rate_limit(session_id: str) -> bool:
     """Return True if the call is allowed."""
-    limit = int(os.environ.get("CERBERUS_MCP_RATE_LIMIT_PER_MIN", "30"))
+    limit = int(os.environ.get("FIREBREAK_MCP_RATE_LIMIT_PER_MIN", "30"))
     now = int(time.time())
     window = now // 60
     client = _redis()
-    key = f"cerberus:mcp:ratelimit:{session_id}:{window}"
+    key = f"firebreak:mcp:ratelimit:{session_id}:{window}"
     if client is not None:
         count = client.incr(key)
         if count == 1:

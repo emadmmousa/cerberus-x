@@ -1,0 +1,135 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firebreak.fullname" . }}-orchestrator
+  labels:
+    {{- include "firebreak.labels" . | nindent 4 }}
+    app: orchestrator
+spec:
+  replicas: {{ .Values.orchestrator.replicas }}
+  selector:
+    matchLabels:
+      {{- include "firebreak.selectorLabels" . | nindent 6 }}
+      app: orchestrator
+  template:
+    metadata:
+      labels:
+        {{- include "firebreak.selectorLabels" . | nindent 8 }}
+        app: orchestrator
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "5000"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: orchestrator
+        image: {{ .Values.image.orchestrator }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: REDIS_URL
+          value: redis://:{{ .Values.redis.password }}@redis-service:6379/0
+        - name: ELASTICSEARCH_URL
+          value: http://elasticsearch-service:9200
+        - name: MSF_RPC_HOST
+          value: metasploit-service
+        - name: MSF_RPC_PORT
+          value: "{{ .Values.metasploit.rpcPort }}"
+        - name: MSF_RPC_USER
+          value: {{ .Values.metasploit.rpcUser }}
+        - name: MSF_RPC_PASSWORD
+          value: {{ .Values.metasploit.rpcPassword }}
+        - name: FIREBREAK_OUTPUT_DIR
+          value: /app/output
+        - name: LOG_LEVEL
+          value: {{ .Values.orchestrator.logLevel }}
+        - name: FIREBREAK_LLM_MODEL
+          value: {{ .Values.firebreak.llmModel | quote }}
+        - name: FIREBREAK_LLM_BASE_MODEL
+          value: {{ .Values.firebreak.llmBaseModel | quote }}
+        - name: FIREBREAK_LLM_BASE_URL
+          value: {{ .Values.firebreak.llmBaseUrl | default "http://ollama:11434/v1" | quote }}
+        - name: FIREBREAK_LLM_API_KEY
+          value: {{ .Values.firebreak.llmApiKey | default "ollama" | quote }}
+        - name: FIREBREAK_MULTI_SCAFFOLD
+          value: {{ .Values.firebreak.multiScaffold | quote }}
+        - name: FIREBREAK_SCAFFOLD_COST_ROUTE
+          value: {{ .Values.firebreak.costRoute | default false | quote }}
+        {{- if .Values.firebreak.scaffoldExtra.baseUrl }}
+        - name: FIREBREAK_SCAFFOLD_EXTRA_BASE_URL
+          value: {{ .Values.firebreak.scaffoldExtra.baseUrl | quote }}
+        - name: FIREBREAK_SCAFFOLD_EXTRA_MODEL
+          value: {{ .Values.firebreak.scaffoldExtra.model | quote }}
+        - name: FIREBREAK_SCAFFOLD_EXTRA_API_KEY
+          value: {{ .Values.firebreak.scaffoldExtra.apiKey | quote }}
+        - name: FIREBREAK_SCAFFOLD_EXTRA_COST_PER_1K
+          value: {{ .Values.firebreak.scaffoldExtra.costPer1k | default "0.002" | quote }}
+        {{- end }}
+        - name: FIREBREAK_RBAC_ENFORCE
+          value: {{ .Values.firebreak.rbacEnforce | quote }}
+        - name: FIREBREAK_DEFAULT_ORG
+          value: {{ .Values.firebreak.defaultOrg | quote }}
+        - name: FIREBREAK_EDITION
+          value: {{ .Values.firebreak.edition | default "community" | quote }}
+        - name: APP_BASE_URL
+          value: {{ .Values.firebreak.appBaseUrl | default "http://localhost:5000" | quote }}
+        {{- if .Values.firebreak.auditEs }}
+        - name: FIREBREAK_AUDIT_ES
+          value: "true"
+        {{- end }}
+        {{- if .Values.firebreak.managedHosting }}
+        - name: FIREBREAK_MANAGED_HOSTING
+          value: "true"
+        {{- end }}
+        {{- if .Values.firebreak.controlPlaneUrl }}
+        - name: FIREBREAK_CONTROL_PLANE_URL
+          value: {{ .Values.firebreak.controlPlaneUrl | quote }}
+        {{- end }}
+        {{- if .Values.firebreak.auth0.enabled }}
+        - name: AUTH0_DOMAIN
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.firebreak.auth0.existingSecret }}
+              key: domain
+        - name: AUTH0_CLIENT_ID
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.firebreak.auth0.existingSecret }}
+              key: clientId
+        - name: AUTH0_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.firebreak.auth0.existingSecret }}
+              key: clientSecret
+        - name: AUTH0_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.firebreak.auth0.existingSecret }}
+              key: secret
+        {{- end }}
+        {{- if and .Values.firebreak.oidc.enabled (not .Values.firebreak.auth0.enabled) }}
+        - name: OIDC_ISSUER
+          value: {{ .Values.firebreak.oidc.issuer | quote }}
+        - name: OIDC_CLIENT_ID
+          value: {{ .Values.firebreak.oidc.clientId | quote }}
+        {{- if .Values.firebreak.oidc.existingSecret }}
+        - name: OIDC_CLIENT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.firebreak.oidc.existingSecret }}
+              key: clientSecret
+        {{- end }}
+        {{- end }}
+        ports:
+        - containerPort: 5000
+          name: http
+        - containerPort: 5001
+          name: metrics
+        resources:
+          {{- toYaml .Values.orchestrator.resources | nindent 10 }}
+        volumeMounts:
+        - name: output-storage
+          mountPath: /app/output
+      volumes:
+      - name: output-storage
+        persistentVolumeClaim:
+          claimName: {{ include "firebreak.fullname" . }}-output-pvc

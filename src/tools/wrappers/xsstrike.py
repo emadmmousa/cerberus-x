@@ -31,7 +31,7 @@ def _ensure_xsstrike_patches() -> None:
     """Harden upstream XSStrike against empty responses (common WAF/hard-drop)."""
     if _WAF_DETECTOR.is_file():
         text = _WAF_DETECTOR.read_text(encoding="utf-8")
-        if "cerberus-x-patch" not in text:
+        if "firebreak-patch" not in text:
             needle = (
                 "    response = requester(url, params, headers, GET, delay, timeout)\n"
                 "    page = response.text\n"
@@ -39,7 +39,7 @@ def _ensure_xsstrike_patches() -> None:
             )
             patch = (
                 "    response = requester(url, params, headers, GET, delay, timeout)\n"
-                "    # cerberus-x-patch: empty Response has status_code None\n"
+                "    # firebreak-patch: empty Response has status_code None\n"
                 "    if response is None or getattr(response, 'status_code', None) is None:\n"
                 "        return None\n"
                 "    page = response.text or ''\n"
@@ -55,12 +55,12 @@ def _ensure_xsstrike_patches() -> None:
 
     if _REQUESTER.is_file():
         text = _REQUESTER.read_text(encoding="utf-8")
-        if "cerberus-x-patch" not in text and "time.sleep(600)" in text:
+        if "firebreak-patch" not in text and "time.sleep(600)" in text:
             patched = text.replace(
                 "        logger.warning('WAF is dropping suspicious requests.')\n"
                 "        logger.warning('Scanning will continue after 10 minutes.')\n"
                 "        time.sleep(600)\n",
-                "        # cerberus-x-patch: never sleep 10 minutes in automation\n"
+                "        # firebreak-patch: never sleep 10 minutes in automation\n"
                 "        logger.warning('WAF is dropping suspicious requests.')\n"
                 "        return requests.Response()\n",
                 1,

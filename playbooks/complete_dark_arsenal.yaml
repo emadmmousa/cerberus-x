@@ -1,13 +1,17 @@
 name: Complete Dark Arsenal
-description: Full-spectrum authorized playbook mapped to installed wrappers
+description: Full-spectrum authorized playbook mapped to all 23 installed wrappers
 evasion: medium
 phases:
   - name: recon
     tools:
       - tool: rustscan
         args: ["--ulimit", "5000", "--top"]
+      - tool: masscan
+        args: ["-p80,443,22,8080,8443", "--rate=1000", "--wait=0"]
       - tool: nmap
         args: ["-sV", "-T4"]
+      - tool: zmap
+        args: ["-p", "80,443"]
       - tool: whatweb
         args: ["-a", "3"]
       - tool: theharvester
@@ -19,8 +23,6 @@ phases:
         args: ["dir", "-w", "/usr/share/dirb/wordlists/common.txt"]
       - tool: ffuf
         args: ["-ac"]
-      - tool: zmap
-        args: ["-p", "80,443"]
     parallel: true
     depends_on: ["recon"]
   - name: vulnerability_checks
@@ -39,12 +41,36 @@ phases:
         args: []
       - tool: john
         args: []
+      - tool: hashcat
+        args: []
     parallel: true
     depends_on: ["vulnerability_checks"]
+  - name: windows_ad_helpers
+    tools:
+      - tool: crackmapexec
+        args: []
+      - tool: impacket
+        args: []
+      - tool: responder
+        args: []
+      - tool: bloodhound
+        args: []
+    parallel: true
+    depends_on: ["credential_checks"]
+  - name: postex_artifacts
+    tools:
+      - tool: winpeas
+        args: []
+      - tool: linpeas
+        args: []
+      - tool: sliver
+        args: []
+    parallel: true
+    depends_on: ["windows_ad_helpers"]
   - name: exploitation_checks
     tools:
       - tool: sqlmap
         args: ["--batch", "--level=2", "--risk=1"]
       - tool: metasploit
         args: []
-    depends_on: ["credential_checks"]
+    depends_on: ["postex_artifacts"]

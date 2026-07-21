@@ -74,7 +74,7 @@ def test_disabled_by_default(monkeypatch):
 def test_default_protocol_http(monkeypatch):
     monkeypatch.setenv("OXYLABS_PROXY_USERNAME", "user")
     monkeypatch.setenv("OXYLABS_PROXY_PASSWORD", "p@ss:word")
-    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_PORT", "18080")
+    monkeypatch.setenv("FIREBREAK_LOCAL_PROXY_PORT", "18080")
     result = proxy_config.resolve_for_tool("sqlmap", use_proxy=True)
     assert result["mode"] == "local_proxy"
     assert result["local_proxy_url"] == "http://127.0.0.1:18080"
@@ -169,8 +169,8 @@ def credentials_configured() -> bool:
 
 
 def local_proxy_url(protocol: str = "http") -> str:
-    host = os.getenv("CERBERUS_LOCAL_PROXY_HOST", "127.0.0.1")
-    port = os.getenv("CERBERUS_LOCAL_PROXY_PORT", "18080")
+    host = os.getenv("FIREBREAK_LOCAL_PROXY_HOST", "127.0.0.1")
+    port = os.getenv("FIREBREAK_LOCAL_PROXY_PORT", "18080")
     scheme = "socks5h" if protocol == "socks5h" else "http"
     return f"{scheme}://{host}:{port}"
 
@@ -254,8 +254,8 @@ OXYLABS_PROXY_PORT=7777
 OXYLABS_PROXY_PROTOCOL=http
 OXYLABS_PROXY_USERNAME=
 OXYLABS_PROXY_PASSWORD=
-CERBERUS_LOCAL_PROXY_HOST=127.0.0.1
-CERBERUS_LOCAL_PROXY_PORT=18080
+FIREBREAK_LOCAL_PROXY_HOST=127.0.0.1
+FIREBREAK_LOCAL_PROXY_PORT=18080
 ```
 
 - [ ] **Step 5: Run tests**
@@ -303,7 +303,7 @@ from tools import local_proxy, proxy_config
 def test_healthy_after_start(monkeypatch):
     monkeypatch.setenv("OXYLABS_PROXY_USERNAME", "u")
     monkeypatch.setenv("OXYLABS_PROXY_PASSWORD", "p")
-    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_PORT", "0")  # ephemeral if supported
+    monkeypatch.setenv("FIREBREAK_LOCAL_PROXY_PORT", "0")  # ephemeral if supported
     server = local_proxy.LocalProxyServer()
     server.start()
     try:
@@ -327,7 +327,7 @@ Implement `ProxyForwardError` to redact via `redact_proxy_url` on the message.
 - [ ] **Step 3: Implement stdlib threaded HTTP proxy**
 
 Minimal behavior for v1:
-- Listen on `CERBERUS_LOCAL_PROXY_HOST:CERBERUS_LOCAL_PROXY_PORT`
+- Listen on `FIREBREAK_LOCAL_PROXY_HOST:FIREBREAK_LOCAL_PROXY_PORT`
 - Support absolute-form HTTP requests and `CONNECT`
 - Open a connection to Oxylabs (`OXYLABS_PROXY_HOST:PORT`) and send the client request with `Proxy-Authorization: Basic <b64(user:pass)>`
 - Do not log upstream URLs with plaintext passwords
@@ -569,10 +569,10 @@ EOF
 - Modify: `k8s/secrets.yaml` (placeholder empty keys only — do **not** put real Oxylabs credentials)
 - Modify: `k8s/worker-deployment.yaml`
 - Modify: `docker/docker-compose.yml` (ensure worker `env_file: ../.env` already covers new keys)
-- Modify: `helm/cerberus/values.yaml` (document `existingSecret` keys; no plaintext passwords)
+- Modify: `helm/firebreak/values.yaml` (document `existingSecret` keys; no plaintext passwords)
 
 **Interfaces:**
-- ConfigMap keys: `OXYLABS_PROXY_HOST`, `OXYLABS_PROXY_PORT`, `OXYLABS_PROXY_PROTOCOL`, `CERBERUS_LOCAL_PROXY_HOST`, `CERBERUS_LOCAL_PROXY_PORT`
+- ConfigMap keys: `OXYLABS_PROXY_HOST`, `OXYLABS_PROXY_PORT`, `OXYLABS_PROXY_PROTOCOL`, `FIREBREAK_LOCAL_PROXY_HOST`, `FIREBREAK_LOCAL_PROXY_PORT`
 - Secret keys: `OXYLABS_PROXY_USERNAME`, `OXYLABS_PROXY_PASSWORD` (empty placeholders in checked-in example Secret, or omit values and document `kubectl create secret`)
 
 - [ ] **Step 1: Update ConfigMap**
@@ -581,8 +581,8 @@ EOF
   OXYLABS_PROXY_HOST: pr.oxylabs.io
   OXYLABS_PROXY_PORT: "7777"
   OXYLABS_PROXY_PROTOCOL: http
-  CERBERUS_LOCAL_PROXY_HOST: "127.0.0.1"
-  CERBERUS_LOCAL_PROXY_PORT: "18080"
+  FIREBREAK_LOCAL_PROXY_HOST: "127.0.0.1"
+  FIREBREAK_LOCAL_PROXY_PORT: "18080"
 ```
 
 - [ ] **Step 2: Wire worker Deployment envFrom / secretKeyRef** for the seven variables. Do not add Oxylabs secrets to the orchestrator Deployment.
@@ -590,7 +590,7 @@ EOF
 - [ ] **Step 3: Document secret creation** in a short comment at top of `k8s/secrets.yaml` or in `.env.example` only:
 
 ```bash
-kubectl -n cerberus-x create secret generic cerberus-secrets \
+kubectl -n firebreak create secret generic firebreak-secrets \
   --from-literal=OXYLABS_PROXY_USERNAME='...' \
   --from-literal=OXYLABS_PROXY_PASSWORD='...' \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -601,7 +601,7 @@ Never commit the real password.
 - [ ] **Step 4: Commit**
 
 ```bash
-git add k8s/configmap.yaml k8s/worker-deployment.yaml k8s/secrets.yaml helm/cerberus/values.yaml .env.example
+git add k8s/configmap.yaml k8s/worker-deployment.yaml k8s/secrets.yaml helm/firebreak/values.yaml .env.example
 git commit -m "$(cat <<'EOF'
 chore(k8s): wire oxylabs proxy env to workers only
 
@@ -743,7 +743,7 @@ EOF
 - Event Log subscribes to Socket.IO `log` events; filter by level / substring `proxy_skipped`
 - Proxy toggle never renders password fields; shows `configured` badge from `/api/proxy/status`
 
-- [ ] **Step 1: Implement Mission Launch UI** — brand `CERBERUS-X` as hero signal; target input (empty default); proxy toggle; protocol select default `http`; Run CTA; task id + phase list.
+- [ ] **Step 1: Implement Mission Launch UI** — brand `Firebreak` as hero signal; target input (empty default); proxy toggle; protocol select default `http`; Run CTA; task id + phase list.
 
 - [ ] **Step 2: Implement Event Log** with enter animation on new rows (CSS `@keyframes` slide/fade).
 
@@ -787,7 +787,7 @@ EOF
 
 - [ ] **Step 3: Port MSF console with poll-while-open**
 
-- [ ] **Step 4: Update `tests/test_dashboard.py`** (and related) so they no longer require Jinja markup; assert SPA `index.html` exists under static or that `/` returns 200 with `CERBERUS` / root div.
+- [ ] **Step 4: Update `tests/test_dashboard.py`** (and related) so they no longer require Jinja markup; assert SPA `index.html` exists under static or that `/` returns 200 with `FIREBREAK` / root div.
 
 - [ ] **Step 5: Commit**
 
@@ -834,7 +834,7 @@ Adjust paths to match repo layout used by the existing Dockerfile (`COPY` roots)
 - [ ] **Step 1: Update Dockerfile and build**
 
 ```bash
-docker build -f docker/orchestrator.Dockerfile -t cerberus-x-orchestrator:latest .
+docker build -f docker/orchestrator.Dockerfile -t firebreak-orchestrator:latest .
 ```
 
 Expected: success; image contains SPA assets.
@@ -861,12 +861,12 @@ EOF
 - [ ] **Step 2: Start stack / port-forward**
 
 ```bash
-kubectl port-forward -n cerberus-x service/orchestrator-service 5000:5000
+kubectl port-forward -n firebreak service/orchestrator-service 5000:5000
 # or docker compose up
 ```
 
 - [ ] **Step 3: UI checks**
-  - `/` shows dark tactical CERBERUS-X mission launch
+  - `/` shows dark tactical Firebreak mission launch
   - Proxy toggle off → run succeeds without proxy metadata `local_proxy`
   - Proxy toggle on → Event Log shows proxy mode / skips; no password in logs
   - Findings / Exploit Ops / Console usable

@@ -129,8 +129,8 @@ def build_from_registry_row(row: dict[str, Any]) -> Optional[OpenAICompatibleSca
         return None
     if row.get("enabled") is False:
         return None
-    key_env = str(row.get("api_key_env") or "CERBERUS_LLM_API_KEY").strip()
-    api_key = os.environ.get(key_env) or os.environ.get("CERBERUS_LLM_API_KEY") or "ollama"
+    key_env = str(row.get("api_key_env") or "FIREBREAK_LLM_API_KEY").strip()
+    api_key = os.environ.get(key_env) or os.environ.get("FIREBREAK_LLM_API_KEY") or "ollama"
     try:
         cost = float(row.get("cost_per_1k") or 0.0)
     except (TypeError, ValueError):
@@ -156,31 +156,31 @@ def build_from_registry_row(row: dict[str, Any]) -> Optional[OpenAICompatibleSca
 
 
 def build_primary_scaffold() -> Optional[OpenAICompatibleScaffold]:
-    base = (os.environ.get("CERBERUS_LLM_BASE_URL") or "").strip()
+    base = (os.environ.get("FIREBREAK_LLM_BASE_URL") or "").strip()
     if not base:
         return None
     return OpenAICompatibleScaffold(
         ScaffoldSpec(
-            id="ollama-firebreak",
-            model=os.environ.get("CERBERUS_LLM_MODEL", "cerberus-firebreak"),
+            id="ollama-primary",
+            model=os.environ.get("FIREBREAK_LLM_MODEL", "firebreak"),
             base_url=base,
-            api_key=os.environ.get("CERBERUS_LLM_API_KEY", "ollama"),
-            cost_per_1k=_float_env("CERBERUS_LLM_COST_PER_1K", 0.0),
+            api_key=os.environ.get("FIREBREAK_LLM_API_KEY", "ollama"),
+            cost_per_1k=_float_env("FIREBREAK_LLM_COST_PER_1K", 0.0),
         )
     )
 
 
 def build_fallback_scaffold() -> Optional[OpenAICompatibleScaffold]:
     """Second scaffold: base weights or explicit fallback model on same endpoint."""
-    base = (os.environ.get("CERBERUS_LLM_BASE_URL") or "").strip()
+    base = (os.environ.get("FIREBREAK_LLM_BASE_URL") or "").strip()
     if not base:
         return None
     model = (
-        os.environ.get("CERBERUS_LLM_FALLBACK_MODEL")
-        or os.environ.get("CERBERUS_LLM_BASE_MODEL")
+        os.environ.get("FIREBREAK_LLM_FALLBACK_MODEL")
+        or os.environ.get("FIREBREAK_LLM_BASE_MODEL")
         or "qwen2.5:7b"
     )
-    primary = os.environ.get("CERBERUS_LLM_MODEL", "cerberus-firebreak")
+    primary = os.environ.get("FIREBREAK_LLM_MODEL", "firebreak")
     if model == primary:
         return None
     return OpenAICompatibleScaffold(
@@ -188,32 +188,32 @@ def build_fallback_scaffold() -> Optional[OpenAICompatibleScaffold]:
             id="ollama-fallback",
             model=model,
             base_url=base,
-            api_key=os.environ.get("CERBERUS_LLM_API_KEY", "ollama"),
-            cost_per_1k=_float_env("CERBERUS_LLM_FALLBACK_COST_PER_1K", 0.0),
+            api_key=os.environ.get("FIREBREAK_LLM_API_KEY", "ollama"),
+            cost_per_1k=_float_env("FIREBREAK_LLM_FALLBACK_COST_PER_1K", 0.0),
         )
     )
 
 
 def build_extra_scaffold() -> Optional[OpenAICompatibleScaffold]:
     """Optional third OpenAI-compat scaffold (paid API / remote vLLM)."""
-    base = (os.environ.get("CERBERUS_SCAFFOLD_EXTRA_BASE_URL") or "").strip()
-    model = (os.environ.get("CERBERUS_SCAFFOLD_EXTRA_MODEL") or "").strip()
+    base = (os.environ.get("FIREBREAK_SCAFFOLD_EXTRA_BASE_URL") or "").strip()
+    model = (os.environ.get("FIREBREAK_SCAFFOLD_EXTRA_MODEL") or "").strip()
     if not base or not model:
         return None
     key_env = (
-        os.environ.get("CERBERUS_SCAFFOLD_EXTRA_API_KEY_ENV") or "CERBERUS_SCAFFOLD_EXTRA_API_KEY"
+        os.environ.get("FIREBREAK_SCAFFOLD_EXTRA_API_KEY_ENV") or "FIREBREAK_SCAFFOLD_EXTRA_API_KEY"
     ).strip()
     api_key = (
         os.environ.get(key_env)
-        or os.environ.get("CERBERUS_SCAFFOLD_EXTRA_API_KEY")
+        or os.environ.get("FIREBREAK_SCAFFOLD_EXTRA_API_KEY")
         or "ollama"
     )
     return OpenAICompatibleScaffold(
         ScaffoldSpec(
-            id=(os.environ.get("CERBERUS_SCAFFOLD_EXTRA_ID") or "extra-openai").strip()[:64],
+            id=(os.environ.get("FIREBREAK_SCAFFOLD_EXTRA_ID") or "extra-openai").strip()[:64],
             model=model[:128],
             base_url=base,
             api_key=api_key,
-            cost_per_1k=_float_env("CERBERUS_SCAFFOLD_EXTRA_COST_PER_1K", 0.002),
+            cost_per_1k=_float_env("FIREBREAK_SCAFFOLD_EXTRA_COST_PER_1K", 0.002),
         )
     )

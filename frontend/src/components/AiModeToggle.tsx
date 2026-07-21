@@ -1,3 +1,9 @@
+type PlaybookOption = {
+  path: string;
+  name: string;
+  recommended_for?: string[];
+};
+
 type Props = {
   enabled: boolean;
   onChange: (enabled: boolean) => void;
@@ -5,6 +11,11 @@ type Props = {
   onNlGoalChange: (goal: string) => void;
   confirmHighRisk: boolean;
   onConfirmHighRiskChange: (confirm: boolean) => void;
+  posture: "balanced" | "aggressive" | "defensive";
+  onPostureChange: (posture: "balanced" | "aggressive" | "defensive") => void;
+  playbook: string;
+  onPlaybookChange: (path: string) => void;
+  playbooks?: PlaybookOption[];
   disabled?: boolean;
 };
 
@@ -15,10 +26,54 @@ export function AiModeToggle({
   onNlGoalChange,
   confirmHighRisk,
   onConfirmHighRiskChange,
+  posture,
+  onPostureChange,
+  playbook,
+  onPlaybookChange,
+  playbooks = [],
   disabled,
 }: Props) {
   return (
     <div className="options-block">
+      <div className="field">
+        <label htmlFor="posture">Posture</label>
+        <select
+          id="posture"
+          value={posture}
+          onChange={(e) =>
+            onPostureChange(
+              e.target.value as "balanced" | "aggressive" | "defensive",
+            )
+          }
+          disabled={disabled}
+        >
+          <option value="balanced">Balanced (offense + defense)</option>
+          <option value="aggressive">Aggressive (offense)</option>
+          <option value="defensive">Defensive (hardening)</option>
+        </select>
+      </div>
+
+      <div className="field">
+        <label htmlFor="playbook">Playbook</label>
+        <select
+          id="playbook"
+          value={playbook}
+          onChange={(e) => onPlaybookChange(e.target.value)}
+          disabled={disabled}
+        >
+          {playbooks.length === 0 && (
+            <option value={playbook}>{playbook}</option>
+          )}
+          {playbooks.map((pb) => (
+            <option key={pb.path} value={pb.path}>
+              {pb.name}
+              {pb.recommended_for?.includes(posture) ? " ★" : ""}
+            </option>
+          ))}
+        </select>
+        <p className="options-block__hint">{playbook}</p>
+      </div>
+
       <label className="toggle-row options-block__toggle">
         <span className="toggle">
           <input
@@ -34,7 +89,7 @@ export function AiModeToggle({
         </span>
         <span>
           <strong>Smart plan</strong>
-          <span className="options-block__hint"> Adaptive steps</span>
+          <span className="options-block__hint"> Adaptive AI steps</span>
         </span>
       </label>
       {enabled && (
@@ -55,9 +110,10 @@ export function AiModeToggle({
               type="checkbox"
               checked={confirmHighRisk}
               onChange={(e) => onConfirmHighRiskChange(e.target.checked)}
-              disabled={disabled}
+              disabled={disabled || posture === "defensive"}
             />{" "}
-            Allow risky tools (on by default)
+            Allow risky tools
+            {posture === "defensive" ? " (off in defensive)" : " (on by default)"}
           </label>
         </div>
       )}

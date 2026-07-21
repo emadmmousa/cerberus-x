@@ -8,13 +8,17 @@ from .reporting import export_target_reports
 logger = logging.getLogger(__name__)
 
 DB_PATH = os.environ.get(
-    "CERBERUS_DB_PATH",
+    "FIREBREAK_DB_PATH",
     os.path.join(os.path.dirname(__file__), "..", "..", "results.db"),
 )
 
 
 def get_db():
     return sqlite3.connect(DB_PATH)
+
+
+def _default_org() -> str:
+    return (os.environ.get("FIREBREAK_DEFAULT_ORG") or "default").strip() or "default"
 
 
 def init_db():
@@ -28,7 +32,8 @@ def init_db():
                 tool TEXT,
                 result_json TEXT,
                 timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-                job_id TEXT
+                job_id TEXT,
+                org_id TEXT DEFAULT 'default'
             )
             """
         )
@@ -38,6 +43,10 @@ def init_db():
         }
         if "job_id" not in cols:
             conn.execute("ALTER TABLE results ADD COLUMN job_id TEXT")
+        if "org_id" not in cols:
+            conn.execute(
+                "ALTER TABLE results ADD COLUMN org_id TEXT DEFAULT 'default'"
+            )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS state (
@@ -67,37 +76,47 @@ def _normalize_phase_outputs(phase_outputs):
     return rows
 
 
-def _maybe_index_es(target, phase_name, tool_name, payload, job_id=None):
+def _maybe_index_es(target, phase_name, tool_name, payload, job_id=None, org_id=None):
     try:
         from .elasticsearch_client import ElasticsearchClient
 
         client = ElasticsearchClient()
         if client.available:
-            client.index_result(target, phase_name, tool_name, payload, job_id=job_id)
+            client.index_result(
+                target,
+                phase_name,
+                tool_name,
+                payload,
+                job_id=job_id,
+                org_id=org_id or _default_org(),
+            )
     except Exception as exc:
         logger.debug("Elasticsearch index skipped: %s", exc)
 
 
-def save_phase_result(target, phase_name, phase_outputs, job_id=None):
+def save_phase_result(target, phase_name, phase_outputs, job_id=None, org_id=None):
     init_db()
+    org = (org_id or _default_org()).strip() or "default"
     rows = _normalize_phase_outputs(phase_outputs)
     with get_db() as conn:
         for tool_name, payload in rows:
             conn.execute(
-                "INSERT INTO results (target, phase, tool, result_json, job_id) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (target, phase_name, tool_name, json.dumps(payload), job_id),
+                "INSERT INTO results (target, phase, tool, result_json, job_id, org_id) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (target, phase_name, tool_name, json.dumps(payload), job_id, org),
             )
-            _maybe_index_es(target, phase_name, tool_name, payload, job_id=job_id)
+            _maybe_index_es(
+                target, phase_name, tool_name, payload, job_id=job_id, org_id=org
+            )
         conn.commit()
-    paths = export_target_reports(target, get_results(target, limit=10000))
+    paths = export_target_reports(target, get_results(target, limit=10000, org_id=org))
     print(
         f"[+] Wrote reports for {target}: "
         f"{paths['json']} | {paths['html']}"
     )
 
 
-def get_results(target=None, limit=100, job_id=None):
+def get_results(target=None, limit=100, job_id=None, org_id=None):
     init_db()
     with get_db() as conn:
         clauses = []
@@ -108,10 +127,13 @@ def get_results(target=None, limit=100, job_id=None):
         if job_id:
             clauses.append("job_id = ?")
             params.append(job_id)
+        if org_id:
+            clauses.append("(org_id = ? OR org_id IS NULL)")
+            params.append(org_id)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         params.append(limit)
         cursor = conn.execute(
-            f"SELECT target, phase, tool, result_json, timestamp, job_id "
+            f"SELECT target, phase, tool, result_json, timestamp, job_id, org_id "
             f"FROM results {where} ORDER BY timestamp DESC LIMIT ?",
             params,
         )
@@ -124,6 +146,7 @@ def get_results(target=None, limit=100, job_id=None):
                 "result": json.loads(row[3]),
                 "timestamp": row[4],
                 "job_id": row[5],
+                "org_id": row[6] if len(row) > 6 else None,
             }
             for row in rows
         ]

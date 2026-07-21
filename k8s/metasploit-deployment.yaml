@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: metasploit
-  namespace: cerberus-x
+  namespace: firebreak
   labels:
     app: metasploit
 spec:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: metasploit
-        image: cerberus-x-metasploit:latest
+        image: firebreak-metasploit:latest
         imagePullPolicy: IfNotPresent
         env:
         - name: MSF_DB_HOST
@@ -27,7 +27,7 @@ spec:
         - name: MSF_DB_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: cerberus-secrets
+              name: firebreak-secrets
               key: POSTGRES_PASSWORD
         - name: MSF_DB_NAME
           value: msf_db
@@ -42,7 +42,7 @@ spec:
         - name: MSF_RPC_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: cerberus-secrets
+              name: firebreak-secrets
               key: MSF_RPC_PASSWORD
         - name: MSF_RPC_SSL
           value: "false"
@@ -61,7 +61,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: metasploit-service
-  namespace: cerberus-x
+  namespace: firebreak
 spec:
   selector:
     app: metasploit

@@ -38,15 +38,15 @@ def sso_readiness() -> dict[str, Any]:
 def managed_hosting_hooks() -> dict[str, Any]:
     """Declarative hooks for a future hosted control plane (env-gated)."""
     base = (os.environ.get("APP_BASE_URL") or "http://localhost:5000").rstrip("/")
-    control = (os.environ.get("CERBERUS_CONTROL_PLANE_URL") or "").strip() or None
+    control = (os.environ.get("FIREBREAK_CONTROL_PLANE_URL") or "").strip() or None
     return {
         "enabled": is_pro()
-        and (os.environ.get("CERBERUS_MANAGED_HOSTING") or "").lower()
+        and (os.environ.get("FIREBREAK_MANAGED_HOSTING") or "").lower()
         in {"1", "true", "yes", "on"},
         "app_base_url": base,
         "control_plane_url": control,
         "health_callback_path": "/api/edition/status",
-        "tenant_header": "X-Cerberus-Org",
+        "tenant_header": "X-Firebreak-Org",
     }
 
 
@@ -58,7 +58,7 @@ def packaging_status() -> dict[str, Any]:
         "sso": sso_readiness(),
         "managed_hosting": managed_hosting_hooks(),
         "notes": (
-            "Pro packaging is opt-in via CERBERUS_EDITION=pro; "
+            "Pro packaging is opt-in via FIREBREAK_EDITION=pro; "
             "community keeps all scanning capabilities."
         ),
     }

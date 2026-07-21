@@ -19,16 +19,16 @@ def _resolve(override: Optional[bool], env_name: str) -> bool:
 def effective_auto_scale() -> bool:
     from security.admin_store import auto_scale_override
 
-    return _resolve(auto_scale_override(), "CERBERUS_AUTO_SCALE")
+    return _resolve(auto_scale_override(), "FIREBREAK_AUTO_SCALE")
 
 
 def effective_auto_train() -> bool:
     from security.admin_store import auto_train_override
 
-    return _resolve(auto_train_override(), "CERBERUS_AUTO_TRAIN")
+    return _resolve(auto_train_override(), "FIREBREAK_AUTO_TRAIN")
 
 
 def effective_learning_tick() -> bool:
     from security.admin_store import learning_tick_override
 
-    return _resolve(learning_tick_override(), "CERBERUS_LEARNING_TICK")
+    return _resolve(learning_tick_override(), "FIREBREAK_LEARNING_TICK")

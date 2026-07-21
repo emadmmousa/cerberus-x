@@ -15,11 +15,11 @@ def test_dashboard_serves_spa_when_built():
     if spa_index.is_file():
         html = response.get_data(as_text=True)
         assert 'id="root"' in html
-        assert "CERBERUS" in html.upper()
+        assert "FIREBREAK" in html.upper()
     else:
         # Fallback Jinja template during development without a frontend build
         html = response.get_data(as_text=True)
-        assert "CERBERUS" in html.upper()
+        assert "FIREBREAK" in html.upper()
 
 
 def test_auto_exploit_session_runs_post_exploitation_actions(monkeypatch, tmp_path):

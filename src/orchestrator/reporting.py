@@ -104,7 +104,7 @@ def _render_html(report: dict) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cerberus-X report — {target}</title>
+  <title>Firebreak report — {target}</title>
   <style>
     :root {{ color-scheme: dark; font-family: system-ui, sans-serif; }}
     body {{ max-width: 1100px; margin: 2rem auto; padding: 0 1rem; background: #0b1020; color: #e5e7eb; }}
@@ -150,7 +150,7 @@ def export_target_reports(
     output_dir: str | os.PathLike | None = None,
 ) -> dict[str, Path]:
     directory = Path(
-        output_dir or os.environ.get("CERBERUS_OUTPUT_DIR", "/app/output")
+        output_dir or os.environ.get("FIREBREAK_OUTPUT_DIR", "/app/output")
     )
     basename = target_filename(target)
     json_path = directory / f"{basename}.json"

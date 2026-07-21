@@ -1,1 +1,1 @@
-"""Cerberus-X AI orchestration package."""
+"""Firebreak AI orchestration package."""

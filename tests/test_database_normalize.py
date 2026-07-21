@@ -22,7 +22,7 @@ def test_normalize_legacy_mapping():
 
 def test_save_single_dict_action_output(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "results.db"))
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path / "output"))
     database.init_db()
     database.save_phase_result(
         "https://example.com",
@@ -36,7 +36,7 @@ def test_save_single_dict_action_output(tmp_path, monkeypatch):
 
 def test_get_results_filters_by_job_id(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "results.db"))
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path / "output"))
     database.init_db()
     database.save_phase_result(
         "takwene.com",

@@ -1,4 +1,4 @@
-# Cerberus-X documentation index
+# Firebreak documentation index
 
 Authorized security testing only.
 
@@ -39,5 +39,5 @@ Matching plans live under `superpowers/plans/`.
 | `src/tools/sql_injection.py` | SQLi strategy |
 | `src/tools/cve_exploit_map.py` | CVE / port → MSF |
 | `src/tools/payload_strategy.py` | Payload + LHOST/LPORT |
-| `docker/ollama/Modelfile` | Unrestricted `cerberus-x` persona |
+| `docker/ollama/Modelfile` | Authorized `firebreak` persona on DeepSeek Instant |
 | `.env.example` | Environment reference |

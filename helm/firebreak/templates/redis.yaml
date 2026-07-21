@@ -1,0 +1,48 @@
+{{- if .Values.redis.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firebreak.fullname" . }}-redis
+  labels:
+    {{- include "firebreak.labels" . | nindent 4 }}
+    app: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "firebreak.selectorLabels" . | nindent 6 }}
+      app: redis
+  template:
+    metadata:
+      labels:
+        {{- include "firebreak.selectorLabels" . | nindent 8 }}
+        app: redis
+    spec:
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        args: ["redis-server", "--requirepass", "{{ .Values.redis.password }}"]
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          requests:
+            memory: 64Mi
+            cpu: 50m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  labels:
+    {{- include "firebreak.labels" . | nindent 4 }}
+    app: redis
+spec:
+  selector:
+    {{- include "firebreak.selectorLabels" . | nindent 4 }}
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+{{- end }}

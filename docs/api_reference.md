@@ -1,8 +1,8 @@
-# Cerberus-X API Reference
+# Firebreak API Reference
 
 Base URL (compose default): `http://localhost:5000`
 
-Most mission endpoints do **not** require an API key. **MCP** requires `CERBERUS_MCP_API_KEY` when set (Bearer or `X-API-Key`). Optional platform WAF/rate-limit middleware may apply to the orchestrator itself (`CERBERUS_WAF_ENABLED`).
+Most mission endpoints do **not** require an API key. **MCP** requires `FIREBREAK_MCP_API_KEY` when set (Bearer or `X-API-Key`). Optional platform WAF/rate-limit middleware may apply to the orchestrator itself (`FIREBREAK_WAF_ENABLED`).
 
 ---
 
@@ -39,7 +39,7 @@ Toggle background schedulers without redeploying. Body may include any of:
 }
 ```
 
-Each value is `true` (force ON), `false` (force OFF), or `null` (defer to env). Unknown keys return `400`. Effective resolution: Admin override → env (`CERBERUS_AUTO_SCALE`, `CERBERUS_AUTO_TRAIN`, `CERBERUS_LEARNING_TICK`) → `false`.
+Each value is `true` (force ON), `false` (force OFF), or `null` (defer to env). Unknown keys return `400`. Effective resolution: Admin override → env (`FIREBREAK_AUTO_SCALE`, `FIREBREAK_AUTO_TRAIN`, `FIREBREAK_LEARNING_TICK`) → `false`.
 
 Beat tasks always register but no-op when OFF. **`POST /api/scale/auto`** remains available for manual one-shot scale regardless of `auto_scale`.
 
@@ -148,9 +148,9 @@ Blueprint routes under the Metasploit API module (sessions, modules, execute). P
 | `POST` | `/mcp` | JSON-RPC tools (session, list_tools, run_tool, status, findings, …) |
 | `GET` | `/mcp/sse` | Optional SSE transport |
 
-Auth: `Authorization: Bearer <CERBERUS_MCP_API_KEY>` or `X-API-Key`.
+Auth: `Authorization: Bearer <FIREBREAK_MCP_API_KEY>` or `X-API-Key`.
 
-High-risk tools (`sqlmap`, `metasploit`, `hydra`, …) require `confirm: true` in the RPC args **only when** `CERBERUS_AI_REQUIRE_CONFIRM=true` (default **false**).
+High-risk tools (`sqlmap`, `metasploit`, `hydra`, …) require `confirm: true` in the RPC args **only when** `FIREBREAK_AI_REQUIRE_CONFIRM=true` (default **false**).
 
 ---
 
@@ -168,7 +168,7 @@ High-risk tools (`sqlmap`, `metasploit`, `hydra`, …) require `confirm: true` i
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/firebreak/status` | Model, multi-scaffold, `cost_route`, edition, SSO, waves |
+| `GET` | `/api/ai-lab/status` | Model, multi-scaffold, `cost_route`, edition, SSO, waves |
 | `GET` | `/api/scaffolds` | Enabled scaffolds + health (`latency_ema_ms`, `cost_per_1k`) |
 | `GET` | `/api/scaffolds/marketplace` | Builtin catalog (+ registered) |
 | `POST` | `/api/scaffolds/marketplace` | Register live scaffold (**Pro**; requires `id`, `model`, `base_url`) |

@@ -23,7 +23,7 @@ def _normalize_host(target: str) -> str:
 class AuthorizationEnforcer:
     """
     Default: allow scans (authorized engagements) and audit them.
-    Set CERBERUS_REQUIRE_AUTHZ=true and populate authorized_targets.json to enforce.
+    Set FIREBREAK_REQUIRE_AUTHZ=true and populate authorized_targets.json to enforce.
     """
 
     @staticmethod
@@ -59,7 +59,7 @@ class AuthorizationEnforcer:
 
     @staticmethod
     def check(target: str) -> bool:
-        require = os.getenv("CERBERUS_REQUIRE_AUTHZ", "false").lower() in {
+        require = os.getenv("FIREBREAK_REQUIRE_AUTHZ", "false").lower() in {
             "1",
             "true",
             "yes",

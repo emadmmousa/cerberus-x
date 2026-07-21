@@ -316,8 +316,8 @@ export async function logoutSession(): Promise<void> {
   await apiFetch("/auth/logout", { method: "POST", skipAuthRedirect: true });
 }
 
-export async function getFirebreakStatus(): Promise<Record<string, unknown>> {
-  return apiJson("/api/firebreak/status");
+export async function getAiLabStatus(): Promise<Record<string, unknown>> {
+  return apiJson("/api/ai-lab/status");
 }
 
 export async function getEditionStatus(): Promise<Record<string, unknown>> {

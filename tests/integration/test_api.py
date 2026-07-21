@@ -7,7 +7,7 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("CERBERUS_BASE_URL", "http://127.0.0.1:5000")
+BASE_URL = os.environ.get("FIREBREAK_BASE_URL", "http://127.0.0.1:5000")
 
 
 def _alive() -> bool:

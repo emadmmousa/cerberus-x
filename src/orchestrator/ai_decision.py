@@ -23,9 +23,9 @@ class AIDecisionEngine:
         self.redis = get_redis()
         self.intel = ThreatIntelFetcher()
         self.ollama_url = os.environ.get(
-            "CERBERUS_OLLAMA_GENERATE_URL", "http://ollama:11434/api/generate"
+            "FIREBREAK_OLLAMA_GENERATE_URL", "http://ollama:11434/api/generate"
         )
-        self.model = os.environ.get("CERBERUS_LLM_MODEL", "cerberus-x")
+        self.model = os.environ.get("FIREBREAK_LLM_MODEL", "firebreak")
 
     def decide(self, session_id: str, scan_results: dict) -> list[dict]:
         services = self._extract_services(scan_results or {})
@@ -107,8 +107,8 @@ class AIDecisionEngine:
             "prompt": prompt,
             "stream": False,
             "options": {
-                "temperature": float(os.environ.get("CERBERUS_LLM_TEMPERATURE", "0.9")),
-                "top_p": float(os.environ.get("CERBERUS_LLM_TOP_P", "0.95")),
+                "temperature": float(os.environ.get("FIREBREAK_LLM_TEMPERATURE", "0.9")),
+                "top_p": float(os.environ.get("FIREBREAK_LLM_TOP_P", "0.95")),
             },
         }
         try:

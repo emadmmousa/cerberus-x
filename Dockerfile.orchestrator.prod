@@ -9,15 +9,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Install RustScan, FFUF, nuclei, etc. (same as before)
 # [All tool installations from earlier Dockerfiles]
 
-RUN useradd -m -u 1000 cerberus && chown -R cerberus:cerberus /app
+RUN useradd -m -u 1000 firebreak && chown -R firebreak:firebreak /app
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ /app/src/
 COPY playbooks/ /app/playbooks/
-RUN mkdir -p /app/output && chown -R cerberus:cerberus /app/output
+RUN mkdir -p /app/output && chown -R firebreak:firebreak /app/output
 
-USER cerberus
+USER firebreak
 ENV PYTHONPATH=/app/src
 ENV REDIS_URL=redis://redis:6379/0
 

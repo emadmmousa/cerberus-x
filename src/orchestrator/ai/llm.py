@@ -15,12 +15,12 @@ logger = logging.getLogger(__name__)
 
 
 def llm_configured() -> bool:
-    return bool((os.environ.get("CERBERUS_LLM_BASE_URL") or "").strip())
+    return bool((os.environ.get("FIREBREAK_LLM_BASE_URL") or "").strip())
 
 
 def completions_url(base: Optional[str] = None) -> Optional[str]:
-    """Normalize CERBERUS_LLM_BASE_URL to .../v1/chat/completions."""
-    value = (base if base is not None else os.environ.get("CERBERUS_LLM_BASE_URL") or "").strip()
+    """Normalize FIREBREAK_LLM_BASE_URL to .../v1/chat/completions."""
+    value = (base if base is not None else os.environ.get("FIREBREAK_LLM_BASE_URL") or "").strip()
     if not value:
         return None
     value = value.rstrip("/")
@@ -44,8 +44,8 @@ def chat_completion(
     url = completions_url()
     if not url:
         return None
-    model = os.environ.get("CERBERUS_LLM_MODEL", "cerberus-x")
-    api_key = os.environ.get("CERBERUS_LLM_API_KEY", "ollama")
+    model = os.environ.get("FIREBREAK_LLM_MODEL", "firebreak")
+    api_key = os.environ.get("FIREBREAK_LLM_API_KEY", "ollama")
     temp = planner_temperature() if temperature is None else temperature
     body: dict[str, Any] = {
         "model": model,
@@ -54,9 +54,12 @@ def chat_completion(
     }
     # Ollama OpenAI-compat accepts these; ignored by strict OpenAI servers.
     if llm_unrestricted():
-        body["top_p"] = float(os.environ.get("CERBERUS_LLM_TOP_P", "0.95"))
+        body["top_p"] = float(os.environ.get("FIREBREAK_LLM_TOP_P", "0.95"))
         body["frequency_penalty"] = 0.0
         body["presence_penalty"] = 0.1
+    # DeepSeek Instant / R1-style models: keep planner replies JSON-clean.
+    think_raw = (os.environ.get("FIREBREAK_LLM_THINK") or "false").strip().lower()
+    body["think"] = think_raw in {"1", "true", "yes", "on"}
     try:
         resp = requests.post(
             url,
@@ -69,7 +72,13 @@ def chat_completion(
         )
         resp.raise_for_status()
         data = resp.json()
-        return data["choices"][0]["message"]["content"]
+        message = data["choices"][0]["message"]
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+        # Some thinking models put the final answer only in reasoning_content.
+        reasoning = message.get("reasoning_content")
+        return reasoning if isinstance(reasoning, str) else None
     except Exception as exc:
         logger.debug("LLM chat_completion failed: %s", exc)
         return None

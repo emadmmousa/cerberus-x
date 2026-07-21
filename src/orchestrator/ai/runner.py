@@ -63,6 +63,7 @@ def run_ai_mission(
     evasion: dict,
     nl_goal: str = "",
     confirm_high_risk: bool = False,
+    posture: str = "balanced",
     max_steps: int = 5,
     add_log: Optional[LogFn] = None,
 ) -> None:
@@ -73,35 +74,56 @@ def run_ai_mission(
     """
     log = add_log or (lambda msg: None)
     from orchestrator.ai.safety import require_confirm_for_tool
+    from orchestrator.ai.posture import hardening_recommendations, normalize_posture
 
-    decision_engine = DecisionEngine(target, job_id=job_id)
+    posture_n = normalize_posture(posture)
+    decision_engine = DecisionEngine(target, job_id=job_id, posture=posture_n)
     results_by_phase: dict[str, Any] = {}
-    job["ai"] = {"goal": nl_goal, "steps": [], "mode": "ai"}
+    completed_tools: set[str] = set()
+    job["ai"] = {"goal": nl_goal, "steps": [], "mode": "ai", "posture": posture_n}
 
     for step in range(max_steps):
         plan = planner.suggest_next_phase(
-            target, results_by_phase, nl_goal=nl_goal, step=step
+            target,
+            results_by_phase,
+            nl_goal=nl_goal,
+            step=step,
+            posture=posture_n,
+            mission_id=job_id,
         )
         job["ai"]["steps"].append(plan)
         log(f"AI plan ({plan.get('source')}): {plan.get('reason')}")
+        try:
+            from orchestrator.job_store import playbook_jobs
+
+            playbook_jobs.persist(job_id)
+        except Exception:
+            pass
 
         if plan.get("stop") or not plan.get("tools"):
             log("AI stopped planning.")
             break
 
         tools = []
+        seen_this_phase: set[str] = set()
         for entry in plan["tools"]:
             name = entry["tool"]
-            # When CERBERUS_AI_REQUIRE_CONFIRM=false, high-risk tools always run.
+            # When FIREBREAK_AI_REQUIRE_CONFIRM=false, high-risk tools always run.
             if require_confirm_for_tool(name) and not confirm_high_risk:
                 log(f"Skipping high-risk tool {name} (confirm_high_risk=false)")
                 continue
+            if name in completed_tools or name in seen_this_phase:
+                log(f"Skipping already-completed tool {name}")
+                continue
+            seen_this_phase.add(name)
             tools.append(entry)
         if not tools:
-            log("No runnable tools after safety filter; stopping.")
+            log("No new tools left after dedupe/safety filter; stopping.")
             break
 
         phase_name = plan["phase_name"] or f"ai_step_{step}"
+        if step > 0 and not phase_name.endswith(f"_s{step}"):
+            phase_name = f"{phase_name}_s{step}"
         workflow = build_phase_workflow(
             phase_name,
             tools,
@@ -157,18 +179,97 @@ def run_ai_mission(
 
         results_by_phase[phase_name] = phase_output
         job.setdefault("results", {})[phase_name] = phase_output
-        save_phase_result(target, phase_name, phase_output, job_id=job_id)
+        for item in phase_output if isinstance(phase_output, list) else [phase_output]:
+            if isinstance(item, dict) and item.get("tool") and item["tool"] != "phase":
+                completed_tools.add(str(item["tool"]))
+        # Also mark planned tools that returned as completed even if payload lacked tool key.
+        for entry in tools:
+            completed_tools.add(entry["tool"])
+        save_phase_result(
+            target,
+            phase_name,
+            phase_output,
+            job_id=job_id,
+            org_id=job.get("org_id"),
+        )
+        try:
+            from orchestrator.ai import blackboard
+
+            blackboard.put(
+                job_id,
+                f"phase:{phase_name}",
+                {
+                    "tools": [
+                        (i.get("tool") if isinstance(i, dict) else None)
+                        for i in (
+                            phase_output if isinstance(phase_output, list) else [phase_output]
+                        )
+                    ],
+                    "count": len(phase_output)
+                    if isinstance(phase_output, list)
+                    else 1,
+                },
+                org_id=job.get("org_id"),
+            )
+            # Compact findings strip for UI
+            digest = []
+            for item in phase_output if isinstance(phase_output, list) else [phase_output]:
+                if not isinstance(item, dict):
+                    continue
+                row = {"tool": item.get("tool")}
+                if item.get("ports"):
+                    row["ports"] = len(item["ports"])
+                if item.get("error"):
+                    row["error"] = str(item["error"])[:120]
+                digest.append(row)
+            blackboard.put(
+                job_id,
+                "findings",
+                {"phases": list(results_by_phase.keys()), "latest": digest},
+                org_id=job.get("org_id"),
+            )
+        except Exception:
+            pass
         decision_engine.evaluate_phase(phase_name, phase_output)
         if timed_out:
             # Prefer a re-plan that avoids repeating the hung tool set.
             continue
 
     summary = (
-        f"target={target} goal={nl_goal or 'default'} "
+        f"goal={nl_goal or 'default'} posture={posture_n} "
         f"phases={list(results_by_phase.keys())}"
     )
     try:
         memory.remember(summary, target_hint=target)
     except Exception:
         pass
+    recs = hardening_recommendations(results_by_phase, posture=posture_n)
+    job["ai"]["hardening"] = recs
     job["ai"]["finished_at"] = time.time()
+    try:
+        from orchestrator.ai import blackboard
+
+        blackboard.put(
+            job_id,
+            "hardening",
+            {"recommendations": recs, "posture": posture_n},
+            org_id=job.get("org_id"),
+        )
+        blackboard.put(
+            job_id,
+            "findings.summary",
+            {
+                "phases": list(results_by_phase.keys()),
+                "posture": posture_n,
+                "hardening_count": len(recs),
+            },
+            org_id=job.get("org_id"),
+        )
+    except Exception:
+        pass
+    try:
+        from orchestrator.job_store import playbook_jobs
+
+        playbook_jobs.persist(job_id)
+    except Exception:
+        pass

@@ -6,8 +6,8 @@ from datetime import timedelta
 from typing import Any
 
 logger = logging.getLogger(__name__)
-DEFAULT_SECRET = "cerberus-x-secret"
-INSECURE_SECRETS = frozenset({"cerberus-x-secret", "change-me", ""})
+DEFAULT_SECRET = "firebreak-secret"
+INSECURE_SECRETS = frozenset({"firebreak-secret", "change-me", ""})
 
 
 def secret_key_is_insecure(secret: str | None = None) -> bool:
@@ -16,7 +16,7 @@ def secret_key_is_insecure(secret: str | None = None) -> bool:
 
 
 def configure_sessions(app, *, force_cookie: bool = False) -> dict[str, Any]:
-    secure = (os.environ.get("CERBERUS_SESSION_SECURE") or "").lower() in {
+    secure = (os.environ.get("FIREBREAK_SESSION_SECURE") or "").lower() in {
         "1",
         "true",
         "yes",
@@ -47,7 +47,7 @@ def configure_sessions(app, *, force_cookie: bool = False) -> dict[str, Any]:
 
         app.config["SESSION_TYPE"] = "redis"
         app.config["SESSION_REDIS"] = client
-        app.config["SESSION_KEY_PREFIX"] = "cerberus:sess:"
+        app.config["SESSION_KEY_PREFIX"] = "firebreak:sess:"
         app.config["SESSION_USE_SIGNER"] = True
         app.config["SESSION_PERMANENT"] = False
         Session(app)

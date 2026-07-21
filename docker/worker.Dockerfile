@@ -80,10 +80,17 @@ RUN set -eux; \
 COPY docker/patches/xsstrike_harden.py /tmp/xsstrike_harden.py
 RUN python /tmp/xsstrike_harden.py && rm -f /tmp/xsstrike_harden.py
 
-# theHarvester + Impacket (system Python)
+# theHarvester + Impacket + BloodHound.py (system Python)
 RUN pip install --no-cache-dir \
       "git+https://github.com/laramies/theHarvester.git" \
-      "impacket"
+      "impacket" \
+      "bloodhound"
+
+# Responder (LLMNR/NBT-NS helper) — binary on PATH for health + optional -I runs
+RUN set -eux; \
+    git clone --depth 1 https://github.com/lgandx/Responder.git /opt/Responder; \
+    printf '%s\n' '#!/bin/sh' 'exec python /opt/Responder/Responder.py "$@"' > /usr/local/bin/responder; \
+    chmod +x /usr/local/bin/responder /opt/Responder/Responder.py
 
 # NetExec/CrackMapExec in an isolated venv (dnspython conflicts with theHarvester)
 RUN apt-get update && apt-get install -y --no-install-recommends \

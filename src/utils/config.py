@@ -9,7 +9,7 @@ from typing import Any, Optional
 class Config:
     """Flask `from_object` compatible settings."""
 
-    SECRET_KEY = os.environ.get("SECRET_KEY", "cerberus-x-secret")
+    SECRET_KEY = os.environ.get("SECRET_KEY", "firebreak-secret")
     VAULT_ADDR = os.environ.get("VAULT_ADDR", "http://vault:8200")
     VAULT_TOKEN = os.environ.get("VAULT_TOKEN", "")
     REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
@@ -34,9 +34,9 @@ class Config:
     SPLUNK_HEC_URL = os.environ.get("SPLUNK_HEC_URL", "")
     SPLUNK_HEC_TOKEN = os.environ.get("SPLUNK_HEC_TOKEN", "")
     ALERT_WEBHOOK = os.environ.get("ALERT_WEBHOOK", "")
-    CERBERUS_WAF_ENABLED = os.environ.get("CERBERUS_WAF_ENABLED", "true")
-    CERBERUS_RATE_LIMIT_ENABLED = os.environ.get(
-        "CERBERUS_RATE_LIMIT_ENABLED", "true"
+    FIREBREAK_WAF_ENABLED = os.environ.get("FIREBREAK_WAF_ENABLED", "true")
+    FIREBREAK_RATE_LIMIT_ENABLED = os.environ.get(
+        "FIREBREAK_RATE_LIMIT_ENABLED", "true"
     )
 
 

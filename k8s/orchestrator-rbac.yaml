@@ -2,28 +2,28 @@ apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: orchestrator
-  namespace: cerberus-x
+  namespace: firebreak
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: orchestrator-proxy-settings
-  namespace: cerberus-x
+  namespace: firebreak
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
-    resourceNames: ["cerberus-secrets"]
+    resourceNames: ["firebreak-secrets"]
     verbs: ["get", "patch", "update"]
   - apiGroups: [""]
     resources: ["configmaps"]
-    resourceNames: ["cerberus-config"]
+    resourceNames: ["firebreak-config"]
     verbs: ["get", "patch", "update"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: orchestrator-proxy-settings
-  namespace: cerberus-x
+  namespace: firebreak
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -31,4 +31,4 @@ roleRef:
 subjects:
   - kind: ServiceAccount
     name: orchestrator
-    namespace: cerberus-x
+    namespace: firebreak

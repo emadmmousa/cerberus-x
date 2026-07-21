@@ -130,7 +130,7 @@ def test_scan_waits_for_job_and_returns_sessions(monkeypatch):
     )
     install_client(monkeypatch, client)
     monkeypatch.setattr(metasploit.time, "sleep", lambda *_: None)
-    monkeypatch.setenv("CERBERUS_LHOST", "10.9.8.7")
+    monkeypatch.setenv("FIREBREAK_LHOST", "10.9.8.7")
 
     result = metasploit.scan(
         "https://scanner.example.test",

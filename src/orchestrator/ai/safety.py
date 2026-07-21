@@ -14,7 +14,7 @@ def _high_risk() -> set[str]:
 
 def confirm_required_globally() -> bool:
     # Default OFF — unrestricted orchestration unless explicitly re-enabled.
-    return os.environ.get("CERBERUS_AI_REQUIRE_CONFIRM", "false").lower() not in {
+    return os.environ.get("FIREBREAK_AI_REQUIRE_CONFIRM", "false").lower() not in {
         "0",
         "false",
         "no",

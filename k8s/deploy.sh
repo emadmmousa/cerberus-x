@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-echo "[+] Deploying Cerberus-X to Kubernetes"
+echo "[+] Deploying Firebreak to Kubernetes"
 
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/configmap.yaml
@@ -16,8 +16,8 @@ kubectl apply -f k8s/elasticsearch-deployment.yaml
 kubectl apply -f k8s/metasploit-deployment.yaml
 
 echo "[*] Waiting for core services..."
-kubectl wait --namespace cerberus-x --for=condition=available deployment/redis --timeout=180s || true
-kubectl wait --namespace cerberus-x --for=condition=available deployment/postgres --timeout=180s || true
+kubectl wait --namespace firebreak --for=condition=available deployment/redis --timeout=180s || true
+kubectl wait --namespace firebreak --for=condition=available deployment/postgres --timeout=180s || true
 
 kubectl apply -f k8s/orchestrator-deployment.yaml
 kubectl apply -f k8s/worker-deployment.yaml
@@ -33,5 +33,5 @@ else
 fi
 
 echo "[+] Deployment complete!"
-echo "Run: kubectl get pods -n cerberus-x"
+echo "Run: kubectl get pods -n firebreak"
 echo "Optional KEDA scaler: kubectl apply -f k8s/keda-worker-scaler.yaml"

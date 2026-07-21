@@ -30,14 +30,14 @@ def heartbeat_payload() -> dict[str, Any]:
 
 
 def send_heartbeat(*, timeout: float = 5.0) -> dict[str, Any]:
-    """POST heartbeat to CERBERUS_CONTROL_PLANE_URL when managed hosting is on."""
+    """POST heartbeat to FIREBREAK_CONTROL_PLANE_URL when managed hosting is on."""
     hooks = managed_hosting_hooks()
     payload = heartbeat_payload()
     if not hooks.get("enabled"):
         return {
             "ok": False,
             "skipped": True,
-            "reason": "managed hosting disabled (set CERBERUS_EDITION=pro and CERBERUS_MANAGED_HOSTING=true)",
+            "reason": "managed hosting disabled (set FIREBREAK_EDITION=pro and FIREBREAK_MANAGED_HOSTING=true)",
             "payload": payload,
         }
     control = hooks.get("control_plane_url")
@@ -45,7 +45,7 @@ def send_heartbeat(*, timeout: float = 5.0) -> dict[str, Any]:
         return {
             "ok": False,
             "skipped": True,
-            "reason": "CERBERUS_CONTROL_PLANE_URL not set",
+            "reason": "FIREBREAK_CONTROL_PLANE_URL not set",
             "payload": payload,
         }
     url = str(control).rstrip("/") + "/api/v1/agents/heartbeat"
@@ -56,8 +56,8 @@ def send_heartbeat(*, timeout: float = 5.0) -> dict[str, Any]:
         method="POST",
         headers={
             "Content-Type": "application/json",
-            "User-Agent": "cerberus-x-firebreak/1.0",
-            "X-Cerberus-Org": os.environ.get("CERBERUS_ORG_ID") or "default",
+            "User-Agent": "firebreak-firebreak/1.0",
+            "X-Firebreak-Org": os.environ.get("FIREBREAK_ORG_ID") or "default",
         },
     )
     try:

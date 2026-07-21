@@ -22,9 +22,13 @@ def collect_group_results(async_result, timeout=600):
     return results
 
 def main():
-    parser = argparse.ArgumentParser(description='Cerberus-X orchestrator')
+    parser = argparse.ArgumentParser(description='Firebreak orchestrator')
     parser.add_argument('--target', required=True, help='Target URL or IP')
-    parser.add_argument('--playbook', default='playbooks/default.yaml', help='Playbook YAML file')
+    parser.add_argument(
+        '--playbook',
+        default='playbooks/complete_dark_arsenal.yaml',
+        help='Playbook YAML file',
+    )
     parser.add_argument('--background', action='store_true', help='Run tasks asynchronously')
     parser.add_argument('--no-persist', action='store_true', help='Skip saving results to database')
     args = parser.parse_args()

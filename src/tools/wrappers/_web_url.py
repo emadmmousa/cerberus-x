@@ -56,7 +56,7 @@ def _probe_redirect(url: str, timeout: float = 8.0) -> Optional[str]:
     ctx = ssl.create_default_context()
     opener = build_opener(_NoRedirect(), HTTPSHandler(context=ctx))
     for method in ("HEAD", "GET"):
-        req = Request(url, method=method, headers={"User-Agent": "cerberus-x/1.0"})
+        req = Request(url, method=method, headers={"User-Agent": "firebreak/1.0"})
         try:
             with opener.open(req, timeout=timeout) as resp:
                 # No redirect (or already at final HTTPS page).

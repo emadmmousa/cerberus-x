@@ -49,8 +49,8 @@ def credentials_configured() -> bool:
 
 
 def local_proxy_url(protocol: str = "http") -> str:
-    host = os.getenv("CERBERUS_LOCAL_PROXY_HOST", "127.0.0.1")
-    port = os.getenv("CERBERUS_LOCAL_PROXY_PORT", "18080")
+    host = os.getenv("FIREBREAK_LOCAL_PROXY_HOST", "127.0.0.1")
+    port = os.getenv("FIREBREAK_LOCAL_PROXY_PORT", "18080")
     scheme = "socks5h" if protocol == "socks5h" else "http"
     return f"{scheme}://{host}:{port}"
 

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# Cerberus-X Metasploit RPC entrypoint.
+# Firebreak Metasploit RPC entrypoint.
 #
 # Starts a long-lived, DB-connected msfconsole that loads the MessagePack
 # `msgrpc` plugin (same wire protocol as msfrpcd) after a verified

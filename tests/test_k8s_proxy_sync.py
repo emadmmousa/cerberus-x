@@ -19,7 +19,7 @@ def test_sync_patches_secret_and_configmap(monkeypatch):
     monkeypatch.setenv("KUBERNETES_SERVICE_HOST", "10.0.0.1")
     monkeypatch.setenv("KUBERNETES_SERVICE_PORT", "443")
     monkeypatch.setattr(k8s_proxy_sync, "_sa_token", lambda: "tok")
-    monkeypatch.setattr(k8s_proxy_sync, "_sa_namespace", lambda: "cerberus-x")
+    monkeypatch.setattr(k8s_proxy_sync, "_sa_namespace", lambda: "firebreak")
 
     calls = []
 
@@ -43,6 +43,6 @@ def test_sync_patches_secret_and_configmap(monkeypatch):
     )
     assert result == {"ok": True}
     assert len(calls) == 2
-    assert "secrets/cerberus-secrets" in calls[0]["url"]
-    assert "configmaps/cerberus-config" in calls[1]["url"]
+    assert "secrets/firebreak-secrets" in calls[0]["url"]
+    assert "configmaps/firebreak-config" in calls[1]["url"]
     assert '"OXYLABS_PROXY_PROTOCOL": "socks5h"' in calls[1]["data"]

@@ -15,8 +15,8 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-PREFIX = "cerberus:job:"
-DEFAULT_TTL = int(os.environ.get("CERBERUS_JOB_TTL_SECONDS") or "86400")
+PREFIX = "firebreak:job:"
+DEFAULT_TTL = int(os.environ.get("FIREBREAK_JOB_TTL_SECONDS") or "86400")
 
 
 def _redis():

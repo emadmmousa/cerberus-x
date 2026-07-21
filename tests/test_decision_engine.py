@@ -213,3 +213,35 @@ def test_sql_injection_followup_action():
     eng.state = {"sql_injection": True, "vuln_found": True}
     actions = eng.generate_post_phase_actions("exploitation", [])
     assert any(a["tool"] == "sqlmap" and "--dump" in a["args"] for a in actions)
+
+
+def test_defensive_posture_suppresses_offensive_followons():
+    eng = DecisionEngine("sqli", job_id="j-def", posture="defensive")
+    eng.state = {
+        "sql_injection": True,
+        "vuln_found": True,
+        "vulnerabilities": [{"cve": "CVE-2021-41773", "severity": "high"}],
+        "has_session": True,
+        "sessions": [{"id": "1", "type": "meterpreter", "platform": "windows/x64"}],
+    }
+    actions = eng.generate_post_phase_actions("exploitation", [])
+    tools = {a["tool"] for a in actions}
+    assert "sqlmap" not in tools
+    assert "metasploit" not in tools
+
+
+def test_proposed_actions_published_to_state(monkeypatch):
+    published = {}
+
+    def fake_put(mission, name, value, **kwargs):
+        published[(mission, name)] = value
+        return {"ok": True, "version": 1}
+
+    monkeypatch.setattr("orchestrator.ai.blackboard.put", fake_put)
+
+    eng = DecisionEngine("lab", job_id="job-bb", posture="balanced")
+    eng.state = {"sql_injection": True, "vuln_found": True}
+    actions = eng.generate_post_phase_actions("exploitation", [])
+    assert eng.state.get("proposed_actions") == actions
+    assert published.get(("job-bb", "proposed_action")) is not None
+    assert published[("job-bb", "proposed_action")]["count"] == len(actions)

@@ -1,6 +1,6 @@
-# Cerberus-X
+# Firebreak
 
-Authorized security testing orchestrator. Cerberus-X runs scanners and Metasploit modules through Celery workers, drives missions from a local Mission Control UI (or APIs / MCP), and can adapt next steps with an optional local LLM.
+Authorized security testing orchestrator. Firebreak runs scanners and Metasploit modules through Celery workers, drives missions from a local Mission Control UI (or APIs / MCP), and can adapt next steps with an optional local LLM.
 
 **Only use against systems you are explicitly authorized to test.**
 
@@ -31,7 +31,7 @@ Authorized security testing orchestrator. Cerberus-X runs scanners and Metasploi
 
 ## What it does
 
-Cerberus-X turns a **target** (hostname or URL) into a multi-phase job:
+Firebreak turns a **target** (hostname or URL) into a multi-phase job:
 
 1. You submit a mission from Mission Control, CLI, or API.
 2. The **orchestrator** loads a YAML playbook (or an AI plan) and enqueues Celery tasks.
@@ -117,7 +117,7 @@ There is no separate “Exploit Ops” console tab in the current SPA; Metasploi
 ### Playbook mode (default)
 
 1. UI or API calls `POST /api/run` with `target`, optional `use_proxy`, `proxy_protocol`, `evasion`.
-2. Orchestrator loads `playbooks/default.yaml` (or `PLAYBOOK_PATH`).
+2. Orchestrator loads `playbooks/complete_dark_arsenal.yaml` (or `PLAYBOOK_PATH`).
 3. For each phase (respecting `depends_on` / `when`), it builds a Celery `group` or `chain` via `build_phase_workflow`.
 4. Workers run wrappers; results are saved per phase; DecisionEngine may influence later phases.
 5. Job state: `PENDING` → `STARTED` → `SUCCESS` / `FAILURE` on `/status/<task_id>`.
@@ -126,8 +126,8 @@ There is no separate “Exploit Ops” console tab in the current SPA; Metasploi
 
 1. Same `/api/run` entrypoint with optional `nl_goal` and `confirm_high_risk`.
 2. `run_ai_mission` loops: **plan → enqueue phase tools → collect → re-plan** (max steps).
-3. Planner uses LLM when `CERBERUS_LLM_BASE_URL` is set; otherwise a **heuristic** planner (recon → web checks → goal-driven tools).
-4. High-risk tools run freely unless `CERBERUS_AI_REQUIRE_CONFIRM=true`.
+3. Planner uses LLM when `FIREBREAK_LLM_BASE_URL` is set; otherwise a **heuristic** planner (recon → web checks → goal-driven tools).
+4. High-risk tools run freely unless `FIREBREAK_AI_REQUIRE_CONFIRM=true`.
 5. Phase timeouts continue with partial results instead of killing the whole mission when possible.
 
 Web targets are normalized to **HTTPS** (and often `www` when redirects say so) to avoid ISP HTTP hijacks from residential networks.
@@ -140,11 +140,11 @@ YAML under `playbooks/`:
 
 | File | Purpose |
 |------|---------|
-| `default.yaml` | Full-spectrum default (recon → vuln → conditional exploit/creds) |
+| `complete_dark_arsenal.yaml` | **Default (UI/API)** — all 23 wrappers across recon → post-ex |
+| `default.yaml` | Full-spectrum alternate (recon → vuln → conditional exploit/creds) |
 | `aggressive.yaml` | Dynamic/conditional style steps for the dynamic compiler |
 | `defensive_audit.yaml` | Lighter recon + vuln checks |
 | `ultimate_aggression.yaml` | Heavier installed-tool chain |
-| `complete_dark_arsenal.yaml` | Broader multi-phase map onto installed wrappers |
 
 Typical phase shape:
 
@@ -171,7 +171,7 @@ Select a non-default playbook via API query: `POST /api/run?playbook=playbooks/d
 
 ## Installed tools
 
-Workers expose these Celery-mapped tools (`src/orchestrator/tasks.py` → `tools/wrappers/`):
+Workers expose **23** Celery-mapped wrappers (`src/orchestrator/tasks.py` → `tools/wrappers/`):
 
 | Category | Tools |
 |----------|--------|
@@ -181,9 +181,13 @@ Workers expose these Celery-mapped tools (`src/orchestrator/tasks.py` → `tools
 | Creds / hash | `hydra`, `john`, `hashcat` |
 | Windows / AD helpers | `impacket`, `crackmapexec`, `responder`, `bloodhound` |
 | Post-ex helpers | `winpeas`, `linpeas`, `sliver` |
-| Exploit framework | `metasploit` |
+| Exploit framework | `metasploit` (large module library via RPC — not 23 separate wrappers) |
 
-Not every binary is equally mature in Docker (SYN scans, GPU hashcat, wireless, etc. depend on host capabilities). Missing binaries usually return a structured `{ "error": "… not found" }` result rather than crashing the worker.
+Mission Control → **Options → Arsenal** lists every wrapper. **Probe workers** runs a Celery health check (`GET /api/tools`, `GET /api/tools/health`).
+
+Use playbook `playbooks/complete_dark_arsenal.yaml` to exercise the full wired set in one mission.
+
+Not every binary is equally mature in Docker (SYN scans, GPU hashcat, wireless, C2, etc. depend on host capabilities). Missing binaries return a structured `{ "error": "… not found" }` / `status` result rather than crashing the worker.
 
 ---
 
@@ -213,7 +217,7 @@ Model Context Protocol surface on the orchestrator (for agents / clients):
 | `POST /mcp` | JSON-RPC: `initialize`, `tools/list`, `tools/call` |
 | `GET /mcp/sse` | SSE heartbeat |
 
-Auth: `Authorization: Bearer <CERBERUS_MCP_API_KEY>` or `X-API-Key`.
+Auth: `Authorization: Bearer <FIREBREAK_MCP_API_KEY>` or `X-API-Key`.
 
 MCP tools include: `session_create`, `list_tools`, `run_tool`, `get_job_status`, `get_findings`, `list_sessions`, `suggest_next_phase`.
 
@@ -222,17 +226,19 @@ MCP tools include: `session_create`, `list_tools`, `run_tool`, `get_job_status`,
 python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
-Recommended LLM (compose Ollama):
+Recommended LLM (compose Ollama — **own Firebreak model**):
 
 ```bash
-CERBERUS_LLM_BASE_URL=http://ollama:11434/v1
-CERBERUS_LLM_API_KEY=ollama
-CERBERUS_LLM_MODEL=cerberus-x
-CERBERUS_LLM_UNRESTRICTED=true
-CERBERUS_AI_REQUIRE_CONFIRM=false
+FIREBREAK_LLM_BASE_URL=http://ollama:11434/v1
+FIREBREAK_LLM_API_KEY=ollama
+FIREBREAK_LLM_BASE_MODEL=qwen2.5:7b
+FIREBREAK_LLM_MODEL=firebreak
+FIREBREAK_LLM_THINK=false
+FIREBREAK_LLM_UNRESTRICTED=true
+FIREBREAK_AI_REQUIRE_CONFIRM=false
 ```
 
-Compose builds the **`cerberus-x`** Ollama persona from `docker/ollama/Modelfile` (aggressive authorized red-team system prompt). High-risk tools run without confirm by default.
+Compose builds **`firebreak`** from `docker/ollama/Modelfile` on an open base (`qwen2.5:7b` by default). Training seeds live under `training/`. Alias CAI is **not** used.
 
 Related APIs:
 
@@ -253,8 +259,8 @@ Lightweight HTTPS-first probes (WAF/SQLi/XSS/path/open-redirect signals), separa
 
 Authorization:
 
-- Default: allow + audit (`CERBERUS_REQUIRE_AUTHZ=false`)
-- Strict: set `CERBERUS_REQUIRE_AUTHZ=true` and list hosts in `authorized_targets.json` (see `authorized_targets.example.json`)
+- Default: allow + audit (`FIREBREAK_REQUIRE_AUTHZ=false`)
+- Strict: set `FIREBREAK_REQUIRE_AUTHZ=true` and list hosts in `authorized_targets.json` (see `authorized_targets.example.json`)
 
 Example:
 
@@ -332,7 +338,7 @@ cp .env.example .env
 # Set strong secrets:
 #   POSTGRES_PASSWORD=
 #   MSF_RPC_PASSWORD=
-#   CERBERUS_MCP_API_KEY=   # optional but required for /mcp when enabled
+#   FIREBREAK_MCP_API_KEY=   # optional but required for /mcp when enabled
 # openssl rand -hex 24
 
 docker compose up -d
@@ -350,7 +356,7 @@ CLI playbook run:
 docker compose exec orchestrator \
   python -m orchestrator.cli \
   --target https://example.com \
-  --playbook playbooks/default.yaml
+  --playbook playbooks/complete_dark_arsenal.yaml
 ```
 
 Rebuild the UI after frontend changes:
@@ -377,19 +383,22 @@ Copy from `.env.example`. Never commit real `.env` files.
 
 | Variable | Purpose |
 |----------|---------|
-| `CERBERUS_MCP_API_KEY` | MCP auth |
-| `CERBERUS_LLM_BASE_URL` | e.g. `http://ollama:11434/v1` |
-| `CERBERUS_LLM_MODEL` | default `cerberus-x` (Modelfile persona) |
-| `CERBERUS_LLM_UNRESTRICTED` | Aggressive system prompts + higher temperature (default true) |
-| `CERBERUS_AI_REQUIRE_CONFIRM` | Gate high-risk AI/MCP tools (default false) |
-| `CERBERUS_SQLI_INTENSITY` | sqlmap strategy: `off`/`low`/`medium`/`high`/`aggressive` |
-| `CERBERUS_SQLMAP_DNS_DOMAIN` | Optional OOB DNS domain for sqlmap |
-| `CERBERUS_LHOST` | Reverse payload callback IP (required for reliable shells) |
-| `CERBERUS_LHOST` | Reverse payload callback IP (reachable from target) |
-| `CERBERUS_LPORT_START` | Prefer listener ports from this value (default 4444) |
-| `CERBERUS_PAYLOAD_PREFER` | `reverse` (default) or `bind` |
+| `PLAYBOOK_PATH` | Default playbook (default `playbooks/complete_dark_arsenal.yaml`) |
+| `FIREBREAK_MCP_API_KEY` | MCP auth |
+| `FIREBREAK_LLM_BASE_URL` | e.g. `http://ollama:11434/v1` |
+| `FIREBREAK_LLM_BASE_MODEL` | default `deepseek-v4-flash:cloud` (DeepSeek Instant) |
+| `FIREBREAK_LLM_MODEL` | default `firebreak` (Modelfile persona over Instant) |
+| `FIREBREAK_LLM_THINK` | default `false` (keeps planner JSON clean) |
+| `FIREBREAK_LLM_UNRESTRICTED` | Aggressive system prompts + higher temperature (default true) |
+| `FIREBREAK_AI_REQUIRE_CONFIRM` | Gate high-risk AI/MCP tools (default false) |
+| `FIREBREAK_SQLI_INTENSITY` | sqlmap strategy: `off`/`low`/`medium`/`high`/`aggressive` |
+| `FIREBREAK_SQLMAP_DNS_DOMAIN` | Optional OOB DNS domain for sqlmap |
+| `FIREBREAK_LHOST` | Reverse payload callback IP (required for reliable shells) |
+| `FIREBREAK_LHOST` | Reverse payload callback IP (reachable from target) |
+| `FIREBREAK_LPORT_START` | Prefer listener ports from this value (default 4444) |
+| `FIREBREAK_PAYLOAD_PREFER` | `reverse` (default) or `bind` |
 | `OXYLABS_*` | Residential/datacenter proxy |
-| `CERBERUS_REQUIRE_AUTHZ` | Enforce `authorized_targets.json` for `/api/scan` |
+| `FIREBREAK_REQUIRE_AUTHZ` | Enforce `authorized_targets.json` for `/api/scan` |
 | `SECRET_KEY` | Flask sessions |
 | `VAULT_TOKEN` / `VAULT_ADDR` | Optional Vault |
 
@@ -469,7 +478,7 @@ docker/           # Dockerfiles, vault config, patches
 | `MSF_RPC_PASSWORD is required` | Fill `.env` and recreate compose |
 | Metasploit unhealthy | `docker compose logs metasploit`; Postgres must be healthy first |
 | AI mission “timed out” | Long tools (e.g. wide masscan) — bounded timeouts / stealth defaults; check worker logs |
-| MCP `503` / unauthorized | Set `CERBERUS_MCP_API_KEY` and send Bearer / `X-API-Key` |
+| MCP `503` / unauthorized | Set `FIREBREAK_MCP_API_KEY` and send Bearer / `X-API-Key` |
 | LLM unused | Confirm Ollama up (`curl 127.0.0.1:11434/api/tags`); heuristic planner still works without it |
 | Proxy tools fail | Validate Oxylabs **proxy user** creds (not dashboard email); use Proxy settings → Test |
 | Import errors after experimental edits | Prefer `PYTHONPATH=/app/src` imports (`orchestrator.*`, `tools.*`), not broken `src.*` shadows of packages |

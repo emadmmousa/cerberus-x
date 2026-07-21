@@ -5,8 +5,8 @@ def test_healthy_after_start(monkeypatch):
     monkeypatch.setenv("OXYLABS_PROXY_USERNAME", "u")
     monkeypatch.setenv("OXYLABS_PROXY_PASSWORD", "p")
     monkeypatch.setenv("OXYLABS_PROXY_PROTOCOL", "http")
-    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_HOST", "127.0.0.1")
-    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_PORT", "0")
+    monkeypatch.setenv("FIREBREAK_LOCAL_PROXY_HOST", "127.0.0.1")
+    monkeypatch.setenv("FIREBREAK_LOCAL_PROXY_PORT", "0")
     server = local_proxy.LocalProxyServer()
     server.start()
     try:
@@ -30,7 +30,7 @@ def test_socks5h_not_implemented(monkeypatch):
     monkeypatch.setenv("OXYLABS_PROXY_USERNAME", "u")
     monkeypatch.setenv("OXYLABS_PROXY_PASSWORD", "p")
     monkeypatch.setenv("OXYLABS_PROXY_PROTOCOL", "socks5h")
-    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_PORT", "0")
+    monkeypatch.setenv("FIREBREAK_LOCAL_PROXY_PORT", "0")
     server = local_proxy.LocalProxyServer()
     try:
         server.start()
@@ -46,13 +46,13 @@ def test_ensure_reuses_existing_listener(monkeypatch):
     monkeypatch.setenv("OXYLABS_PROXY_USERNAME", "u")
     monkeypatch.setenv("OXYLABS_PROXY_PASSWORD", "p")
     monkeypatch.setenv("OXYLABS_PROXY_PROTOCOL", "http")
-    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_HOST", "127.0.0.1")
-    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_PORT", "0")
+    monkeypatch.setenv("FIREBREAK_LOCAL_PROXY_HOST", "127.0.0.1")
+    monkeypatch.setenv("FIREBREAK_LOCAL_PROXY_PORT", "0")
 
     owner = local_proxy.LocalProxyServer()
     owner.start()
     host, port = owner.address
-    monkeypatch.setenv("CERBERUS_LOCAL_PROXY_PORT", str(port))
+    monkeypatch.setenv("FIREBREAK_LOCAL_PROXY_PORT", str(port))
     local_proxy._singleton = None
     try:
         borrowed = local_proxy.ensure_local_proxy()

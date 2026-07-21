@@ -53,7 +53,7 @@ def _resolve_evasion(playbook: dict, override=None) -> dict:
     return {}
 
 app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "cerberus-x-secret")
+app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "firebreak-secret")
 try:
     app.config.from_object("utils.config.Config")
 except Exception:
@@ -173,7 +173,7 @@ def proxy_status():
 
 
 def _env_file_path() -> str:
-    return os.getenv("CERBERUS_ENV_FILE", "/app/.env")
+    return os.getenv("FIREBREAK_ENV_FILE", "/app/.env")
 
 
 def _settings_response(creds: dict | None, *, source: str, **extra):
@@ -663,7 +663,7 @@ def spa_fallback(path: str):
 
 @socketio.on("connect")
 def handle_connect():
-    emit("log", {"message": "Connected to Cerberus-X dashboard", "level": "INFO"})
+    emit("log", {"message": "Connected to Firebreak dashboard", "level": "INFO"})
     for entry in log_store[-50:]:
         emit("log", entry)
 

@@ -30,7 +30,7 @@
 | `src/orchestrator/dashboard.py` | `/api/proxy/settings` GET/PUT/DELETE; status uses Redis|env |
 | `frontend/src/components/ProxyToggle.tsx` | Settings form UI |
 | `frontend/src/api/client.ts` | API client helpers |
-| `docker-compose.yml` | Mount `.env` + `CERBERUS_ENV_FILE` |
+| `docker-compose.yml` | Mount `.env` + `FIREBREAK_ENV_FILE` |
 | `k8s/orchestrator-rbac.yaml` | SA + Role + RoleBinding |
 | `k8s/orchestrator-deployment.yaml` | serviceAccountName |
 
@@ -44,7 +44,7 @@
 
 **Interfaces:**
 - Produces:
-  - `REDIS_KEY = "cerberus:proxy:settings"`
+  - `REDIS_KEY = "firebreak:proxy:settings"`
   - `parse_proxy_url(url: str) -> dict`
   - `save_settings(data: dict) -> None`
   - `load_settings() -> dict | None`
@@ -55,7 +55,7 @@
 
 - [ ] **Step 1: Write failing tests** for parse, merge (empty password keeps existing), public_view redaction, save/load via fakeredis-like monkeypatch.
 
-- [ ] **Step 2: Implement module** using `redis.from_url` from `orchestrator.celeryconfig.REDIS_URL` (lazy import to avoid cycles). Support `CERBERUS_PROXY_SETTINGS_BACKEND=memory` for tests.
+- [ ] **Step 2: Implement module** using `redis.from_url` from `orchestrator.celeryconfig.REDIS_URL` (lazy import to avoid cycles). Support `FIREBREAK_PROXY_SETTINGS_BACKEND=memory` for tests.
 
 - [ ] **Step 3: Pytest green; commit**
 
@@ -163,7 +163,7 @@ git commit -m "feat(ui): add proxy credentials settings panel"
 ### Task 6: Deploy wiring (Compose + K8s RBAC)
 
 **Files:**
-- Modify: `docker-compose.yml` (orchestrator volumes + `CERBERUS_ENV_FILE=/app/.env`)
+- Modify: `docker-compose.yml` (orchestrator volumes + `FIREBREAK_ENV_FILE=/app/.env`)
 - Create: `k8s/orchestrator-rbac.yaml`
 - Modify: `k8s/orchestrator-deployment.yaml` (`serviceAccountName: orchestrator`)
 - Modify: `.env.example` note that UI can overwrite Oxylabs keys

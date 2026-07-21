@@ -11,7 +11,7 @@ def test_health_and_metrics_endpoints():
 
     metrics = client.get("/metrics")
     assert metrics.status_code == 200
-    assert b"cerberus_" in metrics.data or metrics.data  # registry may be empty
+    assert b"firebreak_" in metrics.data or metrics.data  # registry may be empty
 
 
 def test_api_run_requires_target():
@@ -31,7 +31,7 @@ def test_results_falls_back_to_sqlite(monkeypatch, tmp_path):
     from orchestrator import database
 
     monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "results.db"))
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path / "output"))
     database.init_db()
     database.save_phase_result(
         "https://example.com",
@@ -77,7 +77,9 @@ def test_api_run_accepts_proxy_flags(monkeypatch):
         def start(self):
             self.target(*self.args)
 
-    monkeypatch.setattr(dashboard.threading, "Thread", ImmediateThread)
+    import orchestrator.api.missions as missions_api
+
+    monkeypatch.setattr(missions_api.threading, "Thread", ImmediateThread)
     monkeypatch.setattr(dashboard, "_run_playbook_job", _fake_run)
     monkeypatch.setattr(
         "builtins.open",
@@ -107,13 +109,17 @@ def test_playbook_summary_lists_phases():
     resp = client.get("/api/playbook")
     assert resp.status_code == 200
     data = resp.get_json()
-    assert data["evasion"] == "aggressive"
+    assert data["name"] == "Complete Dark Arsenal"
+    assert data["evasion"] == "medium"
     assert "phases" in data
     assert isinstance(data["phases"], list)
     assert data["phases"], "expected at least one phase"
     first = data["phases"][0]
     assert set(first) >= {"name", "tools", "parallel", "depends_on", "when"}
     assert isinstance(first["tools"], list)
+    # Full arsenal is the UI/API default — all wired wrappers appear somewhere.
+    tools = {t for phase in data["phases"] for t in phase["tools"]}
+    assert len(tools) >= 20
 
 
 def test_playbook_summary_missing_file():
@@ -123,7 +129,7 @@ def test_playbook_summary_missing_file():
 
 
 def test_proxy_status_no_secrets(monkeypatch):
-    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    monkeypatch.setenv("FIREBREAK_PROXY_SETTINGS_BACKEND", "memory")
     from tools import proxy_settings
 
     proxy_settings._memory_clear()
@@ -139,7 +145,7 @@ def test_results_endpoint_scopes_to_job_id(monkeypatch, tmp_path):
     from orchestrator import database
 
     monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "results.db"))
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path / "output"))
     database.init_db()
     database.save_phase_result(
         "example.com",
@@ -169,7 +175,7 @@ def test_results_endpoint_scopes_to_job_id(monkeypatch, tmp_path):
 
     all_rows = client.get("/results?target=example.com").get_json()
     assert len(all_rows) == 2
-    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    monkeypatch.setenv("FIREBREAK_PROXY_SETTINGS_BACKEND", "memory")
     from tools import proxy_settings
 
     proxy_settings._memory_clear()
@@ -242,13 +248,13 @@ def test_auto_action_phase_is_reported_before_waiting(monkeypatch):
 
 
 def test_proxy_settings_put_get_redacts_password(monkeypatch, tmp_path):
-    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    monkeypatch.setenv("FIREBREAK_PROXY_SETTINGS_BACKEND", "memory")
     from tools import proxy_settings
 
     proxy_settings._memory_clear()
     env_path = tmp_path / ".env"
     env_path.write_text("FOO=1\n", encoding="utf-8")
-    monkeypatch.setenv("CERBERUS_ENV_FILE", str(env_path))
+    monkeypatch.setenv("FIREBREAK_ENV_FILE", str(env_path))
     monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
     monkeypatch.delenv("OXYLABS_PROXY_USERNAME", raising=False)
     monkeypatch.delenv("OXYLABS_PROXY_PASSWORD", raising=False)
@@ -279,12 +285,12 @@ def test_proxy_settings_put_get_redacts_password(monkeypatch, tmp_path):
 
 
 def test_proxy_settings_empty_password_keeps_existing(monkeypatch, tmp_path):
-    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    monkeypatch.setenv("FIREBREAK_PROXY_SETTINGS_BACKEND", "memory")
     from tools import proxy_settings
 
     proxy_settings._memory_clear()
     env_path = tmp_path / ".env"
-    monkeypatch.setenv("CERBERUS_ENV_FILE", str(env_path))
+    monkeypatch.setenv("FIREBREAK_ENV_FILE", str(env_path))
     monkeypatch.delenv("KUBERNETES_SERVICE_HOST", raising=False)
 
     client = dashboard.app.test_client()
@@ -315,7 +321,7 @@ def test_proxy_settings_empty_password_keeps_existing(monkeypatch, tmp_path):
 
 
 def test_proxy_settings_put_invalid_returns_400(monkeypatch):
-    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    monkeypatch.setenv("FIREBREAK_PROXY_SETTINGS_BACKEND", "memory")
     from tools import proxy_settings
 
     proxy_settings._memory_clear()
@@ -325,3 +331,79 @@ def test_proxy_settings_put_invalid_returns_400(monkeypatch):
     resp = client.put("/api/proxy/settings", json={"host": "only-host"})
     assert resp.status_code == 400
     assert "error" in resp.get_json()
+
+
+def test_playbooks_catalog_and_posture_recommend():
+    client = dashboard.app.test_client()
+    resp = client.get("/api/playbooks?posture=defensive")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["count"] >= 3
+    assert data["recommended"].endswith("defensive_audit.yaml")
+    ids = {p["id"] for p in data["playbooks"]}
+    assert "balanced_offense_defense" in ids
+
+
+def test_api_run_defaults_playbook_from_posture(monkeypatch):
+    captured = {}
+
+    def _fake_run(
+        job_id,
+        target,
+        playbook,
+        use_proxy=False,
+        proxy_protocol="http",
+        evasion=None,
+    ):
+        captured["playbook"] = playbook
+        dashboard.playbook_jobs[job_id]["state"] = "SUCCESS"
+
+    class ImmediateThread:
+        def __init__(self, target=None, args=(), kwargs=None, daemon=None):
+            self.target = target
+            self.args = args
+
+        def start(self):
+            self.target(*self.args)
+
+    import orchestrator.api.missions as missions_api
+
+    monkeypatch.setattr(missions_api.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr(dashboard, "_run_playbook_job", _fake_run)
+    client = dashboard.app.test_client()
+    resp = client.post(
+        "/api/run",
+        json={"target": "example.com", "posture": "defensive"},
+    )
+    assert resp.status_code == 200
+    assert captured["playbook"]["name"] == "Defensive Audit"
+    job = dashboard.playbook_jobs[resp.get_json()["task_id"]]
+    assert job["posture"] == "defensive"
+
+
+def test_mission_hardening_endpoint():
+    client = dashboard.app.test_client()
+    job_id = "harden-test-1"
+    dashboard.playbook_jobs[job_id] = {
+        "task_id": job_id,
+        "target": "lab.example",
+        "state": "SUCCESS",
+        "posture": "balanced",
+        "ai": {
+            "hardening": [
+                {
+                    "title": "Harden SSH",
+                    "detail": "Keys only",
+                    "severity": "high",
+                }
+            ]
+        },
+    }
+    resp = client.get(f"/api/missions/{job_id}/hardening")
+    assert resp.status_code == 200
+    data = resp.get_json()
+    assert data["recommendations"][0]["title"] == "Harden SSH"
+    assert "Harden SSH" in data["markdown"]
+    md = client.get(f"/api/missions/{job_id}/hardening?format=markdown")
+    assert md.status_code == 200
+    assert b"Harden SSH" in md.data

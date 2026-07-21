@@ -10,8 +10,8 @@ Supersedes the Phase-1-only preview in earlier drafts. Approved decisions for Ph
 | MCP host | Flask orchestrator (`/mcp`); extract later if needed |
 | Transport | HTTP JSON-RPC at `POST /mcp` (+ optional `GET /mcp/sse`) |
 | Auth | API key + `session_id` |
-| LLM | OpenAI-compatible (`CERBERUS_LLM_BASE_URL`); **heuristic fallback** when unset/down |
-| High-risk | Confirm required when `CERBERUS_AI_REQUIRE_CONFIRM=true` (**default false** — unrestricted orchestration; set true to re-enable gates) |
+| LLM | OpenAI-compatible (`FIREBREAK_LLM_BASE_URL`); **heuristic fallback** when unset/down |
+| High-risk | Confirm required when `FIREBREAK_AI_REQUIRE_CONFIRM=true` (**default false** — unrestricted orchestration; set true to re-enable gates) |
 | Playbooks | Default path unchanged when `ai_mode` false |
 
 ## Phase map

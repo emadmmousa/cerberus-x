@@ -11,8 +11,8 @@ from orchestrator.ai.safety import require_confirm_for_tool
 @pytest.fixture(autouse=True)
 def _tmp_db(tmp_path, monkeypatch):
     db = tmp_path / "test.db"
-    monkeypatch.setenv("CERBERUS_DB_PATH", str(db))
-    monkeypatch.delenv("CERBERUS_LLM_BASE_URL", raising=False)
+    monkeypatch.setenv("FIREBREAK_DB_PATH", str(db))
+    monkeypatch.delenv("FIREBREAK_LLM_BASE_URL", raising=False)
 
 
 def test_heuristic_initial_plan():
@@ -65,7 +65,7 @@ def test_completions_url_normalization():
 
 
 def test_llm_masscan_args_get_sanitized(monkeypatch):
-    monkeypatch.setenv("CERBERUS_LLM_BASE_URL", "http://ollama:11434/v1")
+    monkeypatch.setenv("FIREBREAK_LLM_BASE_URL", "http://ollama:11434/v1")
 
     def fake_chat(messages, **_k):
         return (
@@ -81,9 +81,53 @@ def test_llm_masscan_args_get_sanitized(monkeypatch):
     assert not any(a.startswith("--limit") for a in mass["args"])
 
 
+def test_llm_plan_drops_completed_and_duplicate_tools(monkeypatch):
+    monkeypatch.setenv("FIREBREAK_LLM_BASE_URL", "http://ollama:11434/v1")
+
+    def fake_chat(messages, **_k):
+        return (
+            '{"phase_name":"ai_recon","reason":"again","parallel":true,"stop":false,'
+            '"tools":['
+            '{"tool":"masscan","args":["-p80,443"]},'
+            '{"tool":"masscan","args":["-p80,443,22"]},'
+            '{"tool":"nmap","args":["-sV","-p80,443"]}'
+            "]}"
+        )
+
+    monkeypatch.setattr("orchestrator.ai.llm.chat_completion", fake_chat)
+    prior = {
+        "ai_recon": [
+            {"tool": "masscan", "ports": [{"port": "80"}, {"port": "443"}]},
+            {"tool": "whatweb", "raw_output": "ok"},
+        ]
+    }
+    plan = planner.suggest_next_phase("https://example.com", prior, step=1)
+    assert plan["source"] == "llm"
+    names = [t["tool"] for t in plan["tools"]]
+    assert "masscan" not in names
+    assert names.count("nmap") == 1
+    assert plan["phase_name"].endswith("_s1")
+
+
+def test_llm_empty_after_filter_stops(monkeypatch):
+    monkeypatch.setenv("FIREBREAK_LLM_BASE_URL", "http://ollama:11434/v1")
+
+    def fake_chat(messages, **_k):
+        return (
+            '{"phase_name":"ai_recon","reason":"again","parallel":true,"stop":false,'
+            '"tools":[{"tool":"nmap","args":["-sV"]}]}'
+        )
+
+    monkeypatch.setattr("orchestrator.ai.llm.chat_completion", fake_chat)
+    prior = {"ai_recon": [{"tool": "nmap", "ports": [{"port": "443"}]}]}
+    plan = planner.suggest_next_phase("https://example.com", prior, step=1)
+    assert plan["stop"] is True
+    assert plan["tools"] == []
+
+
 def test_high_risk_confirm_gate(monkeypatch):
-    monkeypatch.setenv("CERBERUS_AI_REQUIRE_CONFIRM", "true")
+    monkeypatch.setenv("FIREBREAK_AI_REQUIRE_CONFIRM", "true")
     assert require_confirm_for_tool("sqlmap") is True
     assert require_confirm_for_tool("nmap") is False
-    monkeypatch.setenv("CERBERUS_AI_REQUIRE_CONFIRM", "false")
+    monkeypatch.setenv("FIREBREAK_AI_REQUIRE_CONFIRM", "false")
     assert require_confirm_for_tool("sqlmap") is False

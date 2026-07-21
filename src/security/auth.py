@@ -92,13 +92,31 @@ class AuthManager:
 
     @staticmethod
     def local_login(username: str, password: str):
-        """Dev/local login against CERBERUS_ADMIN_USER / CERBERUS_ADMIN_PASSWORD."""
-        expected_user = os.environ.get("CERBERUS_ADMIN_USER", "admin")
-        expected_pass = os.environ.get("CERBERUS_ADMIN_PASSWORD", "")
-        if not expected_pass:
-            return jsonify({"error": "Local auth not configured"}), 503
-        if username == expected_user and password == expected_pass:
-            return AuthManager._finalize_login(username, "local")
+        """Local login against the admin user store (Redis-backed).
+
+        Falls back to FIREBREAK_ADMIN_USER / FIREBREAK_ADMIN_PASSWORD when the
+        store has no password for the seeded admin (fresh installs).
+        """
+        # Primary: user directory managed from the admin console.
+        try:
+            from security.admin_store import verify_credentials
+
+            rec = verify_credentials(username, password)
+            if rec:
+                return AuthManager._finalize_login(
+                    username,
+                    "local",
+                    role=rec.get("role"),
+                    org_id=rec.get("org_id"),
+                )
+        except Exception as exc:  # pragma: no cover - store optional
+            logger.debug("admin_store login skipped: %s", exc)
+
+        # Fallback: env admin credentials (first boot before password set).
+        expected_user = os.environ.get("FIREBREAK_ADMIN_USER", "admin")
+        expected_pass = os.environ.get("FIREBREAK_ADMIN_PASSWORD", "")
+        if expected_pass and username == expected_user and password == expected_pass:
+            return AuthManager._finalize_login(username, "local", role="admin")
         audit_log(
             "AUTH_FAILED",
             {"username": username, "method": "local", "ip": request.remote_addr},
@@ -107,7 +125,13 @@ class AuthManager:
         return jsonify({"error": "Invalid credentials"}), 401
 
     @staticmethod
-    def _finalize_login(identifier: str, method: str, provider: Optional[str] = None):
+    def _finalize_login(
+        identifier: str,
+        method: str,
+        provider: Optional[str] = None,
+        role: Optional[str] = None,
+        org_id: Optional[str] = None,
+    ):
         if identifier in AuthManager.HONEYPOT_ACCOUNTS:
             audit_log(
                 "HONEYPOT_HIT",
@@ -134,10 +158,24 @@ class AuthManager:
 
         session["user"] = identifier
         session["auth_method"] = method
+        default_role = (
+            "admin"
+            if method == "local"
+            else (os.environ.get("FIREBREAK_DEFAULT_ROLE") or "operator")
+        )
+        session["role"] = (role or default_role).lower()
+        session["org_id"] = org_id or os.environ.get("FIREBREAK_DEFAULT_ORG") or "default"
         if provider:
             session["auth_provider"] = provider
         audit_log("LOGIN_SUCCESS", {"user": identifier, "method": method, "ip": ip})
-        return jsonify({"status": "authenticated", "user": identifier}), 200
+        return jsonify(
+            {
+                "status": "authenticated",
+                "user": identifier,
+                "role": session.get("role"),
+                "org_id": session.get("org_id"),
+            }
+        ), 200
 
     @staticmethod
     def _calculate_risk(user: str, ip: str) -> float:

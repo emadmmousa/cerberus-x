@@ -14,15 +14,20 @@ venv/
 # Generated target reports
 output/*
 !output/.gitkeep
+!output/dataset/
+output/dataset/*
+!output/dataset/.gitkeep
 
 # Frontend
 frontend/node_modules/
 node_modules/
 
 # Local dumps / OS junk
-cerberus-x-codebase-*.txt
+firebreak-codebase-*.txt
 .DS_Store
 *.log
 results.db
 *.db-journal
 authorized_targets.json
+training/dataset/v0/contributions.jsonl
+training/adapters/

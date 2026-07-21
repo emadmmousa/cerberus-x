@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "firebreak.fullname" . }}-metasploit
+  labels:
+    {{- include "firebreak.labels" . | nindent 4 }}
+    app: metasploit
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "firebreak.selectorLabels" . | nindent 6 }}
+      app: metasploit
+  template:
+    metadata:
+      labels:
+        {{- include "firebreak.selectorLabels" . | nindent 8 }}
+        app: metasploit
+    spec:
+      containers:
+      - name: metasploit
+        image: {{ .Values.image.metasploit }}
+        imagePullPolicy: {{ .Values.image.pullPolicy }}
+        env:
+        - name: MSF_RPC_USER
+          value: {{ .Values.metasploit.rpcUser | quote }}
+        - name: MSF_RPC_PASSWORD
+          value: {{ .Values.metasploit.rpcPassword | quote }}
+        - name: MSF_RPC_PORT
+          value: "{{ .Values.metasploit.rpcPort }}"
+        - name: MSF_RPC_BIND_HOST
+          value: "0.0.0.0"
+        ports:
+        - containerPort: {{ .Values.metasploit.rpcPort }}
+          name: msgrpc
+        resources:
+          requests:
+            memory: 1Gi
+            cpu: 250m
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metasploit-service
+  labels:
+    {{- include "firebreak.labels" . | nindent 4 }}
+    app: metasploit
+spec:
+  selector:
+    {{- include "firebreak.selectorLabels" . | nindent 4 }}
+    app: metasploit
+  ports:
+  - port: {{ .Values.metasploit.rpcPort }}
+    targetPort: {{ .Values.metasploit.rpcPort }}
+    name: msgrpc

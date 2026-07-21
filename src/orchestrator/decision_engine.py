@@ -25,9 +25,17 @@ def _payload(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 class DecisionEngine:
-    def __init__(self, target: str, job_id: str | None = None):
+    def __init__(
+        self,
+        target: str,
+        job_id: str | None = None,
+        posture: str = "balanced",
+    ):
         self.target = target
         self.job_id = job_id
+        from orchestrator.ai.posture import normalize_posture
+
+        self.posture = normalize_posture(posture)
         self.state = load_state(target, job_id=job_id) or {}
         self.results_cache = {}
         self._fired_actions: set[str] = set(self.state.get("fired_actions") or [])
@@ -58,7 +66,34 @@ class DecisionEngine:
                 self._process_ffuf_results(item)
 
         save_state(self.target, self.state, job_id=self.job_id)
+        self._publish_blackboard(phase_name)
         return self.state
+
+    def _publish_blackboard(self, phase_name: str) -> None:
+        """Share DecisionEngine state on the Firebreak Blackboard (best-effort)."""
+        mission = self.job_id or self.target
+        try:
+            from orchestrator.ai import blackboard
+
+            blackboard.put(
+                mission,
+                "decision.state",
+                {
+                    "phase": phase_name,
+                    "target": self.target,
+                    "ports": self.state.get("open_ports") or self.state.get("ports"),
+                    "vulns": self.state.get("vulnerabilities")
+                    or self.state.get("vulns"),
+                    "fired_actions": list(self._fired_actions)[:40],
+                },
+            )
+            proposals = self.state.get("pending_actions") or self.state.get(
+                "proposed_actions"
+            )
+            if proposals:
+                blackboard.put(mission, "proposed_action", proposals)
+        except Exception as exc:
+            logger.debug("blackboard publish skipped: %s", exc)
 
     def _process_nuclei_results(self, item):
         result = _payload(item)
@@ -324,7 +359,38 @@ class DecisionEngine:
                         }
                     )
                     proposed_keys.add(key)
+        # Defensive posture: never auto-queue sqlmap/metasploit follow-ons.
+        if self.posture == "defensive":
+            from orchestrator.ai.posture import OFFENSIVE_TOOLS
+
+            actions = [
+                a
+                for a in actions
+                if str(a.get("tool") or "") not in OFFENSIVE_TOOLS
+            ]
+        # Firebreak W1.7: publish proposals so scaffolds/UI can observe before execute.
+        self.state["proposed_actions"] = actions
+        self._publish_proposals(phase_name, actions)
         return actions
+
+    def _publish_proposals(self, phase_name: str, actions: list[dict]) -> None:
+        mission = self.job_id or self.target
+        try:
+            from orchestrator.ai import blackboard
+
+            blackboard.put(
+                mission,
+                "proposed_action",
+                {
+                    "phase": phase_name,
+                    "target": self.target,
+                    "posture": self.posture,
+                    "actions": actions,
+                    "count": len(actions),
+                },
+            )
+        except Exception as exc:
+            logger.debug("blackboard proposed_action skipped: %s", exc)
 
     def _action_fired(self, stage: str, finding_id: str, module: str) -> bool:
         return f"{stage}:{finding_id}:{module}" in self._fired_actions

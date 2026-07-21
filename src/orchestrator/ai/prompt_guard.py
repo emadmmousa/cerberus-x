@@ -2,7 +2,7 @@
 
 Inspired by systemic findings on LLM security agents treating untrusted
 tool/server content as instructions (data/code confusion, analogous to XSS).
-Cerberus never executes shell from LLM freeform — tools stay in _TASK_MAP —
+Firebreak never executes shell from LLM freeform — tools stay in _TASK_MAP —
 but the planner must not be steered by injected "NOTE TO SYSTEM" payloads
 inside tool digests or memory snippets.
 """

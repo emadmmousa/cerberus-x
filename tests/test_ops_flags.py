@@ -14,9 +14,9 @@ def _clean_admin_store(monkeypatch):
         pass
     admin_store._settings.clear()
     for key in (
-        "CERBERUS_AUTO_SCALE",
-        "CERBERUS_AUTO_TRAIN",
-        "CERBERUS_LEARNING_TICK",
+        "FIREBREAK_AUTO_SCALE",
+        "FIREBREAK_AUTO_TRAIN",
+        "FIREBREAK_LEARNING_TICK",
     ):
         monkeypatch.delenv(key, raising=False)
     yield
@@ -36,14 +36,14 @@ def test_effective_defaults_false():
 
 
 def test_env_enables_when_no_override(monkeypatch):
-    monkeypatch.setenv("CERBERUS_AUTO_SCALE", "true")
+    monkeypatch.setenv("FIREBREAK_AUTO_SCALE", "true")
     from orchestrator.ml.flags import effective_auto_scale
 
     assert effective_auto_scale() is True
 
 
 def test_admin_override_beats_env(monkeypatch):
-    monkeypatch.setenv("CERBERUS_AUTO_SCALE", "true")
+    monkeypatch.setenv("FIREBREAK_AUTO_SCALE", "true")
     from security import admin_store
     from orchestrator.ml.flags import effective_auto_scale
 
@@ -71,7 +71,7 @@ def test_get_settings_includes_ops_keys():
 
 
 def test_admin_ops_put_and_get_effective(monkeypatch):
-    monkeypatch.setenv("CERBERUS_AUTO_SCALE", "false")
+    monkeypatch.setenv("FIREBREAK_AUTO_SCALE", "false")
     from orchestrator import dashboard
 
     c = dashboard.app.test_client()

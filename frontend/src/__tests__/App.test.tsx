@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import App from "../App";
 
@@ -9,13 +9,27 @@ vi.mock("../api/socket", () => ({
 
 function mockFetch() {
   return vi.fn().mockImplementation((url: string) => {
-    if (url === "/api/proxy/status") {
-      return Promise.resolve({ ok: true, json: async () => ({ configured: false }) });
-    }
-    if (url === "/api/playbook") {
+    if (url === "/api/rbac/me") {
       return Promise.resolve({
         ok: true,
-        json: async () => ({ name: "Full Spectrum Attack", phases: [] }),
+        json: async () => ({
+          authenticated: false,
+          role: "operator",
+          org_id: "default",
+          rbac_enforce: false,
+        }),
+      });
+    }
+    if (url === "/auth/status" || url === "/api/oidc/status") {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ authenticated: false, configured: false }),
+      });
+    }
+    if (typeof url === "string" && url.startsWith("/api/missions")) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ count: 0, missions: [], org_id: "default" }),
       });
     }
     return Promise.resolve({ ok: true, json: async () => ({}) });
@@ -28,11 +42,14 @@ describe("App", () => {
     vi.stubGlobal("fetch", mockFetch());
   });
 
-  it("shows Mission Control only without exploit tabs", () => {
+  it("shows Missions shell without exploit tabs", async () => {
     render(<App />);
     expect(screen.queryByText(/Exploit Ops/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/MSF Console/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/CERBERUS-X/i)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^start$/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText(/Firebreak/i)).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /^missions$/i })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /^new mission$/i })).toBeInTheDocument();
+    });
   });
 });

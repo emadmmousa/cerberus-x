@@ -66,14 +66,14 @@ class _FakeSession:
 
 
 def test_authz_default_allows(monkeypatch):
-    monkeypatch.delenv("CERBERUS_REQUIRE_AUTHZ", raising=False)
+    monkeypatch.delenv("FIREBREAK_REQUIRE_AUTHZ", raising=False)
     assert AuthorizationEnforcer.check("https://anything.example") is True
 
 
 def test_authz_enforced_allowlist(tmp_path, monkeypatch):
     path = tmp_path / "authorized_targets.json"
     path.write_text(json.dumps({"targets": ["lab.example"]}), encoding="utf-8")
-    monkeypatch.setenv("CERBERUS_REQUIRE_AUTHZ", "true")
+    monkeypatch.setenv("FIREBREAK_REQUIRE_AUTHZ", "true")
     monkeypatch.setenv("AUTHORIZED_TARGETS_FILE", str(path))
     assert AuthorizationEnforcer.check("https://lab.example/app") is True
     assert AuthorizationEnforcer.check("https://evil.example") is False

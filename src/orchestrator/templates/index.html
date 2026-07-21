@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Cerberus-X Dashboard</title>
+    <title>Firebreak Dashboard</title>
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         body { font-family: monospace; background: #0a0a0a; color: #0f0; padding: 20px; }
@@ -30,7 +30,7 @@
     </style>
 </head>
 <body>
-    <h1>CERBERUS-X DASHBOARD</h1>
+    <h1>Firebreak DASHBOARD</h1>
 
     <div class="panel">
         <div class="row">
@@ -155,7 +155,7 @@
             return data;
         }
 
-        socket.on('connect', () => addLog('Connected to Cerberus-X', 'INFO'));
+        socket.on('connect', () => addLog('Connected to Firebreak', 'INFO'));
         socket.on('log', (data) => addLog(data.message, data.level || 'INFO'));
         socket.on('msf_console_created', (data) => {
             consoleId = data && data.console ? data.console.id : null;

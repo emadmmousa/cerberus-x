@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${ROOT_DIR}"
 
-NAMESPACE="cerberus-x"
-RELEASE_NAME="cerberus"
+NAMESPACE="firebreak"
+RELEASE_NAME="firebreak"
 
 if ! command -v helm >/dev/null 2>&1; then
   echo "[-] helm is not installed. Install with: brew install helm"
@@ -13,17 +13,17 @@ if ! command -v helm >/dev/null 2>&1; then
   exec "${ROOT_DIR}/k8s/deploy.sh"
 fi
 
-echo "[+] Deploying Cerberus-X via Helm"
+echo "[+] Deploying Firebreak via Helm"
 
 kubectl create namespace "${NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
 
-helm upgrade --install "${RELEASE_NAME}" ./helm/cerberus \
+helm upgrade --install "${RELEASE_NAME}" ./helm/firebreak \
   --namespace "${NAMESPACE}" \
   --set redis.password="$(openssl rand -base64 16)" \
-  --set postgres.password="$(openssl rand -base64 16)" \
   --set metasploit.rpcPassword="$(openssl rand -base64 16)" \
-  --set ingress.host=cerberus.yourdomain.com
+  --set ingress.host=app.firebreak.com
 
 echo "[+] Helm deployment complete!"
-echo "Note: chart currently ships orchestrator template only; use ./k8s/deploy.sh for the full stack."
+echo "Chart includes orchestrator, worker, Redis, Elasticsearch, Metasploit, output PVC."
+echo "See helm/firebreak/README.md for firebreak.* values (Auth0, cost route, edition)."
 echo "Run: helm list -n ${NAMESPACE}"

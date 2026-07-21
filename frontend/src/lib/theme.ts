@@ -1,6 +1,6 @@
 export type Theme = "dark" | "light";
 
-export const THEME_STORAGE_KEY = "cerberus-theme";
+export const THEME_STORAGE_KEY = "firebreak-theme";
 
 export function isTheme(value: unknown): value is Theme {
   return value === "dark" || value === "light";

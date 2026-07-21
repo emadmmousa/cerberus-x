@@ -50,7 +50,7 @@ def test_export_target_reports_writes_json_and_html(tmp_path):
 
 def test_saving_phase_automatically_refreshes_target_report(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", str(tmp_path / "results.db"))
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path / "output"))
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path / "output"))
     database.init_db()
 
     database.save_phase_result(

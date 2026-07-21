@@ -46,7 +46,7 @@ class WAFMiddleware:
 
     @staticmethod
     def enabled() -> bool:
-        return os.environ.get("CERBERUS_WAF_ENABLED", "true").lower() not in {
+        return os.environ.get("FIREBREAK_WAF_ENABLED", "true").lower() not in {
             "0",
             "false",
             "no",

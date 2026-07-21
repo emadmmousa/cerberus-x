@@ -27,7 +27,7 @@ jobs:
           PYTHONPATH: src
           # Keep Celery from touching a real broker if a test misses a mock.
           CELERY_TASK_ALWAYS_EAGER: "true"
-          CERBERUS_LHOST: "10.9.8.7"
+          FIREBREAK_LHOST: "10.9.8.7"
         run: |
           pytest -q \
             tests/unit \
@@ -40,7 +40,65 @@ jobs:
             tests/test_payload_strategy.py \
             tests/test_cve_exploit_map.py \
             tests/test_llm_unrestricted.py \
-            tests/test_decision_engine.py
+            tests/test_decision_engine.py \
+            tests/test_ai_lab_api.py \
+            tests/test_ai_lab_consensus.py \
+            tests/test_router_cost.py \
+            tests/test_marketplace_heartbeat.py \
+            tests/test_blackboard.py \
+            tests/test_posture.py \
+            tests/test_dataset_rbac.py \
+            tests/test_pro_packaging.py \
+            tests/test_wave45_enterprise.py \
+            tests/test_playbook_catalog.py \
+            tests/test_prompt_guard.py \
+            tests/test_merge_contributions.py \
+            tests/test_merge_posture_seeds.py \
+            tests/test_training_export_scripts.py \
+            tests/test_publish_and_lab_seed.py \
+            tests/test_rbac_missions.py
+
+      - name: Forbidden brand scan
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          skip_dirs = {".git", "node_modules", ".venv", "venv", "__pycache__", ".superpowers", "output"}
+          skip_files = {"docs/RENAME_CUTOVER.md", ".env"}
+          needle = "cer" + "berus"
+          bad = []
+          for p in Path(".").rglob("*"):
+              if not p.is_file():
+                  continue
+              if any(x in p.parts for x in skip_dirs):
+                  continue
+              rel = p.as_posix()
+              if rel in skip_files:
+                  continue
+              if "static/app/assets" in rel:
+                  continue
+              if p.suffix.lower() in {".png", ".jpg", ".jpeg", ".woff", ".woff2", ".db", ".pyc"}:
+                  continue
+              try:
+                  text = p.read_text(encoding="utf-8", errors="ignore")
+              except Exception:
+                  continue
+              if needle in text.lower():
+                  bad.append(rel)
+          if bad:
+              print("Forbidden legacy brand identifiers remain:")
+              print("\n".join(bad[:100]))
+              raise SystemExit(1)
+          print("Brand scan clean.")
+          PY
+
+      - name: Firebreak eval + dataset dry-run
+        env:
+          PYTHONPATH: src
+        run: |
+          python training/scripts/eval_report.py
+          python training/scripts/merge_posture_seeds.py
+          python training/scripts/publish_dataset.py
 
       - name: Set up Node
         uses: actions/setup-node@v4

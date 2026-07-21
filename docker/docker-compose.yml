@@ -9,7 +9,7 @@
 services:
   redis:
     image: redis:alpine
-    container_name: cerberus-redis
+    container_name: firebreak-redis
     ports:
       - "6379:6379"
     volumes:
@@ -20,11 +20,11 @@ services:
       timeout: 3s
       retries: 5
     networks:
-      - cerberus-net
+      - firebreak-net
 
   postgres:
     image: postgres:16-alpine
-    container_name: cerberus-postgres
+    container_name: firebreak-postgres
     env_file:
       - path: ../.env
         required: true
@@ -38,14 +38,14 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - cerberus-net
+      - firebreak-net
 
   metasploit:
     build:
       # Repository root (parent of docker/)
       context: ..
       dockerfile: docker/metasploit.Dockerfile
-    container_name: cerberus-metasploit
+    container_name: firebreak-metasploit
     depends_on:
       postgres:
         condition: service_healthy
@@ -92,13 +92,13 @@ services:
       retries: 20
       start_period: 240s
     networks:
-      - cerberus-net
+      - firebreak-net
 
   orchestrator:
     build:
       context: ..
       dockerfile: docker/orchestrator.Dockerfile
-    container_name: cerberus-orchestrator
+    container_name: firebreak-orchestrator
     depends_on:
       redis:
         condition: service_healthy
@@ -115,30 +115,30 @@ services:
       - MSF_RPC_PORT=55553
       - MSF_RPC_SSL=false
       - MSF_RPC_VERIFY_SSL=false
-      - CERBERUS_OUTPUT_DIR=/app/output
-      - CERBERUS_DB_PATH=/app/output/results.db
-      - CERBERUS_ENV_FILE=/app/.env
-      - CERBERUS_MCP_ENABLED=${CERBERUS_MCP_ENABLED:-true}
-      - CERBERUS_MCP_API_KEY=${CERBERUS_MCP_API_KEY:-}
-      - CERBERUS_AI_REQUIRE_CONFIRM=${CERBERUS_AI_REQUIRE_CONFIRM:-false}
-      - CERBERUS_LLM_BASE_URL=${CERBERUS_LLM_BASE_URL:-http://ollama:11434/v1}
-      - CERBERUS_LLM_API_KEY=${CERBERUS_LLM_API_KEY:-ollama}
-      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-cerberus-firebreak}
-      - CERBERUS_LLM_BASE_MODEL=${CERBERUS_LLM_BASE_MODEL:-qwen2.5:7b}
-      - CERBERUS_MULTI_SCAFFOLD=${CERBERUS_MULTI_SCAFFOLD:-true}
-      - CERBERUS_SCAFFOLD_COST_ROUTE=${CERBERUS_SCAFFOLD_COST_ROUTE:-false}
-      - CERBERUS_LLM_FALLBACK_MODEL=${CERBERUS_LLM_FALLBACK_MODEL:-qwen2.5:7b}
-      - CERBERUS_EDITION=${CERBERUS_EDITION:-community}
-      - CERBERUS_MANAGED_HOSTING=${CERBERUS_MANAGED_HOSTING:-false}
-      - CERBERUS_CONTROL_PLANE_URL=${CERBERUS_CONTROL_PLANE_URL:-}
-      - CERBERUS_AUDIT_ES=${CERBERUS_AUDIT_ES:-false}
-      - CERBERUS_SCAFFOLD_EXTRA_BASE_URL=${CERBERUS_SCAFFOLD_EXTRA_BASE_URL:-}
-      - CERBERUS_SCAFFOLD_EXTRA_MODEL=${CERBERUS_SCAFFOLD_EXTRA_MODEL:-}
-      - CERBERUS_SCAFFOLD_EXTRA_API_KEY=${CERBERUS_SCAFFOLD_EXTRA_API_KEY:-}
-      - CERBERUS_SCAFFOLD_EXTRA_COST_PER_1K=${CERBERUS_SCAFFOLD_EXTRA_COST_PER_1K:-0.002}
-      - CERBERUS_LLM_UNRESTRICTED=${CERBERUS_LLM_UNRESTRICTED:-true}
-      - CERBERUS_LLM_TEMPERATURE=${CERBERUS_LLM_TEMPERATURE:-0.9}
-      - CERBERUS_LLM_TOP_P=${CERBERUS_LLM_TOP_P:-0.95}
+      - FIREBREAK_OUTPUT_DIR=/app/output
+      - FIREBREAK_DB_PATH=/app/output/results.db
+      - FIREBREAK_ENV_FILE=/app/.env
+      - FIREBREAK_MCP_ENABLED=${FIREBREAK_MCP_ENABLED:-true}
+      - FIREBREAK_MCP_API_KEY=${FIREBREAK_MCP_API_KEY:-}
+      - FIREBREAK_AI_REQUIRE_CONFIRM=${FIREBREAK_AI_REQUIRE_CONFIRM:-false}
+      - FIREBREAK_LLM_BASE_URL=${FIREBREAK_LLM_BASE_URL:-http://ollama:11434/v1}
+      - FIREBREAK_LLM_API_KEY=${FIREBREAK_LLM_API_KEY:-ollama}
+      - FIREBREAK_LLM_MODEL=${FIREBREAK_LLM_MODEL:-firebreak}
+      - FIREBREAK_LLM_BASE_MODEL=${FIREBREAK_LLM_BASE_MODEL:-qwen2.5:7b}
+      - FIREBREAK_MULTI_SCAFFOLD=${FIREBREAK_MULTI_SCAFFOLD:-true}
+      - FIREBREAK_SCAFFOLD_COST_ROUTE=${FIREBREAK_SCAFFOLD_COST_ROUTE:-false}
+      - FIREBREAK_LLM_FALLBACK_MODEL=${FIREBREAK_LLM_FALLBACK_MODEL:-qwen2.5:7b}
+      - FIREBREAK_EDITION=${FIREBREAK_EDITION:-community}
+      - FIREBREAK_MANAGED_HOSTING=${FIREBREAK_MANAGED_HOSTING:-false}
+      - FIREBREAK_CONTROL_PLANE_URL=${FIREBREAK_CONTROL_PLANE_URL:-}
+      - FIREBREAK_AUDIT_ES=${FIREBREAK_AUDIT_ES:-false}
+      - FIREBREAK_SCAFFOLD_EXTRA_BASE_URL=${FIREBREAK_SCAFFOLD_EXTRA_BASE_URL:-}
+      - FIREBREAK_SCAFFOLD_EXTRA_MODEL=${FIREBREAK_SCAFFOLD_EXTRA_MODEL:-}
+      - FIREBREAK_SCAFFOLD_EXTRA_API_KEY=${FIREBREAK_SCAFFOLD_EXTRA_API_KEY:-}
+      - FIREBREAK_SCAFFOLD_EXTRA_COST_PER_1K=${FIREBREAK_SCAFFOLD_EXTRA_COST_PER_1K:-0.002}
+      - FIREBREAK_LLM_UNRESTRICTED=${FIREBREAK_LLM_UNRESTRICTED:-true}
+      - FIREBREAK_LLM_TEMPERATURE=${FIREBREAK_LLM_TEMPERATURE:-0.9}
+      - FIREBREAK_LLM_TOP_P=${FIREBREAK_LLM_TOP_P:-0.95}
       # MSF_RPC_USER / MSF_RPC_PASSWORD come from ../.env via env_file
     volumes:
       - ../src:/app/src
@@ -154,11 +154,11 @@ services:
       - NET_ADMIN
     command: ["python", "-m", "orchestrator.dashboard"]
     networks:
-      - cerberus-net
+      - firebreak-net
 
   ollama:
     image: ollama/ollama:latest
-    container_name: cerberus-ollama
+    container_name: firebreak-ollama
     environment:
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
     volumes:
@@ -166,19 +166,19 @@ services:
     ports:
       - "127.0.0.1:11434:11434"
     networks:
-      - cerberus-net
+      - firebreak-net
     restart: unless-stopped
 
   ollama-pull:
     image: ollama/ollama:latest
-    container_name: cerberus-ollama-pull
+    container_name: firebreak-ollama-pull
     depends_on:
       - ollama
     environment:
       - OLLAMA_HOST=http://ollama:11434
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
-      - CERBERUS_LLM_BASE_MODEL=${CERBERUS_LLM_BASE_MODEL:-qwen2.5:7b}
-      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-cerberus-firebreak}
+      - FIREBREAK_LLM_BASE_MODEL=${FIREBREAK_LLM_BASE_MODEL:-qwen2.5:7b}
+      - FIREBREAK_LLM_MODEL=${FIREBREAK_LLM_MODEL:-firebreak}
     volumes:
       - ./ollama:/modelfiles:ro
     entrypoint: ["/bin/sh", "-c"]
@@ -188,16 +188,16 @@ services:
           ollama list >/dev/null 2>&1 && break
           sleep 2
         done
-        BASE="${CERBERUS_LLM_BASE_MODEL:-qwen2.5:7b}"
-        CUSTOM="${CERBERUS_LLM_MODEL:-cerberus-firebreak}"
+        BASE="${FIREBREAK_LLM_BASE_MODEL:-qwen2.5:7b}"
+        CUSTOM="${FIREBREAK_LLM_MODEL:-firebreak}"
         ollama pull "$${BASE}"
         if [ -f /modelfiles/Modelfile ]; then
-          sed "s/^FROM .*/FROM $${BASE}/" /modelfiles/Modelfile > /tmp/Modelfile.cerberus
-          ollama create "$${CUSTOM}" -f /tmp/Modelfile.cerberus
+          sed "s/^FROM .*/FROM $${BASE}/" /modelfiles/Modelfile > /tmp/Modelfile.firebreak
+          ollama create "$${CUSTOM}" -f /tmp/Modelfile.firebreak
           ollama list
         fi
     networks:
-      - cerberus-net
+      - firebreak-net
     restart: "no"
 
   worker:
@@ -219,7 +219,7 @@ services:
       - MSF_RPC_PORT=55553
       - MSF_RPC_SSL=false
       - MSF_RPC_VERIFY_SSL=false
-      - CERBERUS_OUTPUT_DIR=/app/output
+      - FIREBREAK_OUTPUT_DIR=/app/output
       # MSF_RPC_USER / MSF_RPC_PASSWORD come from ../.env via env_file
     volumes:
       - ../src:/app/src
@@ -231,13 +231,13 @@ services:
       replicas: 4
     command: ["celery", "-A", "orchestrator.tasks", "worker", "--concurrency=8", "--loglevel=info"]
     networks:
-      - cerberus-net
+      - firebreak-net
 
   beat:
     build:
       context: ..
       dockerfile: docker/worker.Dockerfile
-    container_name: cerberus-beat
+    container_name: firebreak-beat
     depends_on:
       redis:
         condition: service_healthy
@@ -247,13 +247,13 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379
       - PYTHONPATH=/app/src
-      - CERBERUS_OUTPUT_DIR=/app/output
+      - FIREBREAK_OUTPUT_DIR=/app/output
     volumes:
       - ../src:/app/src
       - ../output:/app/output
     command: ["celery", "-A", "orchestrator.celery_app", "beat", "--loglevel=INFO"]
     networks:
-      - cerberus-net
+      - firebreak-net
 
 volumes:
   redis_data:
@@ -261,5 +261,5 @@ volumes:
   ollama_data:
 
 networks:
-  cerberus-net:
+  firebreak-net:
     driver: bridge

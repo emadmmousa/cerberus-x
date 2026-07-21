@@ -59,7 +59,7 @@ def test_build_sqlmap_args_aggressive_includes_techniques_and_enum():
 
 
 def test_build_sqlmap_args_oob_when_dns_configured(monkeypatch):
-    monkeypatch.setenv("CERBERUS_SQLMAP_DNS_DOMAIN", "exfil.lab.invalid")
+    monkeypatch.setenv("FIREBREAK_SQLMAP_DNS_DOMAIN", "exfil.lab.invalid")
     args = sqli.build_sqlmap_args(sqli.sqli_profile("aggressive"))
     assert any("exfil.lab.invalid" in a for a in args)
 

@@ -17,7 +17,7 @@ confirmation gate**.
 4. Post-ex modules follow session/platform (Linux gather vs Windows gather);
    unknown platforms get three non-destructive multi modules (`env`, `checkvm`,
    `local_exploit_suggester`).
-5. Config: `CERBERUS_LHOST`, `CERBERUS_LPORT_START`, `CERBERUS_PAYLOAD_PREFER`.
+5. Config: `FIREBREAK_LHOST`, `FIREBREAK_LPORT_START`, `FIREBREAK_PAYLOAD_PREFER`.
 
 ## Status
 

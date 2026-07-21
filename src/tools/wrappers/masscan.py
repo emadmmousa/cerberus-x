@@ -8,6 +8,8 @@ import tempfile
 import time
 from urllib.parse import urlparse
 
+from tools.wrappers._argv import coerce_argv
+
 # Hard ceiling so a broken wait-loop can never block the orchestrator.
 DEFAULT_TIMEOUT_SECONDS = 45
 # TCP-connect fallback must stay bounded (LLM plans often pass wide -p ranges).
@@ -18,6 +20,9 @@ _DONE_RE = re.compile(r"100\.00%\s+done", re.IGNORECASE)
 _PORT_ARG_RE = re.compile(r"^-p(.+)$")
 # Flags that belong to nmap / other scanners — masscan will hang or misparse them.
 _FOREIGN_FLAGS = frozenset({"-sV", "-sS", "-sT", "-sU", "-A", "-O", "-Pn", "-n"})
+_OUTPUT_FLAGS = frozenset(
+    {"-oL", "-oJ", "-oX", "-oG", "-oN", "--output-format", "--output-filename"}
+)
 
 
 def _extract_host(target: str) -> str:
@@ -67,9 +72,11 @@ def sanitize_args(args: list[str] | None) -> list[str]:
     """Drop foreign/nmap flags and keep masscan invocations bounded."""
     if not args:
         return ["-p80,443,22,8080,8443", "--rate=1000", "--wait=0"]
+    # Expand "--rate=1000 --wait=0" style glued LLM tokens first.
+    expanded = coerce_argv(args)
     cleaned: list[str] = []
     skip_next = False
-    for arg in args:
+    for arg in expanded:
         if skip_next:
             skip_next = False
             continue
@@ -84,6 +91,21 @@ def sanitize_args(args: list[str] | None) -> list[str]:
         if arg.startswith("--limit"):
             # masscan has no --limit; LLMs often copy nmap-ish forms
             if arg == "--limit":
+                skip_next = True
+            continue
+        # We always force -oL ourselves; drop LLM invents like output=json / -oJ.
+        if arg in _OUTPUT_FLAGS or arg.startswith("output="):
+            if arg in _OUTPUT_FLAGS and "=" not in arg:
+                skip_next = True
+            continue
+        if arg.startswith("-o") and len(arg) <= 3:
+            skip_next = True
+            continue
+        # Strip rates here; re-add a clean numeric --rate below.
+        if arg in {"--rate", "-rate"} or arg.startswith("--rate=") or arg.startswith(
+            "-rate="
+        ):
+            if arg in {"--rate", "-rate"}:
                 skip_next = True
             continue
         cleaned.append(arg)
@@ -106,7 +128,8 @@ def sanitize_args(args: list[str] | None) -> list[str]:
             *without_p,
             f"-p{','.join(str(p) for p in (80, 443, 22, 8080, 8443))}",
         ]
-    return _force_wait_zero(cleaned)
+    cleaned = _force_wait_zero(cleaned)
+    return [*cleaned, "--rate=1000"]
 
 
 def _ports_from_args(args: list[str]) -> list[int]:

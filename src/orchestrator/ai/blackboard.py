@@ -29,7 +29,7 @@ def _org_scope(org_id: str | None = None) -> str:
     if org_id and str(org_id).strip():
         return str(org_id).strip()
     return (
-        os.environ.get("CERBERUS_DEFAULT_ORG") or "default"
+        os.environ.get("FIREBREAK_DEFAULT_ORG") or "default"
     ).strip() or "default"
 
 

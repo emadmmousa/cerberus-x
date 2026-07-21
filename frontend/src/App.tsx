@@ -1,17 +1,20 @@
-import { useState } from "react";
-import { MissionControl } from "./views/MissionControl";
+import { BrowserRouter } from "react-router-dom";
+import { AuthProvider } from "./providers/AuthProvider";
+import { ThemeProvider } from "./providers/ThemeProvider";
+import { AppRoutes } from "./routes";
+import { applyTheme, resolveInitialTheme } from "./lib/theme";
+
+// Avoid flash of wrong theme before React mounts.
+applyTheme(resolveInitialTheme());
 
 export default function App() {
-  const [target, setTarget] = useState("");
-
   return (
-    <div className="app-shell">
-      <nav className="app-nav">
-        <span className="app-nav__brand">CERBERUS-X</span>
-      </nav>
-      <main className="app-main">
-        <MissionControl target={target} onTargetChange={setTarget} />
-      </main>
-    </div>
+    <BrowserRouter>
+      <ThemeProvider>
+        <AuthProvider>
+          <AppRoutes />
+        </AuthProvider>
+      </ThemeProvider>
+    </BrowserRouter>
   );
 }

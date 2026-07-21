@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: grafana
-  namespace: cerberus-x
+  namespace: firebreak
   labels:
     app: grafana
 spec:
@@ -54,7 +54,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: grafana-pvc
-  namespace: cerberus-x
+  namespace: firebreak
 spec:
   accessModes:
     - ReadWriteOnce
@@ -66,7 +66,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-datasources
-  namespace: cerberus-x
+  namespace: firebreak
 data:
   prometheus.yaml: |
     apiVersion: 1
@@ -81,18 +81,18 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: grafana-dashboards
-  namespace: cerberus-x
+  namespace: firebreak
 data:
-  cerberus-dashboard.json: |
+  firebreak-dashboard.json: |
     {
-      "title": "Cerberus-X Dashboard",
+      "title": "Firebreak Dashboard",
       "panels": [
         {
           "title": "Jobs Per Minute",
           "type": "graph",
           "targets": [
             {
-              "expr": "rate(cerberus_jobs_total[1m])",
+              "expr": "rate(firebreak_jobs_total[1m])",
               "legendFormat": "{{tool}}"
             }
           ]
@@ -102,7 +102,7 @@ data:
           "type": "graph",
           "targets": [
             {
-              "expr": "cerberus_queue_length",
+              "expr": "firebreak_queue_length",
               "legendFormat": "queue"
             }
           ]
@@ -112,7 +112,7 @@ data:
           "type": "stat",
           "targets": [
             {
-              "expr": "sum(cerberus_jobs_success) / sum(cerberus_jobs_total)"
+              "expr": "sum(firebreak_jobs_success) / sum(firebreak_jobs_total)"
             }
           ]
         },
@@ -132,7 +132,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: grafana-service
-  namespace: cerberus-x
+  namespace: firebreak
 spec:
   selector:
     app: grafana

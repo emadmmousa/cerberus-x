@@ -1,4 +1,4 @@
-# Cerberus-X Developer Guide
+# Firebreak Developer Guide
 
 ## Architecture
 
@@ -57,16 +57,20 @@ Prefer HTTPS-first URL helpers (`tools.wrappers._web_url`) and proxy merge (`too
 - Profiles: `tools.waf_evasion.evasion_profile(level, target_waf=...)`
 - Inventory: `list_techniques()`
 - sqlmap merge: `tools.sql_injection.build_sqlmap_args(profile, existing=..., evasion=...)`
-- Intensity: `CERBERUS_SQLI_INTENSITY` or evasion level via `resolve_sqli_intensity()`
+- Intensity: `FIREBREAK_SQLI_INTENSITY` or evasion level via `resolve_sqli_intensity()`
 
 Docs: [`waf_evasion.md`](waf_evasion.md), [`sql_injection.md`](sql_injection.md).
 
-## AI / LLM
+## AI / LLM (Firebreak)
 
 - Client: `orchestrator.ai.llm.chat_completion`
-- Prompts: `orchestrator.ai.prompts` (`CERBERUS_LLM_UNRESTRICTED`)
+- Multi-scaffold router: `orchestrator.ai.router` (`FIREBREAK_MULTI_SCAFFOLD`, optional `FIREBREAK_SCAFFOLD_COST_ROUTE`)
+- Blackboard: `orchestrator.ai.blackboard`
+- Marketplace: `GET|POST|DELETE /api/scaffolds/marketplace`
+- Prompts: `orchestrator.ai.prompts` (`FIREBREAK_LLM_UNRESTRICTED`)
 - Safety gate: `orchestrator.ai.safety.require_confirm_for_tool` (default confirm **off**)
-- Modelfile: `docker/ollama/Modelfile` → model name `cerberus-x`
+- Modelfile: `docker/ollama/Modelfile` → `firebreak` on `qwen2.5:7b` (Compose: `docker compose run --rm ollama-pull`)
+- Training: `training/` + `make eval-report` / `make merge-posture`
 
 ## Payloads & exploits
 
@@ -77,11 +81,11 @@ Docs: [`waf_evasion.md`](waf_evasion.md), [`sql_injection.md`](sql_injection.md)
 ## Testing
 
 ```bash
-PYTHONPATH=src pytest -q
-cd frontend && npm test -- --run
+make test-firebreak
+make frontend-test
 ```
 
-CI: `.github/workflows/ci.yml` (unit + selected integration + frontend).
+CI: `.github/workflows/ci.yml` (unit + Firebreak suite + eval dry-run + frontend).
 
 ## Security notes for contributors
 

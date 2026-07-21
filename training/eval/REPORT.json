@@ -1,0 +1,50 @@
+{
+  "generated_at": "2026-07-21T01:45:38.839776+00:00",
+  "wave": "W2.4 internal (honest)",
+  "claims": {
+    "beats_csi": false,
+    "beats_alias2_mini": false,
+    "public_caibench": false,
+    "scraped_criminal_poc_training": false,
+    "note": "No competitive claims until measured public CAIBench numbers. No scraped criminal exploit PoC training."
+  },
+  "pass": true,
+  "checks": {
+    "planner_schema": {
+      "ok": 49,
+      "bad": 0,
+      "total": 49,
+      "pass_rate": 1.0,
+      "exit_code": 0
+    },
+    "security_qa": {
+      "ok": 25,
+      "total": 25,
+      "pass_rate": 1.0,
+      "exit_code": 0
+    },
+    "prompt_guard": {
+      "ok": true,
+      "detail": "wrap_tool_digest sanitizes injection in tool errors"
+    },
+    "posture": {
+      "ok": true,
+      "defensive_filters_offense": true
+    },
+    "consensus": {
+      "ok": true,
+      "pick_best_works": true
+    },
+    "seed_inventory": {
+      "ok": true,
+      "counts": {
+        "planner": 49,
+        "aggressive": 100,
+        "defensive": 100,
+        "balanced": 50,
+        "posture_merged": 250
+      },
+      "detail": "authorized seed inventory"
+    }
+  }
+}

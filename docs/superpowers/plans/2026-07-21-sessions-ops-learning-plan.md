@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship Redis-backed per-user sessions, Admin Ops toggles (Auto-Scale / Auto-Train / Learning Tick), FirebreakPanel bulk example load/submit, a daily merge+eval ML pipeline, and a per-minute mission harvest tick — all off by default.
+**Goal:** Ship Redis-backed per-user sessions, Admin Ops toggles (Auto-Scale / Auto-Train / Learning Tick), AiLabPanel bulk example load/submit, a daily merge+eval ML pipeline, and a per-minute mission harvest tick — all off by default.
 
 **Architecture:** Runtime ops flags live in `admin_store` (Redis) with env deferral, resolved by `orchestrator.ml.flags.effective_*()`. Celery beat always registers cheap periodic tasks that no-op when Off. Flask-Session stores sessions in Redis when a real Redis client is available. Bulk examples stay frontend-only against existing dataset APIs.
 
@@ -14,7 +14,7 @@
 
 - All schedulers default **Off**; env defer path when Admin override is `null`.
 - Effective resolution order: admin override → env → `false`.
-- QLoRA stays dry-run unless `CERBERUS_TRAIN_GPU` is truthy.
+- QLoRA stays dry-run unless `FIREBREAK_TRAIN_GPU` is truthy.
 - One-shot `POST /api/scale/auto` is **not** gated by Auto-Scale beat flag.
 - No new dataset contribute API; reuse `GET/POST /api/dataset/*`.
 - Conventional Commits for every commit step.
@@ -35,14 +35,14 @@
 | `src/orchestrator/dashboard.py` | Call session config on boot |
 | `requirements.txt` | `Flask-Session` |
 | `.env.example` | New env vars |
-| `frontend/src/components/FirebreakPanel.tsx` | Load all / Submit all |
+| `frontend/src/components/AiLabPanel.tsx` | Load all / Submit all |
 | `frontend/src/views/Admin.tsx` | Ops tab |
 | `frontend/src/api/client.ts` | `setOpsSettings` + types |
 | `tests/test_ops_flags.py` | Effective helpers + admin store |
 | `tests/test_ml_harvest.py` | Harvest + skip gate |
 | `tests/test_ml_auto_train.py` | Daily dry-run |
 | `tests/test_session_config.py` | Session config smoke |
-| `frontend/src/__tests__/FirebreakPanel.bulk.test.tsx` | Bulk UI |
+| `frontend/src/__tests__/AiLabPanel.bulk.test.tsx` | Bulk UI |
 | `frontend/src/__tests__/Admin.ops.test.tsx` | Ops tab |
 
 ---
@@ -86,9 +86,9 @@ def _clean_admin_store(monkeypatch):
         pass
     admin_store._settings.clear()
     for key in (
-        "CERBERUS_AUTO_SCALE",
-        "CERBERUS_AUTO_TRAIN",
-        "CERBERUS_LEARNING_TICK",
+        "FIREBREAK_AUTO_SCALE",
+        "FIREBREAK_AUTO_TRAIN",
+        "FIREBREAK_LEARNING_TICK",
     ):
         monkeypatch.delenv(key, raising=False)
     yield
@@ -108,14 +108,14 @@ def test_effective_defaults_false():
 
 
 def test_env_enables_when_no_override(monkeypatch):
-    monkeypatch.setenv("CERBERUS_AUTO_SCALE", "true")
+    monkeypatch.setenv("FIREBREAK_AUTO_SCALE", "true")
     from orchestrator.ml.flags import effective_auto_scale
 
     assert effective_auto_scale() is True
 
 
 def test_admin_override_beats_env(monkeypatch):
-    monkeypatch.setenv("CERBERUS_AUTO_SCALE", "true")
+    monkeypatch.setenv("FIREBREAK_AUTO_SCALE", "true")
     from security import admin_store
     from orchestrator.ml.flags import effective_auto_scale
 
@@ -144,7 +144,7 @@ def test_get_settings_includes_ops_keys():
 
 - [ ] **Step 2: Run test to verify it fails**
 
-Run: `cd /Users/emadmousa/cerberus-x && PYTHONPATH=src pytest tests/test_ops_flags.py -v`  
+Run: `cd /Users/emadmousa/firebreak && PYTHONPATH=src pytest tests/test_ops_flags.py -v`  
 Expected: FAIL (module / functions missing)
 
 - [ ] **Step 3: Implement admin_store ops + flags module**
@@ -222,19 +222,19 @@ def _resolve(override: Optional[bool], env_name: str) -> bool:
 def effective_auto_scale() -> bool:
     from security.admin_store import auto_scale_override
 
-    return _resolve(auto_scale_override(), "CERBERUS_AUTO_SCALE")
+    return _resolve(auto_scale_override(), "FIREBREAK_AUTO_SCALE")
 
 
 def effective_auto_train() -> bool:
     from security.admin_store import auto_train_override
 
-    return _resolve(auto_train_override(), "CERBERUS_AUTO_TRAIN")
+    return _resolve(auto_train_override(), "FIREBREAK_AUTO_TRAIN")
 
 
 def effective_learning_tick() -> bool:
     from security.admin_store import learning_tick_override
 
-    return _resolve(learning_tick_override(), "CERBERUS_LEARNING_TICK")
+    return _resolve(learning_tick_override(), "FIREBREAK_LEARNING_TICK")
 ```
 
 - [ ] **Step 4: Run tests — expect PASS**
@@ -270,7 +270,7 @@ EOF
 
 ```python
 def test_admin_ops_put_and_get_effective(monkeypatch):
-    monkeypatch.setenv("CERBERUS_AUTO_SCALE", "false")
+    monkeypatch.setenv("FIREBREAK_AUTO_SCALE", "false")
     from orchestrator import dashboard
 
     c = dashboard.app.test_client()
@@ -316,7 +316,7 @@ from orchestrator.ml.flags import (
     "learning_tick": effective_learning_tick(),
 },
 "secret_key_insecure": (
-    os.environ.get("SECRET_KEY", "cerberus-x-secret") == "cerberus-x-secret"
+    os.environ.get("SECRET_KEY", "firebreak-secret") == "firebreak-secret"
 ),
 ```
 
@@ -380,7 +380,7 @@ EOF
 ```python
 # tests/test_celery_ops_gates.py
 def test_scale_tick_skips_when_off(monkeypatch):
-    monkeypatch.delenv("CERBERUS_AUTO_SCALE", raising=False)
+    monkeypatch.delenv("FIREBREAK_AUTO_SCALE", raising=False)
     from security import admin_store
 
     admin_store._settings.clear()
@@ -506,7 +506,7 @@ def _register_ops_periodic_tasks(sender, **kwargs):
 
     sender.add_periodic_task(30.0, scale_workers_tick.s(), name="scale-workers")
     sender.add_periodic_task(60.0, learning_tick_task.s(), name="learning-tick")
-    hour = int(os.environ.get("CERBERUS_AUTO_TRAIN_HOUR") or "3")
+    hour = int(os.environ.get("FIREBREAK_AUTO_TRAIN_HOUR") or "3")
     sender.add_periodic_task(
         crontab(minute=0, hour=max(0, min(hour, 23))),
         daily_pipeline_task.s(),
@@ -555,7 +555,7 @@ from pathlib import Path
 
 
 def test_harvest_completed_mission_once(tmp_path, monkeypatch):
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path))
     from orchestrator.job_store import playbook_jobs
     from orchestrator.ml.harvest import run_learning_tick, HARVESTED_KEY
     from utils.redis_utils import get_redis
@@ -606,13 +606,13 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
-HARVESTED_KEY = "cerberus:ml:harvested"
+HARVESTED_KEY = "firebreak:ml:harvested"
 TERMINAL = frozenset({"SUCCESS", "FAILURE", "STOPPED", "REVOKED"})
 
 
 def _output_dir() -> Path:
     return Path(
-        os.environ.get("CERBERUS_OUTPUT_DIR")
+        os.environ.get("FIREBREAK_OUTPUT_DIR")
         or (Path(__file__).resolve().parents[3] / "output")
     )
 
@@ -760,8 +760,8 @@ EOF
 
 ```python
 def test_daily_pipeline_dry_run(tmp_path, monkeypatch):
-    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path))
-    monkeypatch.delenv("CERBERUS_TRAIN_GPU", raising=False)
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.delenv("FIREBREAK_TRAIN_GPU", raising=False)
     from orchestrator.ml.auto_train import run_daily_pipeline
 
     result = run_daily_pipeline()
@@ -798,7 +798,7 @@ def _repo_root() -> Path:
 
 
 def _output_dir() -> Path:
-    return Path(os.environ.get("CERBERUS_OUTPUT_DIR") or (_repo_root() / "output"))
+    return Path(os.environ.get("FIREBREAK_OUTPUT_DIR") or (_repo_root() / "output"))
 
 
 def _env_truthy(name: str) -> bool:
@@ -850,7 +850,7 @@ def run_daily_pipeline() -> dict[str, Any]:
     steps["schema_eval"] = _run_script("training/scripts/eval_planner_schema.py")
     steps["security_qa"] = _run_script("training/scripts/eval_security_qa.py")
 
-    gpu = _env_truthy("CERBERUS_TRAIN_GPU")
+    gpu = _env_truthy("FIREBREAK_TRAIN_GPU")
     steps["qlora"] = {
         "gpu_train": gpu,
         "mode": "real" if gpu else "dry_run",
@@ -949,7 +949,7 @@ def test_configure_sessions_cookie_fallback(monkeypatch):
 def test_default_secret_flag():
     from orchestrator.session_config import secret_key_is_insecure
 
-    assert secret_key_is_insecure("cerberus-x-secret") is True
+    assert secret_key_is_insecure("firebreak-secret") is True
     assert secret_key_is_insecure("real-secret") is False
 ```
 
@@ -967,7 +967,7 @@ from datetime import timedelta
 from typing import Any
 
 logger = logging.getLogger(__name__)
-DEFAULT_SECRET = "cerberus-x-secret"
+DEFAULT_SECRET = "firebreak-secret"
 
 
 def secret_key_is_insecure(secret: str | None = None) -> bool:
@@ -976,7 +976,7 @@ def secret_key_is_insecure(secret: str | None = None) -> bool:
 
 
 def configure_sessions(app, *, force_cookie: bool = False) -> dict[str, Any]:
-    secure = (os.environ.get("CERBERUS_SESSION_SECURE") or "").lower() in {
+    secure = (os.environ.get("FIREBREAK_SESSION_SECURE") or "").lower() in {
         "1",
         "true",
         "yes",
@@ -1007,7 +1007,7 @@ def configure_sessions(app, *, force_cookie: bool = False) -> dict[str, Any]:
 
         app.config["SESSION_TYPE"] = "redis"
         app.config["SESSION_REDIS"] = client
-        app.config["SESSION_KEY_PREFIX"] = "cerberus:sess:"
+        app.config["SESSION_KEY_PREFIX"] = "firebreak:sess:"
         app.config["SESSION_USE_SIGNER"] = True
         app.config["SESSION_PERMANENT"] = False
         Session(app)
@@ -1031,12 +1031,12 @@ configure_sessions(app)
 
 ```
 # Server-side sessions (Flask-Session → Redis). Secure cookie flag for HTTPS.
-CERBERUS_SESSION_SECURE=false
+FIREBREAK_SESSION_SECURE=false
 # Daily ML + learning tick (also toggleable in Admin → Ops)
-CERBERUS_AUTO_TRAIN=false
-CERBERUS_AUTO_TRAIN_HOUR=3
-CERBERUS_LEARNING_TICK=false
-CERBERUS_TRAIN_GPU=false
+FIREBREAK_AUTO_TRAIN=false
+FIREBREAK_AUTO_TRAIN_HOUR=3
+FIREBREAK_LEARNING_TICK=false
+FIREBREAK_TRAIN_GPU=false
 ```
 
 - [ ] **Step 4: PASS** + `pip install Flask-Session==0.8.0` in the env used by tests
@@ -1055,11 +1055,11 @@ EOF
 
 ---
 
-### Task 7: FirebreakPanel — Load all / Submit all
+### Task 7: AiLabPanel — Load all / Submit all
 
 **Files:**
-- Modify: `frontend/src/components/FirebreakPanel.tsx`
-- Create: `frontend/src/__tests__/FirebreakPanel.bulk.test.tsx`
+- Modify: `frontend/src/components/AiLabPanel.tsx`
+- Create: `frontend/src/__tests__/AiLabPanel.bulk.test.tsx`
 - Optional: `frontend/src/api/client.ts` (no API change required)
 
 **Interfaces:**
@@ -1069,16 +1069,16 @@ EOF
 - [ ] **Step 1: Failing Vitest**
 
 ```tsx
-// frontend/src/__tests__/FirebreakPanel.bulk.test.tsx
+// frontend/src/__tests__/AiLabPanel.bulk.test.tsx
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import { FirebreakPanel } from "../components/FirebreakPanel";
+import { AiLabPanel } from "../components/AiLabPanel";
 
 vi.mock("../api/client", async () => {
   const actual = await vi.importActual<typeof import("../api/client")>("../api/client");
   return {
     ...actual,
-    getFirebreakStatus: vi.fn(async () => ({ model: "m", base_model: "b" })),
+    getAiLabStatus: vi.fn(async () => ({ model: "m", base_model: "b" })),
     getScaffolds: vi.fn(async () => ({ health: [] })),
     getMarketplace: vi.fn(async () => null),
     getEditionStatus: vi.fn(async () => ({})),
@@ -1096,7 +1096,7 @@ vi.mock("../api/client", async () => {
 import { contributeDataset } from "../api/client";
 
 test("load all stages examples and submit all contributes each", async () => {
-  render(<FirebreakPanel />);
+  render(<AiLabPanel />);
   const loadAll = await screen.findByRole("button", { name: /load all/i });
   fireEvent.click(loadAll);
   expect(await screen.findByText(/2 selected|2 ready/i)).toBeTruthy();
@@ -1111,9 +1111,9 @@ Adjust matchers to the exact copy you implement (`Load all (posture)`, `Submit a
 
 - [ ] **Step 2: Run — FAIL**
 
-`cd frontend && npm test -- --run src/__tests__/FirebreakPanel.bulk.test.tsx`
+`cd frontend && npm test -- --run src/__tests__/AiLabPanel.bulk.test.tsx`
 
-- [ ] **Step 3: Implement UI in FirebreakPanel**
+- [ ] **Step 3: Implement UI in AiLabPanel**
 
 State:
 
@@ -1167,8 +1167,8 @@ Extend `ContribExample` with optional `posture?: string`.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add frontend/src/components/FirebreakPanel.tsx \
-  frontend/src/__tests__/FirebreakPanel.bulk.test.tsx
+git add frontend/src/components/AiLabPanel.tsx \
+  frontend/src/__tests__/AiLabPanel.bulk.test.tsx
 git commit -m "$(cat <<'EOF'
 feat(ui): add load-all and submit-all dataset examples
 
@@ -1271,7 +1271,7 @@ EOF
 - [ ] **Step 2: Run full relevant suites**
 
 ```bash
-cd /Users/emadmousa/cerberus-x
+cd /Users/emadmousa/firebreak
 PYTHONPATH=src pytest tests/test_ops_flags.py tests/test_celery_ops_gates.py \
   tests/test_ml_harvest.py tests/test_ml_auto_train.py tests/test_session_config.py \
   tests/test_admin_console.py -v

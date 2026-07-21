@@ -48,8 +48,8 @@ Document in `.env.example` with blank credentials:
 - `OXYLABS_PROXY_USERNAME`
 - `OXYLABS_PROXY_PASSWORD`
 - `OXYLABS_PROXY_PROTOCOL` (default `http`; allowed: `http`, `https`, `socks5h`)
-- `CERBERUS_LOCAL_PROXY_HOST` (default `127.0.0.1`)
-- `CERBERUS_LOCAL_PROXY_PORT` (default `18080`)
+- `FIREBREAK_LOCAL_PROXY_HOST` (default `127.0.0.1`)
+- `FIREBREAK_LOCAL_PROXY_PORT` (default `18080`)
 
 Compose already loads `.env` into workers. Kubernetes: host/port/protocol in ConfigMap; username/password via `secretKeyRef` on the **worker** deployment only. Helm must use `existingSecret` for credentials (no plaintext values in `values.yaml`).
 
@@ -78,7 +78,7 @@ Responsibilities:
 ### Local credential-isolating forwarder
 
 - Runs on each worker (in-process thread/process or sidecar).
-- Listens on `CERBERUS_LOCAL_PROXY_HOST:CERBERUS_LOCAL_PROXY_PORT`.
+- Listens on `FIREBREAK_LOCAL_PROXY_HOST:FIREBREAK_LOCAL_PROXY_PORT`.
 - Upstream target: Oxylabs endpoint using protocol from env / per-run override.
 - Injects Basic auth toward Oxylabs; tools talk to localhost without credentials.
 - Health check required before proxied tool execution; failure returns a clear error without leaking secrets.
@@ -137,7 +137,7 @@ Extend `POST /api/run` JSON body:
 ### Visual system
 
 - Dark tactical ops console: near-black canvas, cyan / amber / red status language, sharp geometry.
-- Brand “CERBERUS-X” as a hero-level signal on the mission launch surface.
+- Brand “Firebreak” as a hero-level signal on the mission launch surface.
 - Expressive typography (not Inter/Roboto/Arial/system defaults).
 - Atmospheric background (subtle grid / noise / gradient layers)—not flat single-color.
 - Avoid purple-on-white, cream+terracotta, and broadsheet newspaper layouts.

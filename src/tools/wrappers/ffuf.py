@@ -57,6 +57,28 @@ def _cdn_backoff(args: list[str], evasion: dict) -> list[str]:
     args = _drop_flag(args, "-ac", "--auto-calibrate")
     args = _drop_flag(args, "-t")
     args = _drop_flag(args, "-rate")
+    # Drop flood of stealth -H headers under CDN — they often trigger WAF challenges.
+    stripped: list[str] = []
+    skip = False
+    header_count = 0
+    for index, arg in enumerate(args):
+        if skip:
+            skip = False
+            continue
+        if arg in {"-H", "--header"}:
+            # Keep at most one User-Agent style header if present; drop IP spoof noise.
+            if index + 1 < len(args):
+                value = str(args[index + 1])
+                skip = True
+                lower = value.lower()
+                if header_count == 0 and (
+                    lower.startswith("user-agent:") or lower.startswith("accept:")
+                ):
+                    stripped.extend([arg, value])
+                    header_count += 1
+            continue
+        stripped.append(arg)
+    args = stripped
     # Slow, small bursts; keep total wall time bounded.
     args.extend(["-t", "5", "-rate", "8"])
     if "-maxtime" not in args:
@@ -74,18 +96,30 @@ def _cdn_backoff(args: list[str], evasion: dict) -> list[str]:
 
 
 def _looks_like_cdn_stall(output: str) -> bool:
+    """True only when the *final* progress line shows zero throughput + errors."""
     text = output or ""
-    if "Maximum running time" not in text and "maxtime" not in text.lower():
-        # Still detect zero-throughput stalls even if process was killed otherwise.
-        pass
-    # Progress stuck near start with mounting Errors and ~0 req/sec.
-    if re.search(r"::\s*0 req/sec\s*::", text) and re.search(
-        r"Errors:\s*([4-9]\d|\d{3,})", text
-    ):
-        return True
-    if re.search(r"Progress:\s*\[\d+/4\d{3}\].*0 req/sec", text) and "Errors:" in text:
-        return True
-    return False
+    # Prefer the last progress line — early "0 req/sec" is normal at startup.
+    progress_lines = [
+        line
+        for line in text.splitlines()
+        if "Progress:" in line and "req/sec" in line
+    ]
+    if not progress_lines:
+        return False
+    last = _ANSI_RE.sub("", progress_lines[-1])
+    if not re.search(r"::\s*0 req/sec\s*::", last):
+        return False
+    errors = re.search(r"Errors:\s*(\d+)", last)
+    if not errors or int(errors.group(1)) < 4:
+        return False
+    # Require that we barely moved (stuck near start) OR hit max time with 0 rps.
+    prog = re.search(r"Progress:\s*\[(\d+)/(\d+)\]", last)
+    if prog:
+        done, total = int(prog.group(1)), int(prog.group(2))
+        if total > 0 and done / total > 0.15 and "Maximum running time" not in text:
+            # Made meaningful progress earlier; final 0 rps is often end-of-run noise.
+            return False
+    return True
 
 
 def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
@@ -137,7 +171,7 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
             fixed.extend(["-w", WORDLIST])
         else:
             # Ephemeral fallback so LLM /dev/shm paths don't break the run
-            fallback = "/tmp/cerberus-ffuf-words.txt"
+            fallback = "/tmp/firebreak-ffuf-words.txt"
             try:
                 with open(fallback, "w", encoding="utf-8") as handle:
                     handle.write("admin\nlogin\napi\nrobots.txt\n.git\n")

@@ -2,7 +2,7 @@
 
 **Date:** 2026-07-21  
 **Status:** Approved for planning  
-**Repo:** Cerberus-X / Firebreak
+**Repo:** Firebreak / Firebreak
 
 ## Problem
 
@@ -17,7 +17,7 @@ Five operator needs land together:
 ## Goals
 
 - Server-side Redis sessions so each authenticated user has an isolated, revokeable session that works across orchestrator replicas.
-- FirebreakPanel: **Load all (posture)** + **Submit all (CC-BY)** without changing the dataset API contract.
+- AiLabPanel: **Load all (posture)** + **Submit all (CC-BY)** without changing the dataset API contract.
 - Opt-in Celery beat: daily merge+eval pipeline; per-minute harvest + scaffold refresh.
 - Admin **Ops** tab for Auto-Scale / Auto-Train / Learning Tick with runtime overrides stored in `admin_store` (Redis), effective helpers used by beat tasks.
 - All schedulers **off by default**; env flags remain the defer path.
@@ -73,11 +73,11 @@ Effective flag resolution (same order as RBAC):
 - In `dashboard.py` after `SECRET_KEY` is set:
   - Prefer Redis session interface when `flask_session` + Redis are available.
   - `SESSION_TYPE=redis`, `SESSION_REDIS` = shared Redis client / URL (same construction as Celery `REDIS_URL`).
-  - Key prefix `cerberus:sess:`.
+  - Key prefix `firebreak:sess:`.
   - `SESSION_USE_SIGNER=True`, `SESSION_PERMANENT=False` (or short lifetime via `PERMANENT_SESSION_LIFETIME`, default 12h).
-  - Cookie: `HttpOnly`, `SameSite=Lax`, `Secure` when `CERBERUS_SESSION_SECURE` is true (or when request is HTTPS / `PREFERRED_URL_SCHEME=https`).
+  - Cookie: `HttpOnly`, `SameSite=Lax`, `Secure` when `FIREBREAK_SESSION_SECURE` is true (or when request is HTTPS / `PREFERRED_URL_SCHEME=https`).
 - If Flask-Session or Redis is unavailable: keep today’s cookie sessions and log a warning (dev/lab fallback).
-- When `SECRET_KEY` is still the hardcoded default `cerberus-x-secret`, log a warning on startup. When `rbac_enforce` is effective, surface `secret_key_insecure: true` on `GET /api/admin/settings` so Admin can see the misconfiguration; do not crash the process.
+- When `SECRET_KEY` is still the hardcoded default `firebreak-secret`, log a warning on startup. When `rbac_enforce` is effective, surface `secret_key_insecure: true` on `GET /api/admin/settings` so Admin can see the misconfiguration; do not crash the process.
 
 ### Unchanged
 
@@ -87,7 +87,7 @@ Effective flag resolution (same order as RBAC):
 
 - `requirements.txt` — `Flask-Session`
 - `src/orchestrator/dashboard.py` — session init helper
-- `.env.example` — `CERBERUS_SESSION_SECURE`, note on `SECRET_KEY`
+- `.env.example` — `FIREBREAK_SESSION_SECURE`, note on `SECRET_KEY`
 
 ---
 
@@ -95,7 +95,7 @@ Effective flag resolution (same order as RBAC):
 
 ### Behavior
 
-In `FirebreakPanel` Dataset contribute section:
+In `AiLabPanel` Dataset contribute section:
 
 1. Keep posture select + single-example listbox.
 2. Add **Load all (posture)** — stages every example currently in `examples` (already fetched for the selected posture / “all”) into a checklist preview; all checked by default.
@@ -111,7 +111,7 @@ No backend change. Reuse:
 
 ### Files
 
-- `frontend/src/components/FirebreakPanel.tsx`
+- `frontend/src/components/AiLabPanel.tsx`
 - Optional small helper in `frontend/src/api/client.ts` if batch helper improves tests
 - Vitest coverage for load-all staging and submit-all call count
 
@@ -127,18 +127,18 @@ Module `orchestrator/ml/auto_train.py`:
   1. Merge contributions JSONL + posture seeds (reuse existing merge scripts / pipeline helpers where possible).
   2. Run planner schema eval + security QA eval (dry-run safe).
   3. Write report under `output/ml/daily_report.json` (plus a short `.md` sibling) and `audit_log("AUTO_TRAIN_DAILY", …)`.
-  4. QLoRA: **dry-run only** unless `CERBERUS_TRAIN_GPU` is truthy; never block the beat worker on a multi-hour train without that flag.
+  4. QLoRA: **dry-run only** unless `FIREBREAK_TRAIN_GPU` is truthy; never block the beat worker on a multi-hour train without that flag.
 
 ### Scheduling
 
 - Celery task `orchestrator.ml.daily_pipeline` registered from `celery_app.py`.
-- Crontab hour from `CERBERUS_AUTO_TRAIN_HOUR` (default `3` UTC).
+- Crontab hour from `FIREBREAK_AUTO_TRAIN_HOUR` (default `3` UTC).
 - Task body **first line**: if not `effective_auto_train()`, return `{"skipped": true}` (so Admin Off stops work without worker restart).
 - Beat may always register the periodic entry; the effective check is the gate.
 
 ### Env / Admin
 
-- Env: `CERBERUS_AUTO_TRAIN`, `CERBERUS_AUTO_TRAIN_HOUR`, `CERBERUS_TRAIN_GPU`
+- Env: `FIREBREAK_AUTO_TRAIN`, `FIREBREAK_AUTO_TRAIN_HOUR`, `FIREBREAK_TRAIN_GPU`
 - Admin override: `auto_train` in settings
 
 ---
@@ -151,7 +151,7 @@ Module `orchestrator/ml/harvest.py`:
 
 - `learning_tick()`:
   1. Scan recent completed missions in `playbook_jobs` (SUCCESS / terminal states).
-  2. For each not yet harvested (track ids in Redis set `cerberus:ml:harvested` or append-only marker), write a planner-shaped prompt→response pair to `output/dataset/harvest.jsonl` (PII redaction via `dataset.pipeline.redact_pii` / `normalize_record`).
+  2. For each not yet harvested (track ids in Redis set `firebreak:ml:harvested` or append-only marker), write a planner-shaped prompt→response pair to `output/dataset/harvest.jsonl` (PII redaction via `dataset.pipeline.redact_pii` / `normalize_record`).
   3. Call `scaffolds.health_all()` (or equivalent) to refresh latency EMA / health used by the router.
   4. Return counts; audit only on non-zero harvest or errors (avoid log spam).
 
@@ -162,7 +162,7 @@ Module `orchestrator/ml/harvest.py`:
 
 ### Env / Admin
 
-- Env: `CERBERUS_LEARNING_TICK`
+- Env: `FIREBREAK_LEARNING_TICK`
 - Admin override: `learning_tick`
 
 ---
@@ -176,7 +176,7 @@ New Admin tab **Ops** (`frontend/src/views/Admin.tsx`):
 | Control | Values | Copy |
 |---------|--------|------|
 | Auto-Scale | On / Off / Defer to env | Celery beat scales workers every ~30s when on |
-| Auto-Train (daily) | On / Off / Defer to env | Nightly merge + eval; GPU train only if `CERBERUS_TRAIN_GPU` |
+| Auto-Train (daily) | On / Off / Defer to env | Nightly merge + eval; GPU train only if `FIREBREAK_TRAIN_GPU` |
 | Learning Tick | On / Off / Defer to env | Every minute: harvest missions + refresh scaffolds |
 
 Show **effective** state under each control (like RBAC).
@@ -200,7 +200,7 @@ API:
 
 ### Auto-Scale wiring
 
-- Replace raw `os.environ["CERBERUS_AUTO_SCALE"]` checks in `celery_app.py` scale tick with `effective_auto_scale()`.
+- Replace raw `os.environ["FIREBREAK_AUTO_SCALE"]` checks in `celery_app.py` scale tick with `effective_auto_scale()`.
 - Register the scale periodic task always (or register always and no-op inside), so Admin On works without process restart; Off skips work inside the tick.
 - One-shot `POST /api/scale/auto` remains available for manual scale regardless of the beat flag (document that; do not block one-shot behind the flag).
 

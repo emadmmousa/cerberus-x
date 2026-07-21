@@ -6,7 +6,7 @@ from orchestrator.ai.runner import run_ai_mission
 
 
 def test_runner_skips_high_risk_without_confirm(monkeypatch):
-    monkeypatch.setenv("CERBERUS_AI_REQUIRE_CONFIRM", "true")
+    monkeypatch.setenv("FIREBREAK_AI_REQUIRE_CONFIRM", "true")
     plans = [
         {
             "phase_name": "ai_step_0",
@@ -128,3 +128,99 @@ def test_runner_continues_after_phase_timeout(monkeypatch):
     assert any("timed out" in m for m in logs)
     assert job.get("results", {}).get("Reconnaissance")
     assert job["ai"].get("finished_at")
+
+
+def test_runner_skips_already_completed_tools(monkeypatch):
+    plans = [
+        {
+            "phase_name": "ai_recon",
+            "tools": [
+                {"tool": "nmap", "args": ["-sV"]},
+                {"tool": "nmap", "args": ["-sV", "-p80"]},
+                {"tool": "whatweb", "args": ["-a", "3"]},
+            ],
+            "parallel": True,
+            "stop": False,
+            "reason": "recon",
+            "source": "llm",
+        },
+        {
+            "phase_name": "ai_recon",
+            "tools": [{"tool": "nmap", "args": ["-sV"]}],
+            "parallel": True,
+            "stop": False,
+            "reason": "recon again",
+            "source": "llm",
+        },
+        {
+            "phase_name": "done",
+            "tools": [],
+            "parallel": False,
+            "stop": True,
+            "reason": "done",
+            "source": "heuristic",
+        },
+    ]
+    calls = {"n": 0, "enqueued": []}
+
+    def fake_plan(*_a, **_k):
+        i = min(calls["n"], len(plans) - 1)
+        calls["n"] += 1
+        return plans[i]
+
+    class FakeAsync:
+        id = "grp-1"
+        children = []
+
+        def revoke(self, **_k):
+            return None
+
+        def successful(self):
+            return True
+
+        @property
+        def result(self):
+            return [
+                {"tool": "nmap", "ports": [{"port": "443"}]},
+                {"tool": "whatweb", "raw_output": "ok"},
+            ]
+
+    class FakeWorkflow:
+        def apply_async(self):
+            return FakeAsync()
+
+    def fake_build(phase_name, tools, *_a, **_k):
+        calls["enqueued"].append([t["tool"] for t in tools])
+        return FakeWorkflow()
+
+    monkeypatch.setattr("orchestrator.ai.planner.suggest_next_phase", fake_plan)
+    monkeypatch.setattr("orchestrator.ai.runner.build_phase_workflow", fake_build)
+    monkeypatch.setattr(
+        "orchestrator.ai.runner.collect_group_results",
+        lambda async_result, timeout=None: async_result.result,
+    )
+    monkeypatch.setattr("orchestrator.ai.runner.save_phase_result", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "orchestrator.ai.runner.DecisionEngine",
+        lambda *a, **k: type("DE", (), {"evaluate_phase": lambda *x, **y: None})(),
+    )
+    monkeypatch.setattr("orchestrator.ai.memory.remember", lambda *a, **k: 1)
+
+    job = {}
+    logs = []
+    run_ai_mission(
+        job=job,
+        job_id="j3",
+        target="example.com",
+        use_proxy=False,
+        proxy_protocol="http",
+        evasion={},
+        confirm_high_risk=True,
+        max_steps=5,
+        add_log=logs.append,
+    )
+    # First phase: nmap once + whatweb (intra-plan dedupe).
+    assert calls["enqueued"][0] == ["nmap", "whatweb"]
+    # Second identical recon plan should be skipped entirely.
+    assert any("already-completed" in m or "No new tools" in m for m in logs)
+    assert len(calls["enqueued"]) == 1

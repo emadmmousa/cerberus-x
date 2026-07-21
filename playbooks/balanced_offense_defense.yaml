@@ -1,0 +1,41 @@
+name: Balanced Offense + Defense
+description: >
+  Authorized aggressive discovery/vuln checks, then defensive exposure-style
+  scanners. Use for best dual results on in-scope targets.
+evasion: low
+phases:
+  - name: recon
+    tools:
+      - tool: rustscan
+        args: ["--ulimit", "5000", "--top"]
+      - tool: nmap
+        args: ["-sV", "-p21,22,80,443,8080,8443", "-T4"]
+      - tool: whatweb
+        args: ["-a", "3"]
+    parallel: true
+  - name: discovery
+    tools:
+      - tool: ffuf
+        args: ["-ac"]
+      - tool: gobuster
+        args: ["dir"]
+    parallel: false
+    depends_on: ["recon"]
+  - name: offense_vuln
+    tools:
+      - tool: nuclei
+        args: ["-severity", "critical,high,medium", "-silent"]
+      - tool: nikto
+        args: ["-maxtime", "90"]
+      - tool: sqlmap
+        args: ["--batch", "--forms", "--level=2", "--risk=2"]
+    parallel: false
+    depends_on: ["discovery"]
+  - name: defense_exposure
+    tools:
+      - tool: nuclei
+        args: ["-tags", "misconfig,exposure,ssl", "-silent"]
+      - tool: theharvester
+        args: ["-b", "bing"]
+    parallel: false
+    depends_on: ["offense_vuln"]

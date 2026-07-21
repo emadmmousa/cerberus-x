@@ -9,7 +9,7 @@ from urllib.parse import quote, unquote, urlparse
 
 ALLOWED_PROTOCOLS = frozenset({"http", "https", "socks5h"})
 
-REDIS_KEY = "cerberus:proxy:settings"
+REDIS_KEY = "firebreak:proxy:settings"
 
 _REQUIRED = ("username", "password", "host", "port", "protocol")
 _memory_store: dict[str, str] = {}
@@ -69,7 +69,7 @@ def _memory_clear() -> None:
 
 
 def _use_memory() -> bool:
-    return os.getenv("CERBERUS_PROXY_SETTINGS_BACKEND", "").lower() in {
+    return os.getenv("FIREBREAK_PROXY_SETTINGS_BACKEND", "").lower() in {
         "1",
         "true",
         "yes",

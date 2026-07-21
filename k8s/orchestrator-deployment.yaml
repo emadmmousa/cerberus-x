@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: orchestrator
-  namespace: cerberus-x
+  namespace: firebreak
   labels:
     app: orchestrator
 spec:
@@ -27,7 +27,7 @@ spec:
       serviceAccountName: orchestrator
       containers:
       - name: orchestrator
-        image: cerberus-x-orchestrator:latest
+        image: firebreak-orchestrator:latest
         imagePullPolicy: IfNotPresent
         env:
         - name: REDIS_HOST
@@ -37,9 +37,9 @@ spec:
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: cerberus-secrets
+              name: firebreak-secrets
               key: REDIS_PASSWORD
-        - name: CERBERUS_ENV_FILE
+        - name: FIREBREAK_ENV_FILE
           value: /app/.env
         - name: ELASTICSEARCH_URL
           value: http://elasticsearch-service:9200
@@ -52,16 +52,16 @@ spec:
         - name: MSF_RPC_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: cerberus-secrets
+              name: firebreak-secrets
               key: MSF_RPC_PASSWORD
-        - name: CERBERUS_OUTPUT_DIR
+        - name: FIREBREAK_OUTPUT_DIR
           value: /app/output
         - name: LOG_LEVEL
           value: INFO
         - name: OXYLABS_PROXY_CONFIGURED
           valueFrom:
             configMapKeyRef:
-              name: cerberus-config
+              name: firebreak-config
               key: OXYLABS_PROXY_CONFIGURED
               optional: true
         ports:
@@ -101,7 +101,7 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: output-pvc
-  namespace: cerberus-x
+  namespace: firebreak
 spec:
   accessModes:
     - ReadWriteOnce
@@ -113,7 +113,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: orchestrator-service
-  namespace: cerberus-x
+  namespace: firebreak
   labels:
     app: orchestrator
 spec:

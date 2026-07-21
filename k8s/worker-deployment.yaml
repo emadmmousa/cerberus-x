@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: worker
-  namespace: cerberus-x
+  namespace: firebreak
   labels:
     app: worker
 spec:
@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: worker
-        image: cerberus-x-worker:latest
+        image: firebreak-worker:latest
         imagePullPolicy: IfNotPresent
         env:
         - name: REDIS_HOST
@@ -27,7 +27,7 @@ spec:
         - name: REDIS_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: cerberus-secrets
+              name: firebreak-secrets
               key: REDIS_PASSWORD
         - name: ELASTICSEARCH_URL
           value: http://elasticsearch-service:9200
@@ -40,9 +40,9 @@ spec:
         - name: MSF_RPC_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: cerberus-secrets
+              name: firebreak-secrets
               key: MSF_RPC_PASSWORD
-        - name: CERBERUS_OUTPUT_DIR
+        - name: FIREBREAK_OUTPUT_DIR
           value: /app/output
         - name: LOG_LEVEL
           value: INFO
@@ -51,38 +51,38 @@ spec:
         - name: OXYLABS_PROXY_HOST
           valueFrom:
             configMapKeyRef:
-              name: cerberus-config
+              name: firebreak-config
               key: OXYLABS_PROXY_HOST
         - name: OXYLABS_PROXY_PORT
           valueFrom:
             configMapKeyRef:
-              name: cerberus-config
+              name: firebreak-config
               key: OXYLABS_PROXY_PORT
         - name: OXYLABS_PROXY_PROTOCOL
           valueFrom:
             configMapKeyRef:
-              name: cerberus-config
+              name: firebreak-config
               key: OXYLABS_PROXY_PROTOCOL
-        - name: CERBERUS_LOCAL_PROXY_HOST
+        - name: FIREBREAK_LOCAL_PROXY_HOST
           valueFrom:
             configMapKeyRef:
-              name: cerberus-config
-              key: CERBERUS_LOCAL_PROXY_HOST
-        - name: CERBERUS_LOCAL_PROXY_PORT
+              name: firebreak-config
+              key: FIREBREAK_LOCAL_PROXY_HOST
+        - name: FIREBREAK_LOCAL_PROXY_PORT
           valueFrom:
             configMapKeyRef:
-              name: cerberus-config
-              key: CERBERUS_LOCAL_PROXY_PORT
+              name: firebreak-config
+              key: FIREBREAK_LOCAL_PROXY_PORT
         - name: OXYLABS_PROXY_USERNAME
           valueFrom:
             secretKeyRef:
-              name: cerberus-secrets
+              name: firebreak-secrets
               key: OXYLABS_PROXY_USERNAME
               optional: true
         - name: OXYLABS_PROXY_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: cerberus-secrets
+              name: firebreak-secrets
               key: OXYLABS_PROXY_PASSWORD
               optional: true
         resources:

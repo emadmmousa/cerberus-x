@@ -9,7 +9,7 @@ from orchestrator.tasks import run_nmap_task, run_sqlmap_task
 @pytest.fixture(autouse=True)
 def _clean(monkeypatch):
     sessions.reset_memory_store()
-    monkeypatch.setenv("CERBERUS_AI_REQUIRE_CONFIRM", "true")
+    monkeypatch.setenv("FIREBREAK_AI_REQUIRE_CONFIRM", "true")
     monkeypatch.setattr(sessions, "_redis", lambda: None)
 
 

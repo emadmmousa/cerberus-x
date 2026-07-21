@@ -4,10 +4,10 @@
 **Status:** Shipped
 
 ## Goal
-Simplify Cerberus-X Mission Control to a single primary action: enter target → Start. Advanced controls live in a collapsed Options panel.
+Simplify Firebreak Mission Control to a single primary action: enter target → Start. Advanced controls live in a collapsed Options panel.
 
 ## Layout
-1. Nav brand only (`CERBERUS-X`)
+1. Nav brand only (`Firebreak`)
 2. Launch strip: target field + Start button + Options toggle
 3. Options (collapsed): Stealth, Proxy, Smart plan
 4. Run view: Status → Steps → Activity

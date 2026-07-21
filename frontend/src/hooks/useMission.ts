@@ -25,6 +25,47 @@ export type PhaseView = {
   findings: ResultRow[];
 };
 
+/** Keep the newest row per tool (legacy missions re-ran the same tool). */
+export function dedupeFindingsByTool(rows: ResultRow[]): ResultRow[] {
+  const byTool = new Map<string, ResultRow>();
+  for (const row of rows) {
+    const tool = row.tool || "unknown";
+    const prev = byTool.get(tool);
+    if (!prev) {
+      byTool.set(tool, row);
+      continue;
+    }
+    const prevTs = Number(prev.timestamp) || 0;
+    const nextTs = Number(row.timestamp) || 0;
+    if (nextTs >= prevTs) byTool.set(tool, row);
+  }
+  return Array.from(byTool.values());
+}
+
+/** Collapse repeated AI plan steps that reused the same phase_name. */
+export function collapseAiSteps<
+  T extends {
+    phase_name?: string | null;
+    stop?: boolean;
+    tools?: { tool: string }[];
+    source?: string;
+    consensus?: {
+      candidates?: number;
+      confidence?: number;
+      sources?: Array<string | null>;
+      mode?: string;
+    };
+  },
+>(steps: T[]): T[] {
+  const byName = new Map<string, T>();
+  for (const step of steps) {
+    if (step.stop || !(step.tools?.length || step.phase_name)) continue;
+    const name = step.phase_name || "ai_phase";
+    byName.set(name, step);
+  }
+  return Array.from(byName.values());
+}
+
 export function derivePhases(
   pipeline: PlaybookPhase[],
   status: TaskStatus | null,
@@ -40,17 +81,36 @@ export function derivePhases(
   const savedPhases = new Set(Object.keys(status?.results ?? {}));
 
   // AI Mode: show planned AI steps (real tools), not the static YAML playbook.
+  // Collapse repeated phase_name entries (legacy missions re-planned the same step).
   let effectivePipeline: PlaybookPhase[] = pipeline;
   if (status?.ai_mode) {
-    const aiSteps = (status.ai?.steps ?? [])
-      .filter((step) => !step.stop && (step.tools?.length || step.phase_name))
-      .map((step) => ({
-        name: step.phase_name || "ai_phase",
-        tools: (step.tools ?? []).map((t) => t.tool),
+    const aiStepsRaw = (status.ai?.steps ?? []).filter(
+      (step) => !step.stop && (step.tools?.length || step.phase_name),
+    );
+    const byName = new Map<
+      string,
+      {
+        name: string;
+        tools: string[];
+        parallel: boolean;
+        depends_on: string[];
+        when: string | null;
+      }
+    >();
+    for (const step of aiStepsRaw) {
+      const name = step.phase_name || "ai_phase";
+      // Keep the latest plan for a given name (later steps overwrite).
+      byName.set(name, {
+        name,
+        tools: Array.from(
+          new Set((step.tools ?? []).map((t) => t.tool).filter(Boolean)),
+        ),
         parallel: Boolean(step.parallel),
         depends_on: [] as string[],
         when: null as string | null,
-      }));
+      });
+    }
+    const aiSteps = Array.from(byName.values());
     const seen = new Set(aiSteps.map((p) => p.name));
     for (const phase of status.phases ?? []) {
       if (!seen.has(phase.phase)) {
@@ -86,7 +146,7 @@ export function derivePhases(
 
   return [...effectivePipeline, ...dynamicPhases].map((phase) => {
     const rep = reported.get(phase.name);
-    const findings = resultsByPhase[phase.name] ?? [];
+    const findings = dedupeFindingsByTool(resultsByPhase[phase.name] ?? []);
     let state: PhaseState = "pending";
 
     if (
@@ -139,6 +199,12 @@ export function useMission() {
 
   useEffect(() => {
     getPlaybook()
+      .then((data) => setPipeline(data.phases ?? []))
+      .catch(() => setPipeline([]));
+  }, []);
+
+  const refreshPipeline = useCallback((playbookPath?: string) => {
+    getPlaybook(playbookPath)
       .then((data) => setPipeline(data.phases ?? []))
       .catch(() => setPipeline([]));
   }, []);
@@ -205,6 +271,29 @@ export function useMission() {
     [startPolling],
   );
 
+  const attachMission = useCallback(
+    async (id: string) => {
+      setError(null);
+      setTaskId(id);
+      try {
+        const statusData = await getStatus(id);
+        setStatus(statusData);
+        const target = statusData.target || "";
+        setActiveTarget(target || null);
+        if (target) {
+          const rows = await getResults(target, id).catch(() => [] as ResultRow[]);
+          setResults(rows);
+          if (ACTIVE_STATES.has(statusData.state)) {
+            startPolling(id, target);
+          }
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [startPolling],
+  );
+
   useEffect(() => () => stopPolling(), [stopPolling]);
 
   const resultsByPhase = useMemo(() => {
@@ -233,6 +322,8 @@ export function useMission() {
     error,
     launchFlash,
     launch,
+    attachMission,
+    refreshPipeline,
     isActive,
     phases,
     results,

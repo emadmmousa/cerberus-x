@@ -7,11 +7,11 @@ import os
 import pytest
 import requests
 
-BASE_URL = os.environ.get("CERBERUS_BASE_URL", "http://127.0.0.1:5000")
-RUN_CHAOS = os.environ.get("CERBERUS_RUN_CHAOS", "").lower() in {"1", "true", "yes"}
+BASE_URL = os.environ.get("FIREBREAK_BASE_URL", "http://127.0.0.1:5000")
+RUN_CHAOS = os.environ.get("FIREBREAK_RUN_CHAOS", "").lower() in {"1", "true", "yes"}
 
 
-pytestmark = pytest.mark.skipif(not RUN_CHAOS, reason="set CERBERUS_RUN_CHAOS=1")
+pytestmark = pytest.mark.skipif(not RUN_CHAOS, reason="set FIREBREAK_RUN_CHAOS=1")
 
 
 def test_invalid_payload_rejected_or_handled():

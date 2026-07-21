@@ -21,7 +21,7 @@ def edition() -> str:
             return override
     except Exception:
         pass
-    raw = (os.environ.get("CERBERUS_EDITION") or "community").strip().lower()
+    raw = (os.environ.get("FIREBREAK_EDITION") or "community").strip().lower()
     return raw if raw in {"community", "pro"} else "community"
 
 
@@ -47,7 +47,7 @@ def feature_flags() -> dict[str, Any]:
 
 def require_pro_packaging() -> bool:
     """When true, SSO/RBAC packaging endpoints may insist on Pro config."""
-    return is_pro() and (os.environ.get("CERBERUS_PRO_PACKAGING") or "").lower() in {
+    return is_pro() and (os.environ.get("FIREBREAK_PRO_PACKAGING") or "").lower() in {
         "1",
         "true",
         "yes",

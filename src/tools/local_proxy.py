@@ -25,8 +25,8 @@ class LocalProxyServer:
         host: Optional[str] = None,
         port: Optional[int] = None,
     ):
-        self.host = host or os.getenv("CERBERUS_LOCAL_PROXY_HOST", "127.0.0.1")
-        env_port = os.getenv("CERBERUS_LOCAL_PROXY_PORT", "18080")
+        self.host = host or os.getenv("FIREBREAK_LOCAL_PROXY_HOST", "127.0.0.1")
+        env_port = os.getenv("FIREBREAK_LOCAL_PROXY_PORT", "18080")
         self.port = port if port is not None else int(env_port)
         self._sock: Optional[socket.socket] = None
         self._thread: Optional[threading.Thread] = None
@@ -52,7 +52,7 @@ class LocalProxyServer:
         self._bound_port = self._sock.getsockname()[1]
         self._sock.listen(128)
         self._sock.settimeout(1.0)
-        self._thread = threading.Thread(target=self._serve, name="cerberus-local-proxy", daemon=True)
+        self._thread = threading.Thread(target=self._serve, name="firebreak-local-proxy", daemon=True)
         self._thread.start()
 
     def stop(self) -> None:
@@ -188,8 +188,8 @@ def ensure_local_proxy() -> LocalProxyServer:
             _singleton.stop()
             _singleton = None
 
-        host = os.getenv("CERBERUS_LOCAL_PROXY_HOST", "127.0.0.1")
-        port = int(os.getenv("CERBERUS_LOCAL_PROXY_PORT", "18080"))
+        host = os.getenv("FIREBREAK_LOCAL_PROXY_HOST", "127.0.0.1")
+        port = int(os.getenv("FIREBREAK_LOCAL_PROXY_PORT", "18080"))
 
         # Another Celery child may already own the listener — reuse it.
         if port > 0 and _port_open(host, port):

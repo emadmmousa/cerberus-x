@@ -1,4 +1,4 @@
-"""MCP façade for Cerberus-X (Phase 1+)."""
+"""MCP façade for Firebreak (Phase 1+)."""
 
 from .blueprint import mcp_bp
 

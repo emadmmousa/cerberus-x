@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def _prefer_cheaper_first() -> bool:
-    return (os.environ.get("CERBERUS_SCAFFOLD_COST_ROUTE") or "").lower() in {
+    return (os.environ.get("FIREBREAK_SCAFFOLD_COST_ROUTE") or "").lower() in {
         "1",
         "true",
         "yes",

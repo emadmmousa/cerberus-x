@@ -8,7 +8,7 @@ from tools import proxy_settings
 
 @pytest.fixture(autouse=True)
 def _memory_backend(monkeypatch):
-    monkeypatch.setenv("CERBERUS_PROXY_SETTINGS_BACKEND", "memory")
+    monkeypatch.setenv("FIREBREAK_PROXY_SETTINGS_BACKEND", "memory")
     proxy_settings._memory_clear()
     yield
     proxy_settings._memory_clear()

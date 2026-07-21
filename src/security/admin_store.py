@@ -21,9 +21,9 @@ from werkzeug.security import check_password_hash, generate_password_hash
 
 logger = logging.getLogger(__name__)
 
-USERS_KEY = "cerberus:admin:users"
-ORGS_KEY = "cerberus:admin:orgs"
-SETTINGS_KEY = "cerberus:admin:settings"
+USERS_KEY = "firebreak:admin:users"
+ORGS_KEY = "firebreak:admin:orgs"
+SETTINGS_KEY = "firebreak:admin:settings"
 
 VALID_ROLES = ("viewer", "operator", "admin")
 VALID_EDITIONS = ("community", "pro")
@@ -102,7 +102,7 @@ def ensure_seed() -> None:
     _load_settings()
 
     changed_orgs = False
-    default_org = (os.environ.get("CERBERUS_DEFAULT_ORG") or "default").strip() or "default"
+    default_org = (os.environ.get("FIREBREAK_DEFAULT_ORG") or "default").strip() or "default"
     if default_org not in _orgs:
         _orgs[default_org] = {
             "id": default_org,
@@ -113,9 +113,9 @@ def ensure_seed() -> None:
     if changed_orgs:
         _save_map(ORGS_KEY, _orgs)
 
-    admin_user = (os.environ.get("CERBERUS_ADMIN_USER") or "admin").strip() or "admin"
+    admin_user = (os.environ.get("FIREBREAK_ADMIN_USER") or "admin").strip() or "admin"
     if admin_user not in _users:
-        admin_pass = os.environ.get("CERBERUS_ADMIN_PASSWORD") or ""
+        admin_pass = os.environ.get("FIREBREAK_ADMIN_PASSWORD") or ""
         _users[admin_user] = {
             "username": admin_user,
             "role": "admin",
@@ -286,7 +286,7 @@ def delete_org(org_id: str) -> bool:
         return False
     if any(u.get("org_id") == org_id for u in _users.values()):
         raise ValueError("cannot delete an org with associated users")
-    if org_id == (os.environ.get("CERBERUS_DEFAULT_ORG") or "default"):
+    if org_id == (os.environ.get("FIREBREAK_DEFAULT_ORG") or "default"):
         raise ValueError("cannot delete the default org")
     _orgs.pop(org_id, None)
     _save_map(ORGS_KEY, _orgs)

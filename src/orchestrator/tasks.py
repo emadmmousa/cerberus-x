@@ -231,6 +231,15 @@ def run_sliver_task(self, target, args=None, evasion=None):
     return sliver.scan(target, args)
 
 
+@app.task(bind=True, soft_time_limit=30, time_limit=45)
+def run_tools_health_task(self):
+    """Probe worker PATH / artifacts for every registered wrapper."""
+    from tools.inventory import probe_all_local
+
+    self.update_state(state="STARTED", meta={"status": "Probing tool binaries..."})
+    return probe_all_local()
+
+
 _TASK_MAP = {
     "nmap": run_nmap_task,
     "gobuster": run_gobuster_task,
