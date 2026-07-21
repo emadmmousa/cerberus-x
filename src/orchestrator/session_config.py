@@ -7,11 +7,12 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 DEFAULT_SECRET = "cerberus-x-secret"
+INSECURE_SECRETS = frozenset({"cerberus-x-secret", "change-me", ""})
 
 
 def secret_key_is_insecure(secret: str | None = None) -> bool:
     value = secret if secret is not None else os.environ.get("SECRET_KEY", DEFAULT_SECRET)
-    return (value or DEFAULT_SECRET) == DEFAULT_SECRET
+    return (value or "") in INSECURE_SECRETS
 
 
 def configure_sessions(app, *, force_cookie: bool = False) -> dict[str, Any]:

@@ -11,6 +11,7 @@ import os
 
 from flask import Blueprint, jsonify, request
 
+from orchestrator.session_config import secret_key_is_insecure
 from security import admin_store
 from security.audit import audit_log, recent_audit
 from security.rbac import (
@@ -177,9 +178,7 @@ def get_settings():
                 "auto_train": effective_auto_train(),
                 "learning_tick": effective_learning_tick(),
             },
-            "secret_key_insecure": (
-                os.environ.get("SECRET_KEY", "cerberus-x-secret") == "cerberus-x-secret"
-            ),
+            "secret_key_insecure": secret_key_is_insecure(),
             "options": {
                 "editions": list(admin_store.VALID_EDITIONS),
                 "roles": list(admin_store.VALID_ROLES),
