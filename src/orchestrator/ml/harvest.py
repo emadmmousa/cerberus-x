@@ -80,9 +80,11 @@ def run_learning_tick() -> dict[str, Any]:
     harvested = 0
     skipped_dup = 0
     try:
-        # Force list via summaries + local keys
-        ids = set(getattr(playbook_jobs, "_local", {}).keys())
-        for job_id in list(ids):
+        summaries = playbook_jobs.list_summaries(limit=200)
+        for summary in summaries:
+            job_id = str(summary.get("task_id") or "")
+            if not job_id:
+                continue
             try:
                 job = playbook_jobs[job_id]
             except KeyError:

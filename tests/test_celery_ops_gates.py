@@ -73,8 +73,13 @@ def test_learning_tick_skips_when_off(monkeypatch):
     assert run_learning_tick() == {"skipped": True, "reason": "learning_tick_off"}
 
 
-def test_learning_tick_runs_when_on(monkeypatch):
+def test_learning_tick_runs_when_on(monkeypatch, tmp_path):
     monkeypatch.setenv("CERBERUS_LEARNING_TICK", "true")
+    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path))
+
+    from orchestrator.job_store import playbook_jobs
+
+    monkeypatch.setattr(playbook_jobs, "list_summaries", lambda **kw: [])
 
     from orchestrator.celery_app import run_learning_tick
 

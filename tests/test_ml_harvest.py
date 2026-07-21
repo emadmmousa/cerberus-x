@@ -14,6 +14,7 @@ def test_harvest_completed_mission_once(tmp_path, monkeypatch):
     except Exception:
         pass
 
+    # Stored via job store API; harvest enumerates via list_summaries (local + Redis).
     job_id = "job-harvest-1"
     playbook_jobs[job_id] = {
         "task_id": job_id,
