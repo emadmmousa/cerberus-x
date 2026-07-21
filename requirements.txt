@@ -1,6 +1,7 @@
 celery==5.3.4
 redis==5.0.1
 flask==3.0.0
+Flask-Session==0.8.0
 flask-socketio==5.3.4
 simple-websocket==1.0.0
 msgpack==1.0.8
@@ -10,3 +11,8 @@ pytest==7.4.3
 elasticsearch==8.10.1
 prometheus-client==0.19.0
 gunicorn==21.2.0
+auth0-server-python>=1.0.0b1,<2
+flask[async]>=3.0.0
+asgiref>=3.7.0
+python-dotenv>=1.0.0
+markupsafe>=2.1.0
