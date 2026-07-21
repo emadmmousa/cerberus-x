@@ -24,13 +24,16 @@ def _env_truthy(name: str) -> bool:
     return (os.environ.get(name) or "").lower() in {"1", "true", "yes", "on"}
 
 
-def _run_script(rel: str) -> dict[str, Any]:
+def _run_script(rel: str, extra_argv: list[str] | None = None) -> dict[str, Any]:
     script = _repo_root() / rel
     if not script.is_file():
         return {"ok": False, "error": f"missing {rel}"}
+    cmd = [sys.executable, str(script)]
+    if extra_argv:
+        cmd.extend(extra_argv)
     try:
         proc = subprocess.run(
-            [sys.executable, str(script)],
+            cmd,
             cwd=str(_repo_root()),
             capture_output=True,
             text=True,
@@ -74,7 +77,10 @@ def run_daily_pipeline() -> dict[str, Any]:
         "mode": "real" if gpu else "dry_run",
     }
     if gpu:
-        steps["qlora"]["result"] = _run_script("training/scripts/qlora_train.py")
+        steps["qlora"]["result"] = _run_script(
+            "training/scripts/qlora_train.py",
+            ["--no-dry-run", "--include-posture", "--include-community"],
+        )
     else:
         qlora = _repo_root() / "training" / "scripts" / "qlora_train.py"
         if qlora.is_file():
