@@ -109,7 +109,7 @@ Blackboard `bb:` stays brand-neutral.
 |------|-----|
 | Ollama model `cerberus-firebreak` | `firebreak` |
 | Scaffold id `ollama-firebreak` | `ollama-primary` |
-| HF / Makefile `cerberus-x/firebreak-v0` | `firebreak/firebreak-v0` (or org `firebreak` as agreed at publish time) |
+| HF / Makefile `cerberus-x/firebreak-v0` | `firebreak/firebreak-v0` |
 | Training seed persona strings | Firebreak / AI Lab as appropriate |
 
 ### Packaging / deploy
