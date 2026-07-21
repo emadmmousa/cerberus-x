@@ -68,3 +68,28 @@ def test_get_settings_includes_ops_keys():
     assert s["learning_tick"] is True
     assert "auto_scale" in s
     assert "auto_train" in s
+
+
+def test_admin_ops_put_and_get_effective(monkeypatch):
+    monkeypatch.setenv("CERBERUS_AUTO_SCALE", "false")
+    from orchestrator import dashboard
+
+    c = dashboard.app.test_client()
+    r = c.put("/api/admin/settings/ops", json={"auto_scale": True})
+    assert r.status_code == 200
+    assert r.get_json()["settings"]["auto_scale"] is True
+
+    g = c.get("/api/admin/settings")
+    body = g.get_json()
+    assert body["effective"]["auto_scale"] is True
+    assert "auto_train" in body["effective"]
+    assert "learning_tick" in body["effective"]
+    assert "secret_key_insecure" in body
+
+
+def test_admin_ops_put_rejects_unknown():
+    from orchestrator import dashboard
+
+    c = dashboard.app.test_client()
+    r = c.put("/api/admin/settings/ops", json={"nope": True})
+    assert r.status_code == 400
