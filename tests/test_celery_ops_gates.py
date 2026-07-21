@@ -96,9 +96,14 @@ def test_daily_pipeline_skips_when_off(monkeypatch):
     assert run_daily_pipeline() == {"skipped": True, "reason": "auto_train_off"}
 
 
-def test_daily_pipeline_runs_when_on(monkeypatch):
+def test_daily_pipeline_runs_when_on(monkeypatch, tmp_path):
     monkeypatch.setenv("CERBERUS_AUTO_TRAIN", "true")
+    monkeypatch.setenv("CERBERUS_OUTPUT_DIR", str(tmp_path))
+    monkeypatch.delenv("CERBERUS_TRAIN_GPU", raising=False)
 
     from orchestrator.celery_app import run_daily_pipeline
 
-    assert run_daily_pipeline() == {"ok": True, "dry_run": True}
+    result = run_daily_pipeline()
+    assert result.get("ok") is True
+    assert result.get("gpu_train") is False
+    assert (tmp_path / "ml" / "daily_report.json").is_file()
