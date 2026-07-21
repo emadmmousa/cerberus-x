@@ -11,3 +11,8 @@ pytest==7.4.3
 elasticsearch==8.10.1
 prometheus-client==0.19.0
 gunicorn==21.2.0
+auth0-server-python>=1.0.0b1,<2
+flask[async]>=3.0.0
+asgiref>=3.7.0
+python-dotenv>=1.0.0
+markupsafe>=2.1.0

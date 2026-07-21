@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -21,13 +22,33 @@ def _safe_request_ip() -> str:
     return "unknown"
 
 
+def _safe_actor() -> dict[str, Any]:
+    """Best-effort acting identity (user / role / org) from the session."""
+    try:
+        from flask import has_request_context, session
+
+        if has_request_context():
+            return {
+                "user": session.get("user") or "anonymous",
+                "role": session.get("role"),
+                "org_id": session.get("org_id"),
+            }
+    except Exception:
+        pass
+    return {"user": "system", "role": None, "org_id": None}
+
+
 def audit_log(event_type: str, data: Any, severity: str = "info") -> dict:
+    actor = _safe_actor()
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "event_type": event_type,
         "data": data,
         "severity": severity,
         "source_ip": _safe_request_ip(),
+        "actor": actor.get("user"),
+        "actor_role": actor.get("role"),
+        "actor_org": actor.get("org_id"),
     }
     entry_json = json.dumps(entry, default=str)
     logger.info("audit %s %s", event_type, entry_json)
@@ -71,6 +92,34 @@ def audit_log(event_type: str, data: Any, severity: str = "info") -> dict:
             )
     except Exception as exc:
         logger.debug("audit splunk skipped: %s", exc)
+
+    # Optional Elasticsearch sink (Firebreak W4.4).
+    try:
+        from utils.config import get_config
+
+        cfg = get_config()
+        es_url = (cfg.get("ELASTICSEARCH_URL") or os.environ.get("ELASTICSEARCH_URL") or "").strip()
+        es_index = (
+            cfg.get("CERBERUS_AUDIT_ES_INDEX")
+            or os.environ.get("CERBERUS_AUDIT_ES_INDEX")
+            or "cerberus-audit"
+        ).strip()
+        if es_url and (os.environ.get("CERBERUS_AUDIT_ES") or "").lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }:
+            import requests
+
+            requests.post(
+                f"{es_url.rstrip('/')}/{es_index}/_doc",
+                json=entry,
+                timeout=2,
+                headers={"Content-Type": "application/json"},
+            )
+    except Exception as exc:
+        logger.debug("audit elasticsearch skipped: %s", exc)
 
     return entry
 
