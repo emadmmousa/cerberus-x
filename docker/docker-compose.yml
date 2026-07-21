@@ -123,7 +123,19 @@ services:
       - CERBERUS_AI_REQUIRE_CONFIRM=${CERBERUS_AI_REQUIRE_CONFIRM:-false}
       - CERBERUS_LLM_BASE_URL=${CERBERUS_LLM_BASE_URL:-http://ollama:11434/v1}
       - CERBERUS_LLM_API_KEY=${CERBERUS_LLM_API_KEY:-ollama}
-      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-cerberus-x}
+      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-cerberus-firebreak}
+      - CERBERUS_LLM_BASE_MODEL=${CERBERUS_LLM_BASE_MODEL:-qwen2.5:7b}
+      - CERBERUS_MULTI_SCAFFOLD=${CERBERUS_MULTI_SCAFFOLD:-true}
+      - CERBERUS_SCAFFOLD_COST_ROUTE=${CERBERUS_SCAFFOLD_COST_ROUTE:-false}
+      - CERBERUS_LLM_FALLBACK_MODEL=${CERBERUS_LLM_FALLBACK_MODEL:-qwen2.5:7b}
+      - CERBERUS_EDITION=${CERBERUS_EDITION:-community}
+      - CERBERUS_MANAGED_HOSTING=${CERBERUS_MANAGED_HOSTING:-false}
+      - CERBERUS_CONTROL_PLANE_URL=${CERBERUS_CONTROL_PLANE_URL:-}
+      - CERBERUS_AUDIT_ES=${CERBERUS_AUDIT_ES:-false}
+      - CERBERUS_SCAFFOLD_EXTRA_BASE_URL=${CERBERUS_SCAFFOLD_EXTRA_BASE_URL:-}
+      - CERBERUS_SCAFFOLD_EXTRA_MODEL=${CERBERUS_SCAFFOLD_EXTRA_MODEL:-}
+      - CERBERUS_SCAFFOLD_EXTRA_API_KEY=${CERBERUS_SCAFFOLD_EXTRA_API_KEY:-}
+      - CERBERUS_SCAFFOLD_EXTRA_COST_PER_1K=${CERBERUS_SCAFFOLD_EXTRA_COST_PER_1K:-0.002}
       - CERBERUS_LLM_UNRESTRICTED=${CERBERUS_LLM_UNRESTRICTED:-true}
       - CERBERUS_LLM_TEMPERATURE=${CERBERUS_LLM_TEMPERATURE:-0.9}
       - CERBERUS_LLM_TOP_P=${CERBERUS_LLM_TOP_P:-0.95}
@@ -131,6 +143,7 @@ services:
     volumes:
       - ../src:/app/src
       - ../playbooks:/app/playbooks
+      - ../training:/app/training:ro
       - ../output:/app/output
       - ../.env:/app/.env
     # Dashboard is the only host-facing entry point; bind to localhost only.
@@ -146,6 +159,8 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: cerberus-ollama
+    environment:
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
     volumes:
       - ollama_data:/root/.ollama
     ports:
@@ -161,8 +176,9 @@ services:
       - ollama
     environment:
       - OLLAMA_HOST=http://ollama:11434
-      - CERBERUS_LLM_BASE_MODEL=${CERBERUS_LLM_BASE_MODEL:-llama3.2}
-      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-cerberus-x}
+      - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
+      - CERBERUS_LLM_BASE_MODEL=${CERBERUS_LLM_BASE_MODEL:-qwen2.5:7b}
+      - CERBERUS_LLM_MODEL=${CERBERUS_LLM_MODEL:-cerberus-firebreak}
     volumes:
       - ./ollama:/modelfiles:ro
     entrypoint: ["/bin/sh", "-c"]
@@ -172,8 +188,8 @@ services:
           ollama list >/dev/null 2>&1 && break
           sleep 2
         done
-        BASE="${CERBERUS_LLM_BASE_MODEL:-llama3.2}"
-        CUSTOM="${CERBERUS_LLM_MODEL:-cerberus-x}"
+        BASE="${CERBERUS_LLM_BASE_MODEL:-qwen2.5:7b}"
+        CUSTOM="${CERBERUS_LLM_MODEL:-cerberus-firebreak}"
         ollama pull "$${BASE}"
         if [ -f /modelfiles/Modelfile ]; then
           sed "s/^FROM .*/FROM $${BASE}/" /modelfiles/Modelfile > /tmp/Modelfile.cerberus
@@ -214,6 +230,28 @@ services:
     deploy:
       replicas: 4
     command: ["celery", "-A", "orchestrator.tasks", "worker", "--concurrency=8", "--loglevel=info"]
+    networks:
+      - cerberus-net
+
+  beat:
+    build:
+      context: ..
+      dockerfile: docker/worker.Dockerfile
+    container_name: cerberus-beat
+    depends_on:
+      redis:
+        condition: service_healthy
+    env_file:
+      - path: ../.env
+        required: true
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - PYTHONPATH=/app/src
+      - CERBERUS_OUTPUT_DIR=/app/output
+    volumes:
+      - ../src:/app/src
+      - ../output:/app/output
+    command: ["celery", "-A", "orchestrator.celery_app", "beat", "--loglevel=INFO"]
     networks:
       - cerberus-net
 

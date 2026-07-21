@@ -138,6 +138,8 @@ Open **Admin** (admin role) and select the **Ops** tab to toggle background jobs
 
 Each control has **ON**, **OFF**, or **Defer** (use deployment env vars). Effective state is shown under each row. Resolution order: Admin override → env → `false` (all off by default).
 
+**Celery beat** must be running (exactly one scheduler replica) for these periodic tasks to fire. Compose ships a dedicated `beat` service; do not add `-B` to worker replicas or you will run duplicate schedulers.
+
 | Env | Default | Meaning |
 |-----|---------|---------|
 | `CERBERUS_AUTO_SCALE` | `false` | Defer path for Auto-Scale |
