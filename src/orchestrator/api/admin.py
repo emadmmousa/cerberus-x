@@ -195,14 +195,16 @@ def set_rbac():
     from flask import session
 
     from security.pro_packaging import sso_readiness
+    from security.rbac import Role as RbacRole
+    from security.rbac import ROLE_RANK, rbac_enforce_enabled, resolve_role
 
     body = _body()
     value = body.get("enforce")  # true / false / null (null = defer to env)
 
-    # Lockout guard: enabling enforce requires a way back in. Allow it only when
-    # the caller is already an authenticated admin, OR a login path exists
-    # (an admin with a password, or SSO configured).
-    if value is True and not session.get("user"):
+    # Lockout / privilege guards when turning enforce ON.
+    # Lab mode (@require_role no-op) previously let operators enable enforce and
+    # then get 403 on every Admin settings call.
+    if value is True:
         has_admin_pw = any(
             u.get("role") == "admin" and u.get("has_password")
             for u in admin_store.list_users()
@@ -221,6 +223,19 @@ def set_rbac():
                 ),
                 409,
             )
+        # If someone is signed in (or enforce already on), require admin rank.
+        if session.get("user") or rbac_enforce_enabled():
+            if ROLE_RANK[resolve_role()] < ROLE_RANK[RbacRole.ADMIN]:
+                return (
+                    jsonify(
+                        {
+                            "error": "forbidden",
+                            "required": "admin",
+                            "detail": "Only an admin can enable RBAC enforce.",
+                        }
+                    ),
+                    403,
+                )
     settings = admin_store.set_rbac_enforce(value)
     audit_log("ADMIN_RBAC_SET", {"enforce": value}, severity="high")
     return jsonify({"settings": settings})

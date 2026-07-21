@@ -617,3 +617,76 @@ export async function getAdminLogs(
   if (filters.actor) params.set("actor", filters.actor);
   return apiJson(`/api/admin/logs?${params}`);
 }
+
+// --- Mission chat agent ---
+export type MissionProposal = {
+  target: string;
+  posture: string;
+  nl_goal: string;
+  stealth?: string | null;
+  ready: boolean;
+  missing?: string[];
+};
+
+export type ChatMessage = {
+  role: string;
+  content: string;
+  ts?: number;
+  proposal?: MissionProposal;
+  mission_card?: { task_id: string; target: string; state?: string };
+};
+
+export type MissionChatThread = {
+  id: string;
+  org_id: string;
+  messages: ChatMessage[];
+  draft: MissionProposal | null;
+  mission_ids: string[];
+};
+
+export async function createMissionChat(): Promise<{ chat_id: string }> {
+  return apiJson("/api/chat/missions", { method: "POST", body: "{}" });
+}
+
+export async function getMissionChat(chatId: string): Promise<MissionChatThread> {
+  return apiJson(`/api/chat/missions/${encodeURIComponent(chatId)}`);
+}
+
+export async function postMissionChatMessage(
+  chatId: string,
+  content: string,
+): Promise<{
+  reply: string;
+  proposal: MissionProposal;
+  draft: MissionProposal | null;
+  messages: ChatMessage[];
+}> {
+  return apiJson(`/api/chat/missions/${encodeURIComponent(chatId)}/messages`, {
+    method: "POST",
+    body: JSON.stringify({ content }),
+  });
+}
+
+export async function dismissMissionChatDraft(
+  chatId: string,
+): Promise<{ ok: boolean }> {
+  return apiJson(`/api/chat/missions/${encodeURIComponent(chatId)}/dismiss`, {
+    method: "POST",
+    body: "{}",
+  });
+}
+
+export async function launchMissionChat(
+  chatId: string,
+  body: Record<string, unknown> = {},
+): Promise<{
+  task_id: string;
+  target: string;
+  state: string;
+  messages: ChatMessage[];
+}> {
+  return apiJson(`/api/chat/missions/${encodeURIComponent(chatId)}/launch`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

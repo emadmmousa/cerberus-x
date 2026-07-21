@@ -4,7 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AuthProvider } from "../providers/AuthProvider";
 import { ThemeProvider } from "../providers/ThemeProvider";
 import { derivePhases } from "../hooks/useMission";
-import { NewMission } from "../views/NewMission";
+import { ManualMissionForm } from "../components/ManualMissionForm";
 
 vi.mock("../api/socket", () => ({
   getSocket: () => ({ on: vi.fn(), off: vi.fn() }),
@@ -125,14 +125,14 @@ function renderNewMission() {
     <MemoryRouter>
       <ThemeProvider>
         <AuthProvider>
-          <NewMission />
+          <ManualMissionForm />
         </AuthProvider>
       </ThemeProvider>
     </MemoryRouter>,
   );
 }
 
-describe("NewMission / derivePhases", () => {
+describe("ManualMissionForm / derivePhases", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });

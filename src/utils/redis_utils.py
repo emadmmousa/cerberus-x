@@ -102,6 +102,11 @@ class _MemoryRedis:
 
 
 _client: Optional[Any] = None
+_binary_client: Optional[Any] = None
+
+
+def redis_url() -> str:
+    return os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
 
 def get_redis():
@@ -109,7 +114,7 @@ def get_redis():
     global _client
     if _client is not None:
         return _client
-    url = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+    url = redis_url()
     try:
         import redis
 
@@ -119,3 +124,25 @@ def get_redis():
     except Exception:
         _client = _MemoryRedis()
     return _client
+
+
+def get_redis_binary():
+    """Redis client that returns raw bytes (required by Flask-Session msgpack).
+
+    The shared :func:`get_redis` client uses ``decode_responses=True`` for string
+    keys used across the app. Session payloads are binary (msgpack); reading them
+    with UTF-8 decoding raises ``UnicodeDecodeError`` on every request.
+    """
+    global _binary_client
+    if _binary_client is not None:
+        return _binary_client
+    url = redis_url()
+    try:
+        import redis
+
+        client = redis.Redis.from_url(url, decode_responses=False)
+        client.ping()
+        _binary_client = client
+    except Exception:
+        _binary_client = _MemoryRedis()
+    return _binary_client

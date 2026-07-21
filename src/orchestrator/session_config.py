@@ -37,10 +37,11 @@ def configure_sessions(app, *, force_cookie: bool = False) -> dict[str, Any]:
 
     try:
         from flask_session import Session
-        from utils.redis_utils import get_redis
+        from utils.redis_utils import get_redis_binary
         import redis as redis_lib
 
-        client = get_redis()
+        # Must be decode_responses=False: Flask-Session stores msgpack bytes.
+        client = get_redis_binary()
         if not isinstance(client, redis_lib.Redis):
             logger.warning("Redis sessions unavailable (memory fallback); using cookies")
             return {"backend": "cookie", "secure": secure}

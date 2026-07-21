@@ -10,6 +10,7 @@ def register_api_blueprints(app: Flask) -> None:
     from orchestrator.api.ai import ai_bp
     from orchestrator.api.blackboard import blackboard_bp
     from orchestrator.api.catalog import catalog_bp
+    from orchestrator.api.chat_missions import chat_missions_bp
     from orchestrator.api.dataset import dataset_bp
     from orchestrator.api.edition import edition_bp
     from orchestrator.api.missions import missions_bp
@@ -21,6 +22,7 @@ def register_api_blueprints(app: Flask) -> None:
     app.register_blueprint(session_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(missions_bp)
+    app.register_blueprint(chat_missions_bp)
     app.register_blueprint(results_bp)
     app.register_blueprint(blackboard_bp)
     app.register_blueprint(dataset_bp)

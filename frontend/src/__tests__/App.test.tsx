@@ -8,7 +8,7 @@ vi.mock("../api/socket", () => ({
 }));
 
 function mockFetch() {
-  return vi.fn().mockImplementation((url: string) => {
+  return vi.fn().mockImplementation((url: string, init?: RequestInit) => {
     if (url === "/api/rbac/me") {
       return Promise.resolve({
         ok: true,
@@ -32,6 +32,24 @@ function mockFetch() {
         json: async () => ({ count: 0, missions: [], org_id: "default" }),
       });
     }
+    if (typeof url === "string" && url.startsWith("/api/chat/missions")) {
+      if (init?.method === "POST" && url === "/api/chat/missions") {
+        return Promise.resolve({
+          ok: true,
+          status: 201,
+          json: async () => ({ chat_id: "chat-test" }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          id: "chat-test",
+          messages: [],
+          draft: null,
+          mission_ids: [],
+        }),
+      });
+    }
     return Promise.resolve({ ok: true, json: async () => ({}) });
   });
 }
@@ -49,7 +67,8 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText(/Firebreak/i)).toBeInTheDocument();
       expect(screen.getByRole("link", { name: /^missions$/i })).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: /^new mission$/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /^chat$/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /^manual$/i })).toBeInTheDocument();
     });
   });
 });

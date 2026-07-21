@@ -149,6 +149,32 @@ def test_rbac_enable_guard_blocks_lockout():
         c.put("/api/admin/settings/rbac", json={"enforce": None}, headers=c_headers)
 
 
+def test_rbac_enable_forbidden_for_signed_in_operator(monkeypatch):
+    """Operators must not enable enforce in lab mode (would self-lock Admin)."""
+    from security import admin_store
+
+    admin_store.create_user(
+        username="op_lock",
+        password="op-pass",
+        role="operator",
+        org_id="default",
+    )
+    # Pretend SSO exists so the 409 recovery-path check does not fire first.
+    monkeypatch.setattr(
+        "security.pro_packaging.sso_readiness",
+        lambda: {"ready": True, "preferred": "auth0"},
+    )
+    c = _client()
+    with c.session_transaction() as sess:
+        sess["user"] = "op_lock"
+        sess["role"] = "operator"
+        sess["org_id"] = "default"
+        sess["auth_method"] = "local"
+    r = c.put("/api/admin/settings/rbac", json={"enforce": True})
+    assert r.status_code == 403
+    assert r.get_json().get("required") == "admin"
+
+
 def test_logs_endpoint_records_actor():
     from security.audit import audit_log
 
