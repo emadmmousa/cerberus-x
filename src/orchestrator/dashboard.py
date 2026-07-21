@@ -78,6 +78,10 @@ from .auth_routes import auth_bp
 
 app.register_blueprint(auth_bp, url_prefix="/auth")
 
+from .api import register_api_blueprints
+
+register_api_blueprints(app)
+
 # Security middleware (scoped WAF; optional limiter)
 app.before_request(WAFMiddleware.before_request)
 app.after_request(WAFMiddleware.after_request)
