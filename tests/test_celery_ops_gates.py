@@ -78,7 +78,10 @@ def test_learning_tick_runs_when_on(monkeypatch):
 
     from orchestrator.celery_app import run_learning_tick
 
-    assert run_learning_tick() == {"harvested": 0, "refreshed": False}
+    result = run_learning_tick()
+    assert result["harvested"] == 0
+    assert result["skipped_dup"] == 0
+    assert "path" in result
 
 
 def test_daily_pipeline_skips_when_off(monkeypatch):
