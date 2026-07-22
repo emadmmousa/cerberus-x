@@ -41,6 +41,68 @@ def local_login():
     return AuthManager.local_login(username, password)
 
 
+@auth_bp.route("/local/signup", methods=["POST"])
+def local_signup():
+    """Self-service signup: create an isolated tenant org + operator, then log in."""
+    import re as _re
+
+    from security import admin_store
+    from security.audit import audit_log
+
+    data = request.get_json(silent=True) or {}
+    username = (data.get("username") or "").strip()
+    password = data.get("password") or ""
+    org_name = (data.get("org") or data.get("company") or "").strip()
+
+    if not username or not password:
+        return jsonify({"error": "Username and password are required"}), 400
+    if len(username) < 3:
+        return jsonify({"error": "Username must be at least 3 characters"}), 400
+    if len(password) < 8:
+        return jsonify({"error": "Password must be at least 8 characters"}), 400
+    if admin_store.get_user(username):
+        return jsonify({"error": "An account with that username already exists"}), 409
+
+    base_slug = (
+        _re.sub(r"[^a-z0-9]+", "-", (org_name or username).lower()).strip("-") or "org"
+    )
+    existing = {o["id"] for o in admin_store.list_orgs()}
+    org_id, suffix = base_slug, 1
+    while org_id in existing:
+        suffix += 1
+        org_id = f"{base_slug}-{suffix}"
+
+    try:
+        admin_store.create_org(org_id=org_id, name=org_name or username)
+        admin_store.create_user(
+            username=username,
+            password=password,
+            role="operator",
+            org_id=org_id,
+            auth_method="local",
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    session.clear()
+    session["user"] = username
+    session["auth_method"] = "local"
+    session["role"] = "operator"
+    session["org_id"] = org_id
+    audit_log("SIGNUP_SUCCESS", {"user": username, "org_id": org_id})
+    return (
+        jsonify(
+            {
+                "status": "authenticated",
+                "user": username,
+                "role": "operator",
+                "org_id": org_id,
+            }
+        ),
+        201,
+    )
+
+
 @auth_bp.route("/oidc/status")
 def oidc_status_route():
     from security.oidc import oidc_status

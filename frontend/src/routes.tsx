@@ -3,17 +3,27 @@ import { AppShell } from "./components/AppShell";
 import { RequireAuth } from "./components/RequireAuth";
 import { Admin } from "./views/Admin";
 import { AiLab } from "./views/AiLab";
+import { Landing } from "./views/Landing";
 import { Login } from "./views/Login";
 import { MissionDetail } from "./views/MissionDetail";
 import { Missions } from "./views/Missions";
 import { NewMission } from "./views/NewMission";
+import { Privacy } from "./views/Privacy";
+import { Signup } from "./views/Signup";
+import { Terms } from "./views/Terms";
 
 export function AppRoutes() {
   return (
     <Routes>
+      {/* Public marketing + auth + legal */}
+      <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
+      <Route path="/privacy" element={<Privacy />} />
+      <Route path="/terms" element={<Terms />} />
+
+      {/* Authenticated console */}
       <Route element={<AppShell />}>
-        <Route index element={<Navigate to="/missions" replace />} />
         <Route
           path="/missions"
           element={
@@ -55,7 +65,8 @@ export function AppRoutes() {
           }
         />
       </Route>
-      <Route path="*" element={<Navigate to="/missions" replace />} />
+
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }

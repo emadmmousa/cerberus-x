@@ -82,6 +82,13 @@ from .auth_routes import auth_bp
 
 app.register_blueprint(auth_bp, url_prefix="/auth")
 
+# Auth0 Regular Web App routes (/auth/sso, /callback, /logout). Registering this
+# is what makes SSO login *and* RP-initiated logout resolve; without it those
+# paths fall through to the SPA catch-all and silently no-op.
+from .auth0_routes import auth0_bp
+
+app.register_blueprint(auth0_bp)
+
 from .api import register_api_blueprints
 
 register_api_blueprints(app)

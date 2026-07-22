@@ -231,6 +231,51 @@ def run_sliver_task(self, target, args=None, evasion=None):
     return sliver.scan(target, args)
 
 
+@app.task(bind=True, soft_time_limit=180, time_limit=210)
+def run_custom_tool_task(self, target, args=None, tool_name=None, evasion=None):
+    """Execute an operator-approved custom tool from the registry (argv, no shell)."""
+    import subprocess
+
+    from orchestrator.tools_registry import get_tool, render_argv, resolve_binary
+
+    rec = get_tool(tool_name or "")
+    if not rec:
+        return {"tool": tool_name, "target": target, "error": "custom tool not found"}
+    if not rec.get("enabled", True):
+        return {"tool": tool_name, "target": target, "error": "custom tool disabled"}
+
+    self.update_state(state="STARTED", meta={"status": f"Custom tool {tool_name}..."})
+    if resolve_binary(rec["binary"]) is None:
+        return {
+            "tool": tool_name,
+            "target": target,
+            "error": f"binary '{rec['binary']}' not found on worker PATH",
+        }
+    argv = render_argv(rec, target, args or [])
+    try:
+        proc = subprocess.run(
+            argv,
+            capture_output=True,
+            text=True,
+            timeout=170,
+            check=False,
+        )
+        output = (proc.stdout or "") + (proc.stderr or "")
+        return {
+            "tool": tool_name,
+            "target": target,
+            "argv": argv,
+            "returncode": proc.returncode,
+            "raw_output": output[:20000],
+        }
+    except subprocess.TimeoutExpired:
+        return {"tool": tool_name, "target": target, "error": "custom tool timed out"}
+    except FileNotFoundError:
+        return {"tool": tool_name, "target": target, "error": f"binary not found: {rec['binary']}"}
+    except Exception as exc:  # noqa: BLE001 - surface any exec failure to the mission log
+        return {"tool": tool_name, "target": target, "error": str(exc)}
+
+
 @app.task(bind=True, soft_time_limit=30, time_limit=45)
 def run_tools_health_task(self):
     """Probe worker PATH / artifacts for every registered wrapper."""
@@ -293,6 +338,16 @@ def build_phase_workflow(
         ]
         task_fn = _TASK_MAP.get(tool_name)
         if task_fn is None:
+            # Operator-approved custom tool from the runtime registry.
+            try:
+                from orchestrator.tools_registry import get_tool
+
+                if get_tool(tool_name):
+                    task_list.append(
+                        run_custom_tool_task.si(target, args, tool_name, evasion)
+                    )
+            except Exception:
+                pass
             continue
         if tool_name in _PROXY_TOOLS:
             task_list.append(

@@ -1829,3 +1829,417 @@ textarea {
   white-space: nowrap;
   border: 0;
 }
+
+/* ---------------------------------------------------------------------------
+   Button + chip variants (marketing / chat)
+--------------------------------------------------------------------------- */
+.btn--lg {
+  padding: 0.85rem 1.7rem;
+  font-size: var(--text-base);
+}
+
+.btn--ghost {
+  background: transparent;
+  border-color: var(--line-bright);
+}
+
+.chip--action {
+  cursor: pointer;
+  border-color: var(--line-bright);
+  transition: border-color 0.15s, box-shadow 0.15s, color 0.15s;
+}
+
+.chip--action:hover:not(:disabled) {
+  border-color: var(--cyan);
+  color: var(--cyan-strong);
+  box-shadow: var(--glow-cyan);
+}
+
+.login-panel__back,
+.login-panel__alt {
+  display: block;
+  margin-top: 1rem;
+  font-size: var(--text-sm);
+  color: var(--muted);
+}
+
+.login-panel__back {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+}
+
+.login-panel__alt a,
+.login-panel__back:hover {
+  color: var(--cyan);
+}
+
+/* ---------------------------------------------------------------------------
+   Marketing / landing
+--------------------------------------------------------------------------- */
+.marketing {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.marketing-nav {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 1rem clamp(1rem, 5vw, 4rem);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(10px);
+  background: color-mix(in srgb, var(--bg-0) 82%, transparent);
+}
+
+.marketing-nav__brand {
+  font-family: var(--font-display);
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  text-decoration: none;
+  font-size: var(--text-md);
+}
+
+.marketing-nav__links {
+  display: flex;
+  gap: 1.25rem;
+  margin-left: 1rem;
+}
+
+.marketing-nav__links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  letter-spacing: 0.03em;
+}
+
+.marketing-nav__links a:hover {
+  color: var(--text-strong);
+}
+
+.marketing-nav__cta {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-left: auto;
+}
+
+.marketing-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: clamp(2rem, 6vw, 5rem) clamp(1rem, 5vw, 2rem) 4rem;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(3rem, 8vw, 6rem);
+}
+
+.hero {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1rem;
+}
+
+.hero__eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  font-size: var(--text-xs);
+  color: var(--cyan);
+}
+
+.hero__title {
+  font-size: clamp(2.2rem, 6vw, 4rem);
+  line-height: 1.05;
+  margin: 0;
+  max-width: 16ch;
+}
+
+.hero__accent {
+  color: var(--amber);
+  text-shadow: var(--glow-amber);
+}
+
+.hero__lede {
+  max-width: 60ch;
+  color: var(--muted);
+  font-size: var(--text-md);
+}
+
+.hero__cta {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.hero__meta {
+  display: flex;
+  gap: 0.75rem;
+  color: var(--muted-soft);
+  font-size: var(--text-sm);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 1.25rem;
+}
+
+.feature-card h3 {
+  font-size: var(--text-md);
+  margin-bottom: 0.5rem;
+}
+
+.workflow__phases {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 1.25rem;
+  margin-top: 1rem;
+}
+
+.workflow__phase {
+  position: relative;
+}
+
+.workflow__num {
+  font-family: var(--font-mono);
+  color: var(--cyan);
+  font-size: var(--text-lg);
+  font-weight: 500;
+}
+
+.workflow__phase h3 {
+  font-size: var(--text-md);
+  margin: 0.5rem 0;
+}
+
+.pricing__head {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.pricing__head h2 {
+  font-size: clamp(1.4rem, 3.5vw, 2rem);
+  max-width: 24ch;
+}
+
+.pricing__toggle {
+  display: inline-flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  background: var(--bg-2);
+  padding: 0.3rem;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line);
+}
+
+.pricing__toggle .admin-tab {
+  border-radius: var(--radius-pill);
+  padding: 0.5rem 1.25rem;
+}
+
+.pricing__save {
+  margin-left: 0.5rem;
+  font-size: var(--text-xs);
+  color: var(--amber);
+}
+
+.pricing__cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.pricing-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.pricing-card--feature {
+  border-color: var(--cyan);
+  box-shadow: var(--glow-cyan);
+}
+
+.pricing-card__price {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 2.6rem);
+  color: var(--text-strong);
+  font-weight: 700;
+}
+
+.pricing-card__unit {
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  color: var(--muted);
+  font-weight: 500;
+  margin-left: 0.35rem;
+}
+
+.pricing-card__list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.pricing-card__list li {
+  padding-left: 1.4rem;
+  position: relative;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+
+.pricing-card__list li::before {
+  content: "▹";
+  position: absolute;
+  left: 0;
+  color: var(--cyan);
+}
+
+.pricing-card .btn {
+  margin-top: auto;
+}
+
+.pricing-calc {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.9rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.pricing-calc input[type="range"] {
+  width: 100%;
+  accent-color: var(--cyan);
+}
+
+.pricing-calc__total {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.cta-band {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  padding: clamp(2rem, 5vw, 3rem);
+}
+
+.marketing-footer {
+  border-top: 1px solid var(--line);
+  padding: 2.5rem clamp(1rem, 5vw, 4rem);
+  display: grid;
+  gap: 1.25rem;
+}
+
+.marketing-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+}
+
+.marketing-footer__links a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: var(--text-sm);
+}
+
+.marketing-footer__links a:hover {
+  color: var(--cyan);
+}
+
+.marketing-footer__legal {
+  color: var(--muted-soft);
+  font-size: var(--text-xs);
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   Legal pages
+--------------------------------------------------------------------------- */
+.legal {
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+.legal h1 {
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+}
+
+.legal h2 {
+  font-size: var(--text-md);
+  margin-top: 1.75rem;
+  color: var(--cyan-strong);
+}
+
+.legal p,
+.legal li {
+  color: var(--muted);
+}
+
+.legal ul {
+  padding-left: 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.legal a {
+  color: var(--cyan);
+}
+
+/* ---------------------------------------------------------------------------
+   Chat: welcome, suggestions, streaming
+--------------------------------------------------------------------------- */
+.mission-chat__welcome {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.mission-chat__suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mission-chat__content {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.mission-chat__typing {
+  display: inline-block;
+  color: var(--cyan);
+  animation: firebreak-blink 1s steps(2, start) infinite;
+}
+
+@keyframes firebreak-blink {
+  to {
+    opacity: 0.15;
+  }
+}

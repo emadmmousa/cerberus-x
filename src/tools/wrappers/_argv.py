@@ -41,10 +41,16 @@ def coerce_argv(args: Sequence | None) -> List[str]:
     return expand_glued_argv(out)
 
 
+_HEADER_VALUE = re.compile(r"^[A-Za-z0-9-]+:\s.+$")
+
+
 def _split_token(token: str) -> List[str]:
     text = token.strip()
     if not text:
         return []
+    # HTTP header values (Cookie:, Authorization:, etc.) must stay one token.
+    if _HEADER_VALUE.match(text):
+        return [text]
     # Already a single clean flag or value
     if " " not in text and "\t" not in text:
         return [text]

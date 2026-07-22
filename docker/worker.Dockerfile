@@ -117,6 +117,21 @@ RUN mkdir -p /app/tools && \
       https://github.com/peass-ng/PEASS-ng/releases/latest/download/linpeas.sh && \
     chmod +x /app/tools/linpeas.sh
 
+# Sliver C2 (BishopFox) — optional post-exploitation C2 for authorized engagements.
+# Arch-aware: aarch64->arm64, x86_64->amd64. Server binary self-fetches deps on first run.
+RUN set -eux; \
+    MACHINE="$(uname -m)"; \
+    case "${MACHINE}" in \
+      aarch64) SLIVER_ARCH="arm64" ;; \
+      x86_64)  SLIVER_ARCH="amd64" ;; \
+      *) echo "Unsupported architecture: ${MACHINE}" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL -o /usr/local/bin/sliver-server \
+      "https://github.com/BishopFox/sliver/releases/latest/download/sliver-server_linux-${SLIVER_ARCH}"; \
+    curl -fsSL -o /usr/local/bin/sliver-client \
+      "https://github.com/BishopFox/sliver/releases/latest/download/sliver-client_linux-${SLIVER_ARCH}"; \
+    chmod +x /usr/local/bin/sliver-server /usr/local/bin/sliver-client
+
 WORKDIR /app
 
 COPY requirements.txt .

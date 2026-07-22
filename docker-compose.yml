@@ -126,13 +126,16 @@ services:
       - FIREBREAK_MCP_API_KEY=${FIREBREAK_MCP_API_KEY:-}
       - FIREBREAK_MCP_RATE_LIMIT_PER_MIN=${FIREBREAK_MCP_RATE_LIMIT_PER_MIN:-30}
       - FIREBREAK_AI_REQUIRE_CONFIRM=${FIREBREAK_AI_REQUIRE_CONFIRM:-false}
+      - FIREBREAK_REQUIRE_AUTHZ=${FIREBREAK_REQUIRE_AUTHZ:-false}
+      - AUTHORIZED_TARGETS_FILE=${AUTHORIZED_TARGETS_FILE:-/app/authorized_targets.json}
       - FIREBREAK_LLM_BASE_URL=${FIREBREAK_LLM_BASE_URL:-http://ollama:11434/v1}
       - FIREBREAK_LLM_API_KEY=${FIREBREAK_LLM_API_KEY:-ollama}
       - FIREBREAK_LLM_MODEL=${FIREBREAK_LLM_MODEL:-firebreak}
-      - FIREBREAK_LLM_BASE_MODEL=${FIREBREAK_LLM_BASE_MODEL:-qwen2.5:7b}
+      - FIREBREAK_LLM_CHAT_MODEL=${FIREBREAK_LLM_CHAT_MODEL:-firebreak}
+      - FIREBREAK_LLM_BASE_MODEL=${FIREBREAK_LLM_BASE_MODEL:-qwen2.5-coder:7b}
       - FIREBREAK_MULTI_SCAFFOLD=${FIREBREAK_MULTI_SCAFFOLD:-true}
       - FIREBREAK_SCAFFOLD_COST_ROUTE=${FIREBREAK_SCAFFOLD_COST_ROUTE:-false}
-      - FIREBREAK_LLM_FALLBACK_MODEL=${FIREBREAK_LLM_FALLBACK_MODEL:-qwen2.5:7b}
+      - FIREBREAK_LLM_FALLBACK_MODEL=${FIREBREAK_LLM_FALLBACK_MODEL:-qwen2.5-coder:7b}
       - FIREBREAK_EDITION=${FIREBREAK_EDITION:-community}
       - FIREBREAK_MANAGED_HOSTING=${FIREBREAK_MANAGED_HOSTING:-false}
       - FIREBREAK_CONTROL_PLANE_URL=${FIREBREAK_CONTROL_PLANE_URL:-}
@@ -150,6 +153,7 @@ services:
       - ./training:/app/training:ro
       - ./output:/app/output
       - ./.env:/app/.env
+      - ./authorized_targets.json:/app/authorized_targets.json:ro
     # Dashboard is the only host-facing entry point; bind to localhost only.
     ports:
       - "127.0.0.1:5000:5000"
@@ -184,7 +188,7 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
       - OLLAMA_API_KEY=${OLLAMA_API_KEY:-}
-      - FIREBREAK_LLM_BASE_MODEL=${FIREBREAK_LLM_BASE_MODEL:-qwen2.5:7b}
+      - FIREBREAK_LLM_BASE_MODEL=${FIREBREAK_LLM_BASE_MODEL:-qwen2.5-coder:7b}
       - FIREBREAK_LLM_MODEL=${FIREBREAK_LLM_MODEL:-firebreak}
     volumes:
       - ./docker/ollama:/modelfiles:ro
@@ -196,7 +200,7 @@ services:
           ollama list >/dev/null 2>&1 && break
           sleep 2
         done
-        BASE="${FIREBREAK_LLM_BASE_MODEL:-qwen2.5:7b}"
+        BASE="${FIREBREAK_LLM_BASE_MODEL:-qwen2.5-coder:7b}"
         CUSTOM="${FIREBREAK_LLM_MODEL:-firebreak}"
         echo "Pulling Firebreak base $${BASE}..."
         ollama pull "$${BASE}"

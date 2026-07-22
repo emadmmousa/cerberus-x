@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   associateUserOrg,
+  addAuthorizedTarget,
   createAdminOrg,
   createAdminUser,
   deleteAdminOrg,
   deleteAdminUser,
+  deleteAuthorizedTarget,
   deleteMission,
   getAdminLogs,
   getAdminSettings,
   listAdminOrgs,
   listAdminUsers,
+  listAuthorizedTargets,
   listMissions,
   restartMission,
   setAuthMethod,
@@ -22,6 +25,7 @@ import {
   type AdminSettings,
   type AdminUser,
   type AuditEvent,
+  type AuthorizedTargetRow,
   type MissionSummaryRow,
 } from "../api/client";
 import { useAuth } from "../providers/AuthProvider";
@@ -33,6 +37,7 @@ type TabId =
   | "rbac"
   | "edition"
   | "ops"
+  | "targets"
   | "missions"
   | "logs";
 
@@ -43,6 +48,7 @@ const TABS: Array<{ id: TabId; label: string }> = [
   { id: "rbac", label: "RBAC" },
   { id: "edition", label: "Edition" },
   { id: "ops", label: "Ops" },
+  { id: "targets", label: "Targets" },
   { id: "missions", label: "Missions" },
   { id: "logs", label: "Logs" },
 ];
@@ -94,6 +100,7 @@ export function Admin() {
       {tab === "rbac" && <RbacTab flash={flash} onChange={refresh} />}
       {tab === "edition" && <EditionTab flash={flash} onChange={refresh} />}
       {tab === "ops" && <OpsTab flash={flash} />}
+      {tab === "targets" && <TargetsTab flash={flash} />}
       {tab === "missions" && <MissionsTab flash={flash} />}
       {tab === "logs" && <LogsTab flash={flash} />}
     </div>
@@ -853,6 +860,140 @@ function OpsTab({ flash }: { flash: FlashFn }) {
         );
       })}
     </section>
+  );
+}
+
+// --------------------------------------------------------------------------
+// Authorized targets
+// --------------------------------------------------------------------------
+function TargetsTab({ flash }: { flash: FlashFn }) {
+  const [rows, setRows] = useState<AuthorizedTargetRow[]>([]);
+  const [form, setForm] = useState({ target: "", notes: "", expiry: "" });
+
+  const load = useCallback(async () => {
+    try {
+      const res = await listAuthorizedTargets();
+      setRows(res.targets ?? []);
+    } catch (err) {
+      flash("err", errMsg(err));
+    }
+  }, [flash]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function add() {
+    const target = form.target.trim();
+    if (!target) {
+      flash("err", "Target is required");
+      return;
+    }
+    try {
+      await addAuthorizedTarget({
+        target,
+        notes: form.notes.trim() || undefined,
+        expiry: form.expiry.trim() || undefined,
+      });
+      flash("ok", `Added ${target} (www + apex variants included)`);
+      setForm({ target: "", notes: "", expiry: "" });
+      await load();
+    } catch (err) {
+      flash("err", errMsg(err));
+    }
+  }
+
+  async function remove(target: string) {
+    if (!window.confirm(`Remove authorized target "${target}"?`)) return;
+    try {
+      await deleteAuthorizedTarget(target);
+      flash("ok", `Removed ${target}`);
+      await load();
+    } catch (err) {
+      flash("err", errMsg(err));
+    }
+  }
+
+  return (
+    <>
+      <section className="panel" aria-label="Add authorized target">
+        <div className="section-label">Add authorized target</div>
+        <p className="section-sub">
+          Manage engagement scope without editing JSON by hand. Firebreak accepts
+          apex and www variants for each host (http/https included).
+        </p>
+        <div className="admin-form">
+          <div className="field">
+            <label>Target / URL / app</label>
+            <input
+              value={form.target}
+              onChange={(e) => setForm({ ...form, target: e.target.value })}
+              placeholder="wks.agency or https://app.example.com"
+            />
+          </div>
+          <div className="field">
+            <label>Notes (optional)</label>
+            <input
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="Owner authorization ref"
+            />
+          </div>
+          <div className="field">
+            <label>Expiry ISO (optional)</label>
+            <input
+              value={form.expiry}
+              onChange={(e) => setForm({ ...form, expiry: e.target.value })}
+              placeholder="2099-12-31T23:59:59"
+            />
+          </div>
+          <button type="button" className="btn btn--primary" onClick={() => void add()}>
+            Add target
+          </button>
+        </div>
+      </section>
+
+      <section className="panel" aria-label="Authorized targets list">
+        <div className="section-label">Authorized targets ({rows.length})</div>
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th>Target</th>
+              <th>Notes</th>
+              <th>Expiry</th>
+              <th>Status</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.target}>
+                <td className="mono">{row.target}</td>
+                <td>{row.notes ?? "—"}</td>
+                <td className="mono">{row.expiry ?? "—"}</td>
+                <td>{row.authorized === false ? "revoked" : "active"}</td>
+                <td>
+                  <button
+                    type="button"
+                    className="btn btn--danger"
+                    onClick={() => void remove(row.target)}
+                  >
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && (
+              <tr>
+                <td colSpan={5} className="empty-state">
+                  No authorized targets yet.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </section>
+    </>
   );
 }
 

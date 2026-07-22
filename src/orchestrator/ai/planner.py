@@ -351,6 +351,21 @@ def suggest_next_phase(
     if llm.llm_configured():
         from orchestrator.ai import consensus, router
 
+        try:
+            from orchestrator.tools_registry import list_tools
+
+            custom_tools = [
+                {
+                    "tool": t["name"],
+                    "description": t.get("description") or "",
+                    "args_hint": t.get("args_template") or [],
+                }
+                for t in list_tools(include_disabled=False)
+                if t["name"] in allow
+            ]
+        except Exception:
+            custom_tools = []
+
         user = {
             "target": target,
             "nl_goal": nl_goal,
@@ -361,9 +376,12 @@ def suggest_next_phase(
             "completed_tools": sorted(completed),
             "tool_results": _tool_digest(results_by_phase),
             "allowlist": sorted(allow),
+            "custom_tools": custom_tools,
             "memory": memory_bits,
             "instruction": (
                 posture_instruction(posture_n)
+                + " custom_tools are operator-approved wrappers you may schedule "
+                "exactly like allowlisted built-ins (use their args_hint). "
                 + " Do NOT repeat any tool listed in completed_tools. "
                 "Advance to the next unused allowlisted tool. "
                 "If every useful tool is already completed, set stop=true and tools=[]."

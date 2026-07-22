@@ -1,6 +1,6 @@
 # Firebreak Firebreak — authorized cybersecurity planner model
 # Built via: ollama create firebreak -f Modelfile (FROM rewritten by ollama-pull)
-FROM qwen2.5:7b
+FROM qwen2.5-coder:7b
 
 PARAMETER temperature 0.3
 PARAMETER top_p 0.9

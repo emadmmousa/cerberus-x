@@ -55,8 +55,46 @@ def list_tool_descriptors(category: str | None = None) -> list[dict[str, Any]]:
                 },
             }
         )
+    for custom in _custom_tools():
+        risk = custom.get("risk") or "medium"
+        if category == "high" and risk != "high":
+            continue
+        if category == "low" and risk != "low":
+            continue
+        if category and category not in {"high", "low"} and custom.get("category") != category:
+            continue
+        tools.append(
+            {
+                "name": custom["name"],
+                "description": custom.get("description")
+                or f"Custom tool: {custom['name']}",
+                "risk": risk,
+                "category": custom.get("category") or "custom",
+                "maturity": "custom",
+                "parameters_schema": {
+                    "type": "object",
+                    "properties": {
+                        "target": {"type": "string"},
+                        "args": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": ["target"],
+                },
+            }
+        )
     return tools
 
 
+def _custom_tools() -> list[dict[str, Any]]:
+    try:
+        from orchestrator.tools_registry import list_tools
+
+        return list_tools(include_disabled=False)
+    except Exception:
+        return []
+
+
 def known_tools() -> set[str]:
-    return set(_TASK_MAP.keys())
+    """Built-in wrappers plus enabled operator-approved custom tools."""
+    names = set(_TASK_MAP.keys())
+    names.update(t["name"] for t in _custom_tools() if t.get("name"))
+    return names

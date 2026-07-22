@@ -60,15 +60,15 @@ describe("App", () => {
     vi.stubGlobal("fetch", mockFetch());
   });
 
-  it("shows Missions shell without exploit tabs", async () => {
+  it("shows the public landing page at the root path", async () => {
     render(<App />);
     expect(screen.queryByText(/Exploit Ops/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/MSF Console/i)).not.toBeInTheDocument();
     await waitFor(() => {
-      expect(screen.getByText(/Firebreak/i)).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: /^missions$/i })).toBeInTheDocument();
-      expect(screen.getByRole("tab", { name: /^chat$/i })).toBeInTheDocument();
-      expect(screen.getByRole("tab", { name: /^manual$/i })).toBeInTheDocument();
+      expect(screen.getByText(/Break in first/i)).toBeInTheDocument();
+      // Unauthenticated visitors get marketing CTAs, not the console.
+      expect(screen.getAllByRole("link", { name: /start free/i }).length).toBeGreaterThan(0);
+      expect(screen.getByText(/One authorized target included/i)).toBeInTheDocument();
     });
   });
 });

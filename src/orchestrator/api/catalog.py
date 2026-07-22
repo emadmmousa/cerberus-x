@@ -92,6 +92,67 @@ def tools_catalog():
     )
 
 
+@catalog_bp.get("/api/tools/custom")
+@require_role(Role.VIEWER)
+def custom_tools_list():
+    from orchestrator.tools_registry import list_tools
+
+    rows = list_tools(include_disabled=True)
+    return jsonify({"count": len(rows), "tools": rows})
+
+
+@catalog_bp.post("/api/tools/custom")
+@require_role(Role.OPERATOR)
+def custom_tools_register():
+    """Approve + register a custom tool (the human clicking here is the approval gate)."""
+    from flask import session
+
+    from orchestrator.tools_registry import register_tool
+
+    body = request.get_json(silent=True) or {}
+    try:
+        row = register_tool(
+            body,
+            created_by=session.get("user") or session.get("auth_method"),
+            org_id=session.get("org_id"),
+        )
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    try:
+        from security.audit import audit_log
+
+        audit_log(
+            "CUSTOM_TOOL_REGISTERED",
+            {
+                "name": row["name"],
+                "binary": row["binary"],
+                "risk": row["risk"],
+                "by": row.get("created_by"),
+            },
+        )
+    except Exception:
+        pass
+    return jsonify({"ok": True, "tool": row})
+
+
+@catalog_bp.delete("/api/tools/custom/<name>")
+@require_role(Role.OPERATOR)
+def custom_tools_delete(name: str):
+    from orchestrator.tools_registry import delete_tool
+
+    removed = delete_tool(name)
+    if not removed:
+        return jsonify({"error": "not found", "name": name}), 404
+    try:
+        from security.audit import audit_log
+
+        audit_log("CUSTOM_TOOL_DELETED", {"name": name})
+    except Exception:
+        pass
+    return jsonify({"ok": True, "removed": name})
+
+
 @catalog_bp.get("/api/tools/health")
 @require_role(Role.OPERATOR)
 def tools_health():

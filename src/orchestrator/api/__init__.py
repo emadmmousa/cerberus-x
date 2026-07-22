@@ -8,6 +8,7 @@ from flask import Flask
 def register_api_blueprints(app: Flask) -> None:
     from orchestrator.api.admin import admin_bp
     from orchestrator.api.ai import ai_bp
+    from orchestrator.api.authorized_targets import authorized_targets_bp
     from orchestrator.api.blackboard import blackboard_bp
     from orchestrator.api.catalog import catalog_bp
     from orchestrator.api.chat_missions import chat_missions_bp
@@ -31,3 +32,4 @@ def register_api_blueprints(app: Flask) -> None:
     app.register_blueprint(ai_bp)
     app.register_blueprint(proxy_bp)
     app.register_blueprint(catalog_bp)
+    app.register_blueprint(authorized_targets_bp)

@@ -312,6 +312,18 @@ export async function localLogin(
   });
 }
 
+export async function localSignup(
+  username: string,
+  password: string,
+  org?: string,
+): Promise<{ status: string; user: string; role?: string; org_id?: string }> {
+  return apiJson("/auth/local/signup", {
+    method: "POST",
+    body: JSON.stringify({ username, password, org }),
+    skipAuthRedirect: true,
+  });
+}
+
 export async function logoutSession(): Promise<void> {
   await apiFetch("/auth/logout", { method: "POST", skipAuthRedirect: true });
 }
@@ -619,6 +631,12 @@ export async function getAdminLogs(
 }
 
 // --- Mission chat agent ---
+export type MissionPlanPhase = {
+  name: string;
+  parallel?: boolean;
+  tools: Array<{ tool: string; args?: string[] }>;
+};
+
 export type MissionProposal = {
   target: string;
   posture: string;
@@ -626,6 +644,17 @@ export type MissionProposal = {
   stealth?: string | null;
   ready: boolean;
   missing?: string[];
+  plan?: {
+    phases: MissionPlanPhase[];
+    new_tools?: Array<{
+      name: string;
+      binary: string;
+      args_template: string[];
+      description?: string;
+      risk?: string;
+    }>;
+    tool_names?: string[];
+  };
 };
 
 export type ChatMessage = {
@@ -667,6 +696,96 @@ export async function postMissionChatMessage(
   });
 }
 
+export type CustomToolDraft = {
+  name: string;
+  binary: string;
+  args_template: string[];
+  description?: string;
+  risk?: string;
+  category?: string;
+};
+
+export type ChatStreamHandlers = {
+  onDelta: (text: string) => void;
+  onDone: (payload: {
+    reply: string;
+    proposal: MissionProposal | null;
+    draft: MissionProposal | null;
+    toolProposal: CustomToolDraft | null;
+    messages: ChatMessage[];
+  }) => void;
+  onError?: (message: string) => void;
+  signal?: AbortSignal;
+};
+
+/**
+ * Stream an assistant reply token-by-token over SSE. Falls back to throwing on
+ * transport errors so the caller can degrade to the non-streaming endpoint.
+ */
+export async function streamMissionChatMessage(
+  chatId: string,
+  content: string,
+  handlers: ChatStreamHandlers,
+): Promise<void> {
+  const res = await apiFetch(
+    `/api/chat/missions/${encodeURIComponent(chatId)}/stream`,
+    {
+      method: "POST",
+      body: JSON.stringify({ content }),
+      skipAuthRedirect: true,
+      signal: handlers.signal,
+    },
+  );
+  if (!res.ok || !res.body) {
+    throw new ApiError(res.status, "stream failed");
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const handleEvent = (block: string) => {
+    const line = block
+      .split("\n")
+      .find((l) => l.startsWith("data:"));
+    if (!line) return;
+    const raw = line.slice(5).trim();
+    if (!raw) return;
+    let evt: Record<string, unknown>;
+    try {
+      evt = JSON.parse(raw) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    if (typeof evt.delta === "string") {
+      handlers.onDelta(evt.delta);
+    } else if (evt.done) {
+      handlers.onDone({
+        reply: String(evt.reply ?? ""),
+        proposal: (evt.proposal as MissionProposal) ?? null,
+        draft: (evt.draft as MissionProposal) ?? null,
+        toolProposal: (evt.tool_proposal as CustomToolDraft) ?? null,
+        messages: (evt.messages as ChatMessage[]) ?? [],
+      });
+    } else if (typeof evt.error === "string") {
+      handlers.onError?.(evt.error);
+    }
+  };
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx: number;
+    while ((idx = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      handleEvent(block);
+    }
+  }
+  if (buffer.trim()) handleEvent(buffer);
+}
+
 export async function dismissMissionChatDraft(
   chatId: string,
 ): Promise<{ ok: boolean }> {
@@ -688,5 +807,71 @@ export async function launchMissionChat(
   return apiJson(`/api/chat/missions/${encodeURIComponent(chatId)}/launch`, {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+export type CustomTool = CustomToolDraft & {
+  enabled: boolean;
+  created_by?: string | null;
+  created_at?: number | null;
+};
+
+export async function listCustomTools(): Promise<{
+  count: number;
+  tools: CustomTool[];
+}> {
+  return apiJson(`/api/tools/custom`);
+}
+
+export async function registerCustomTool(
+  tool: CustomToolDraft,
+): Promise<{ ok: boolean; tool: CustomTool }> {
+  return apiJson(`/api/tools/custom`, {
+    method: "POST",
+    body: JSON.stringify(tool),
+  });
+}
+
+export async function deleteCustomTool(
+  name: string,
+): Promise<{ ok: boolean; removed: string }> {
+  return apiJson(`/api/tools/custom/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+}
+
+export type AuthorizedTargetRow = {
+  target: string;
+  host?: string;
+  authorized?: boolean;
+  expiry?: string | null;
+  notes?: string | null;
+  added_at?: string | null;
+};
+
+export async function listAuthorizedTargets(): Promise<{
+  count: number;
+  targets: AuthorizedTargetRow[];
+}> {
+  return apiJson("/api/authorized-targets");
+}
+
+export async function addAuthorizedTarget(body: {
+  target: string;
+  notes?: string;
+  expiry?: string;
+  authorized?: boolean;
+}): Promise<{ ok: boolean; target: AuthorizedTargetRow }> {
+  return apiJson("/api/authorized-targets", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteAuthorizedTarget(
+  target: string,
+): Promise<{ ok: boolean; removed: string }> {
+  return apiJson(`/api/authorized-targets/${encodeURIComponent(target)}`, {
+    method: "DELETE",
   });
 }

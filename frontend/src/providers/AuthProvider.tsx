@@ -12,6 +12,7 @@ import {
   getOidcStatus,
   getRbacMe,
   localLogin,
+  localSignup,
   logoutSession,
   type OidcStatus,
   type RbacMe,
@@ -30,6 +31,7 @@ type AuthContextValue = {
   refresh: () => Promise<void>;
   can: (minRole: "viewer" | "operator" | "admin") => boolean;
   loginLocal: (user: string, pass: string) => Promise<void>;
+  signup: (user: string, pass: string, org?: string) => Promise<void>;
   logout: () => Promise<void>;
   ssoHref: string;
 };
@@ -86,18 +88,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
+  const signup = useCallback(
+    async (user: string, pass: string, org?: string) => {
+      await localSignup(user, pass, org);
+      await refresh();
+    },
+    [refresh],
+  );
+
   const logout = useCallback(async () => {
+    // Route by the *actual* session method, not merely whether Auth0 is
+    // configured — otherwise local sessions get bounced to Auth0 and back.
+    const method = me?.auth_method;
     try {
       await logoutSession();
     } catch {
       /* ignore */
     }
-    if (oidc?.configured && oidc.provider === "auth0") {
+    setMe(null);
+    if (method === "auth0") {
       window.location.assign("/logout");
       return;
     }
-    await refresh();
-  }, [oidc, refresh]);
+    // Hard navigation guarantees a clean, unauthenticated app state regardless
+    // of whether RBAC enforcement is on.
+    window.location.assign("/login");
+  }, [me]);
 
   const ssoHref = oidc?.login_path || "/auth/sso";
 
@@ -109,10 +125,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refresh,
       can,
       loginLocal,
+      signup,
       logout,
       ssoHref,
     }),
-    [me, oidc, loading, refresh, can, loginLocal, logout, ssoHref],
+    [me, oidc, loading, refresh, can, loginLocal, signup, logout, ssoHref],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

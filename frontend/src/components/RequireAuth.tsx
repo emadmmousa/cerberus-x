@@ -14,7 +14,7 @@ export function RequireAuth({ minRole = "viewer", children }: Props) {
     return <p className="result-card__meta">Loading session…</p>;
   }
 
-  if (me?.rbac_enforce && !me.authenticated) {
+  if (!me?.authenticated) {
     return <Navigate to={`/login?next=${encodeURIComponent(location.pathname)}`} replace />;
   }
 

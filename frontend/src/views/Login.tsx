@@ -5,7 +5,7 @@ import { useAuth } from "../providers/AuthProvider";
 
 export function Login() {
   const { loginLocal, ssoHref, oidc, me, refresh } = useAuth();
-  const [user, setUser] = useState("admin");
+  const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -50,6 +50,9 @@ export function Login() {
       <div className="login-panel__chrome">
         <ThemeToggle />
       </div>
+      <Link to="/" className="login-panel__back">
+        ← Back to home
+      </Link>
       <h1 className="login-panel__title">Firebreak</h1>
       <p className="result-card__meta">Authorized operators only. SSO-first session.</p>
 
@@ -87,6 +90,10 @@ export function Login() {
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
+
+      <p className="login-panel__alt">
+        New to Firebreak? <Link to="/signup">Create an account</Link>
+      </p>
     </section>
   );
 }

@@ -40,6 +40,46 @@ def _drop_flag(args: list[str], *flags: str) -> list[str]:
     return out
 
 
+def _session_header_names() -> frozenset[str]:
+    return frozenset(
+        {
+            "cookie",
+            "authorization",
+            "x-xsrf-token",
+            "x-csrf-token",
+            "x-requested-with",
+        }
+    )
+
+
+def _is_session_header(value: str) -> bool:
+    name = str(value or "").split(":", 1)[0].strip().lower()
+    return name in _session_header_names()
+
+
+def _rejoin_header_args(args: list[str]) -> list[str]:
+    """Repair shlex-split header values like ``Cookie:`` + ``token=abc``."""
+    out: list[str] = []
+    skip_next = False
+    for index, arg in enumerate(args):
+        if skip_next:
+            skip_next = False
+            continue
+        if arg in {"-H", "--header"} and index + 1 < len(args):
+            nxt = str(args[index + 1])
+            if nxt.endswith(":") and index + 2 < len(args):
+                third = str(args[index + 2])
+                if not third.startswith("-"):
+                    out.extend([arg, f"{nxt} {third}"])
+                    skip_next = True
+                    continue
+            out.extend([arg, nxt])
+            skip_next = True
+            continue
+        out.append(arg)
+    return out
+
+
 def _cdn_backoff(args: list[str], evasion: dict) -> list[str]:
     """
     Cloudflare/CDN edges often stall ffuf at 0 req/sec when auto-calibrate
@@ -71,11 +111,16 @@ def _cdn_backoff(args: list[str], evasion: dict) -> list[str]:
                 value = str(args[index + 1])
                 skip = True
                 lower = value.lower()
-                if header_count == 0 and (
-                    lower.startswith("user-agent:") or lower.startswith("accept:")
+                if _is_session_header(value) or (
+                    header_count == 0
+                    and (
+                        lower.startswith("user-agent:")
+                        or lower.startswith("accept:")
+                    )
                 ):
                     stripped.extend([arg, value])
-                    header_count += 1
+                    if not _is_session_header(value):
+                        header_count += 1
             continue
         stripped.append(arg)
     args = stripped
@@ -126,10 +171,12 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
     if evasion is None:
         evasion = {}
     # Expand glued LLM tokens like "-w /tmp/w.txt http://x HTTP/1.1"
-    normalized = [
-        arg.replace("{{target}}", url) if isinstance(arg, str) else arg
-        for arg in coerce_argv(args)
-    ]
+    normalized = _rejoin_header_args(
+        [
+            arg.replace("{{target}}", url) if isinstance(arg, str) else arg
+            for arg in coerce_argv(args)
+        ]
+    )
     fixed: list[str] = []
     skip_next = False
     for index, arg in enumerate(normalized):
@@ -165,7 +212,6 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
                 continue
         fixed.append(arg)
 
-    fixed = force_url_arg(fixed, url, flags=("-u", "--url"), with_fuzz=True)
     if "-w" not in fixed and "--wordlist" not in fixed:
         if os.path.isfile(WORDLIST):
             fixed.extend(["-w", WORDLIST])
@@ -188,7 +234,8 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
             if "HTTP/" in str(value) or "\n" in str(value) or "\r" in str(value):
                 continue
             fixed.extend(["-H", f"{key}: {value}"])
-    return _cdn_backoff(fixed, evasion)
+    fixed = _cdn_backoff(fixed, evasion)
+    return force_url_arg(fixed, url, flags=("-u", "--url"), with_fuzz=True)
 
 
 def _parse_results(output: str) -> list[dict]:

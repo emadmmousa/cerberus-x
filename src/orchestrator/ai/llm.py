@@ -18,6 +18,23 @@ def llm_configured() -> bool:
     return bool((os.environ.get("FIREBREAK_LLM_BASE_URL") or "").strip())
 
 
+def chat_model() -> str:
+    """Model for conversational (natural-language) chat.
+
+    Defaults to the same model as missions (``firebreak``) so a single 7B model
+    stays resident — loading a second model alongside it OOM-kills llama-server
+    on memory-constrained hosts. The baked-in JSON planner persona is overridden
+    at call time by the advisor system prompt. Set FIREBREAK_LLM_CHAT_MODEL to a
+    lighter model (e.g. llama3.2:latest) only if you have RAM headroom and prefer
+    speed over uncensored security depth.
+    """
+    return (
+        os.environ.get("FIREBREAK_LLM_CHAT_MODEL")
+        or os.environ.get("FIREBREAK_LLM_MODEL")
+        or "firebreak"
+    )
+
+
 def completions_url(base: Optional[str] = None) -> Optional[str]:
     """Normalize FIREBREAK_LLM_BASE_URL to .../v1/chat/completions."""
     value = (base if base is not None else os.environ.get("FIREBREAK_LLM_BASE_URL") or "").strip()
@@ -36,6 +53,7 @@ def chat_completion(
     *,
     temperature: float | None = None,
     timeout: float = 90.0,
+    model: Optional[str] = None,
 ) -> Optional[str]:
     """
     Call an OpenAI-compatible /v1/chat/completions endpoint.
@@ -44,7 +62,7 @@ def chat_completion(
     url = completions_url()
     if not url:
         return None
-    model = os.environ.get("FIREBREAK_LLM_MODEL", "firebreak")
+    model = model or os.environ.get("FIREBREAK_LLM_MODEL", "firebreak")
     api_key = os.environ.get("FIREBREAK_LLM_API_KEY", "ollama")
     temp = planner_temperature() if temperature is None else temperature
     body: dict[str, Any] = {
@@ -82,6 +100,72 @@ def chat_completion(
     except Exception as exc:
         logger.debug("LLM chat_completion failed: %s", exc)
         return None
+
+
+def chat_completion_stream(
+    messages: list[dict[str, str]],
+    *,
+    temperature: float | None = None,
+    timeout: float = 120.0,
+    model: Optional[str] = None,
+):
+    """Yield assistant content deltas from an OpenAI-compatible streaming endpoint.
+
+    Yields plain text chunks. Silently yields nothing when the LLM is
+    unavailable so callers can fall back to a non-streaming path.
+    """
+    url = completions_url()
+    if not url:
+        return
+    model = model or os.environ.get("FIREBREAK_LLM_MODEL", "firebreak")
+    api_key = os.environ.get("FIREBREAK_LLM_API_KEY", "ollama")
+    temp = planner_temperature() if temperature is None else temperature
+    body: dict[str, Any] = {
+        "model": model,
+        "messages": messages,
+        "temperature": temp,
+        "stream": True,
+    }
+    if llm_unrestricted():
+        body["top_p"] = float(os.environ.get("FIREBREAK_LLM_TOP_P", "0.95"))
+        body["presence_penalty"] = 0.1
+    think_raw = (os.environ.get("FIREBREAK_LLM_THINK") or "false").strip().lower()
+    body["think"] = think_raw in {"1", "true", "yes", "on"}
+    try:
+        resp = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=body,
+            timeout=timeout,
+            stream=True,
+        )
+        resp.raise_for_status()
+        for line in resp.iter_lines(decode_unicode=True):
+            if not line:
+                continue
+            if line.startswith("data:"):
+                line = line[5:].strip()
+            if not line or line == "[DONE]":
+                if line == "[DONE]":
+                    break
+                continue
+            try:
+                chunk = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            try:
+                delta = chunk["choices"][0]["delta"]
+            except (KeyError, IndexError, TypeError):
+                continue
+            piece = delta.get("content") or delta.get("reasoning_content")
+            if isinstance(piece, str) and piece:
+                yield piece
+    except Exception as exc:  # pragma: no cover - network dependent
+        logger.debug("LLM chat_completion_stream failed: %s", exc)
+        return
 
 
 def parse_json_object(text: str) -> Optional[dict[str, Any]]:

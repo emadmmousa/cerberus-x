@@ -537,6 +537,31 @@ def test_ffuf_detects_cdn_stall_output():
     assert ffuf._looks_like_cdn_stall(progressed) is False
 
 
+def test_ffuf_preserves_url_and_session_cookie_with_cdn_backoff():
+    url = ffuf._url("wks.agency")
+    args = [
+        "-u",
+        "https://wks.agency/FUZZ",
+        "-w",
+        "/usr/share/dirb/wordlists/common.txt",
+        "-mc",
+        "200,301,302",
+        "-H",
+        "Cookie: XSRF-TOKEN=abc123; laravel_session=xyz",
+    ]
+    norm = ffuf._normalize_args(args, url, evasion={"random_headers": True})
+    assert "-u" in norm
+    u_index = norm.index("-u")
+    assert norm[u_index + 1] == "https://wks.agency/FUZZ"
+    cookie_pairs = [
+        (norm[i], norm[i + 1])
+        for i in range(len(norm) - 1)
+        if norm[i] in {"-H", "--header"}
+    ]
+    assert any("cookie:" in value.lower() for _, value in cookie_pairs)
+    assert "XSRF-TOKEN=abc123" not in [a for a in norm if not a.startswith("-")]
+
+
 def test_crackmapexec_strips_url_target_args():
     from tools.wrappers import crackmapexec
 

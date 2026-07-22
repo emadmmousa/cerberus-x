@@ -65,10 +65,16 @@ def run_ai_mission(
     confirm_high_risk: bool = False,
     posture: str = "balanced",
     max_steps: int = 5,
+    seed_plan: list[dict] | None = None,
     add_log: Optional[LogFn] = None,
 ) -> None:
     """
     Adaptive loop: plan → execute phase tools → evaluate → re-plan.
+
+    When ``seed_plan`` is provided (chat-confirmed phases), those phases run
+    first exactly as ordered; the LLM/heuristic planner only takes over for
+    remaining adaptive steps afterward.
+
     High-risk tools in the plan are skipped unless confirm_high_risk is True
     (Celery enqueue path still enforces confirm for MCP; here we filter tools).
     """
@@ -80,17 +86,40 @@ def run_ai_mission(
     decision_engine = DecisionEngine(target, job_id=job_id, posture=posture_n)
     results_by_phase: dict[str, Any] = {}
     completed_tools: set[str] = set()
-    job["ai"] = {"goal": nl_goal, "steps": [], "mode": "ai", "posture": posture_n}
+    seed_phases = [
+        p for p in (seed_plan or []) if isinstance(p, dict) and p.get("tools")
+    ]
+    # Give chat-seeded missions enough steps to finish the ordered plan + follow-ups.
+    effective_max = max(max_steps, len(seed_phases) + max_steps) if seed_phases else max_steps
+    job["ai"] = {
+        "goal": nl_goal,
+        "steps": [],
+        "mode": "ai",
+        "posture": posture_n,
+        "seeded": bool(seed_phases),
+        "seed_phases": [p.get("name") for p in seed_phases],
+    }
 
-    for step in range(max_steps):
-        plan = planner.suggest_next_phase(
-            target,
-            results_by_phase,
-            nl_goal=nl_goal,
-            step=step,
-            posture=posture_n,
-            mission_id=job_id,
-        )
+    for step in range(effective_max):
+        if step < len(seed_phases):
+            phase = seed_phases[step]
+            plan = {
+                "phase_name": str(phase.get("name") or f"chat_phase_{step}")[:80],
+                "reason": f"Chat-confirmed plan phase {step + 1}/{len(seed_phases)}",
+                "parallel": bool(phase.get("parallel", False)),
+                "stop": False,
+                "tools": list(phase.get("tools") or []),
+                "source": "chat_plan",
+            }
+        else:
+            plan = planner.suggest_next_phase(
+                target,
+                results_by_phase,
+                nl_goal=nl_goal,
+                step=step,
+                posture=posture_n,
+                mission_id=job_id,
+            )
         job["ai"]["steps"].append(plan)
         log(f"AI plan ({plan.get('source')}): {plan.get('reason')}")
         try:
@@ -112,8 +141,14 @@ def run_ai_mission(
             if require_confirm_for_tool(name) and not confirm_high_risk:
                 log(f"Skipping high-risk tool {name} (confirm_high_risk=false)")
                 continue
-            if name in completed_tools or name in seen_this_phase:
+            # Seeded chat phases may intentionally re-run a tool with new args;
+            # only dedupe within the phase itself for those, and across the
+            # whole mission for adaptive planner steps.
+            if plan.get("source") != "chat_plan" and name in completed_tools:
                 log(f"Skipping already-completed tool {name}")
+                continue
+            if name in seen_this_phase:
+                log(f"Skipping duplicate tool {name} in this phase")
                 continue
             seen_this_phase.add(name)
             tools.append(entry)
