@@ -9,8 +9,13 @@ import {
   type RunRequest,
   type TaskStatus,
 } from "../api/client";
+import { computeTimelineProgress } from "../lib/missionSummary";
 
-const ACTIVE_STATES = new Set(["PENDING", "STARTED", "RUNNING"]);
+const ACTIVE_STATES = new Set(["PENDING", "STARTED", "RUNNING", "CANCEL_REQUESTED"]);
+
+export function isMissionActive(state?: string): boolean {
+  return ACTIVE_STATES.has(state ?? "");
+}
 
 export type PhaseState = "pending" | "running" | "done" | "failed" | "skipped";
 
@@ -24,6 +29,19 @@ export type PhaseView = {
   error?: string;
   findings: ResultRow[];
 };
+
+/** Fold dynamic decision-engine phases into their parent timeline step. */
+export function foldPhaseKey(phase: string): string {
+  if (phase.startsWith("proof_of_impact_")) return "proof_of_impact";
+  if (phase.startsWith("access_gained_")) return "access_gained";
+  if (phase.startsWith("post_exploitation_")) return "post_exploitation";
+  return phase;
+}
+
+export function isFoldedChildPhase(name: string, parentNames: Set<string>): boolean {
+  const parent = foldPhaseKey(name);
+  return parent !== name && parentNames.has(parent);
+}
 
 /** Keep the newest row per tool (legacy missions re-ran the same tool). */
 export function dedupeFindingsByTool(rows: ResultRow[]): ResultRow[] {
@@ -76,55 +94,104 @@ export function derivePhases(
     (status?.phases ?? []).map((p) => [p.phase, p]),
   );
 
-  // Index of the phase currently executing: first reported phase that has no
-  // saved results yet, while the job is still active.
-  const savedPhases = new Set(Object.keys(status?.results ?? {}));
+  const savedPhases = new Set([
+    ...Object.keys(status?.results ?? {}).map((name) => foldPhaseKey(name)),
+    ...Object.keys(resultsByPhase),
+  ]);
 
-  // AI Mode: show planned AI steps (real tools), not the static YAML playbook.
-  // Collapse repeated phase_name entries (legacy missions re-planned the same step).
+  type PipelineEntry = {
+    name: string;
+    tools: string[];
+    parallel: boolean;
+    depends_on: string[];
+    when: string | null;
+  };
+
+  const toolsFromAiStep = (
+    phaseName: string,
+    steps: NonNullable<TaskStatus["ai"]>["steps"],
+  ): string[] => {
+    if (!steps?.length) return [];
+    for (let i = steps.length - 1; i >= 0; i -= 1) {
+      const step = steps[i];
+      if (step?.stop) continue;
+      const name = step.phase_name || "";
+      if (name === phaseName) {
+        return Array.from(
+          new Set((step.tools ?? []).map((t) => t.tool).filter(Boolean)),
+        );
+      }
+    }
+    const base = phaseName.replace(/_s\d+$/, "");
+    for (let i = steps.length - 1; i >= 0; i -= 1) {
+      const step = steps[i];
+      if (step?.stop) continue;
+      const name = step.phase_name || "";
+      if (name === base || name.startsWith(`${base}_s`)) {
+        return Array.from(
+          new Set((step.tools ?? []).map((t) => t.tool).filter(Boolean)),
+        );
+      }
+    }
+    return [];
+  };
+
+  // AI Mode: timeline follows executed phases; ai.steps supply tool chips.
   let effectivePipeline: PlaybookPhase[] = pipeline;
   if (status?.ai_mode) {
     const aiStepsRaw = (status.ai?.steps ?? []).filter(
       (step) => !step.stop && (step.tools?.length || step.phase_name),
     );
-    const byName = new Map<
-      string,
-      {
-        name: string;
-        tools: string[];
-        parallel: boolean;
-        depends_on: string[];
-        when: string | null;
-      }
-    >();
+    const planned = new Map<string, PipelineEntry>();
     for (const step of aiStepsRaw) {
       const name = step.phase_name || "ai_phase";
-      // Keep the latest plan for a given name (later steps overwrite).
-      byName.set(name, {
+      planned.set(name, {
         name,
         tools: Array.from(
           new Set((step.tools ?? []).map((t) => t.tool).filter(Boolean)),
         ),
         parallel: Boolean(step.parallel),
-        depends_on: [] as string[],
-        when: null as string | null,
+        depends_on: [],
+        when: null,
       });
     }
-    const aiSteps = Array.from(byName.values());
-    const seen = new Set(aiSteps.map((p) => p.name));
-    for (const phase of status.phases ?? []) {
-      if (!seen.has(phase.phase)) {
-        aiSteps.push({
-          name: phase.phase,
-          tools: [],
-          parallel: false,
-          depends_on: [],
-          when: null,
-        });
-        seen.add(phase.phase);
+
+    const executedNames = (status.phases ?? [])
+      .map((phase) => phase.phase)
+      .filter(Boolean);
+    const orderedNames =
+      executedNames.length > 0
+        ? [...executedNames]
+        : Array.from(planned.keys());
+
+    for (const name of planned.keys()) {
+      if (!orderedNames.includes(name)) {
+        orderedNames.push(name);
       }
     }
-    effectivePipeline = aiSteps.length > 0 ? aiSteps : [];
+
+    const parentNames = new Set(
+      [...orderedNames, ...planned.keys()].map((name) => foldPhaseKey(name)),
+    );
+
+    effectivePipeline = orderedNames
+      .filter((name) => !isFoldedChildPhase(name, parentNames))
+      .map((name) => {
+        const canonical = foldPhaseKey(name);
+        const fromPlan = planned.get(name) ?? planned.get(canonical);
+        return {
+          name: canonical,
+          tools: fromPlan?.tools.length
+            ? fromPlan.tools
+            : toolsFromAiStep(canonical, status.ai?.steps),
+          parallel: fromPlan?.parallel ?? false,
+          depends_on: [] as string[],
+          when: null as string | null,
+        };
+      })
+      .filter((phase, index, list) =>
+        list.findIndex((entry) => entry.name === phase.name) === index,
+      );
   }
 
   const staticNames = new Set(effectivePipeline.map((phase) => phase.name));
@@ -133,20 +200,35 @@ export function derivePhases(
     : [...new Set(
         (status?.phases ?? [])
           .map((phase) => phase.phase)
-          .filter((name) => !staticNames.has(name)),
+          .filter(
+            (name) =>
+              !staticNames.has(foldPhaseKey(name)) &&
+              !isFoldedChildPhase(name, staticNames),
+          ),
       )].map((name) => ({
-        name,
+        name: foldPhaseKey(name),
         tools: ["adaptive"],
         parallel: false,
         depends_on: [] as string[],
         when: null as string | null,
       }));
 
+  const reportedForPhase = (name: string) => {
+    const direct = reported.get(name);
+    if (direct) return direct;
+    for (const [phaseName, info] of reported) {
+      if (foldPhaseKey(phaseName) === name) return info;
+    }
+    return undefined;
+  };
+
   let activeAssigned = false;
 
   return [...effectivePipeline, ...dynamicPhases].map((phase) => {
-    const rep = reported.get(phase.name);
+    const rep = reportedForPhase(phase.name);
     const findings = dedupeFindingsByTool(resultsByPhase[phase.name] ?? []);
+    const findingTools = findings.map((row) => row.tool).filter(Boolean);
+    const tools = Array.from(new Set([...phase.tools, ...findingTools]));
     let state: PhaseState = "pending";
 
     if (
@@ -166,8 +248,9 @@ export function derivePhases(
       state = "running";
       activeAssigned = true;
     } else if (rep) {
-      // reported but not yet saved, job no longer active
       state = runState === "FAILURE" ? "failed" : "done";
+    } else if (findings.length > 0) {
+      state = "done";
     }
 
     if (runState === "FAILURE" && state === "running") {
@@ -176,7 +259,7 @@ export function derivePhases(
 
     return {
       name: phase.name,
-      tools: phase.tools,
+      tools,
       parallel: phase.parallel,
       when: phase.when,
       state,
@@ -225,7 +308,7 @@ export function useMission() {
         ]);
         setStatus(statusData);
         setResults(resultRows);
-        if (!ACTIVE_STATES.has(statusData.state)) {
+        if (!isMissionActive(statusData.state)) {
           stopPolling();
           // one final results sweep after completion (still job-scoped)
           getResults(target, id)
@@ -283,7 +366,7 @@ export function useMission() {
         if (target) {
           const rows = await getResults(target, id).catch(() => [] as ResultRow[]);
           setResults(rows);
-          if (ACTIVE_STATES.has(statusData.state)) {
+          if (isMissionActive(statusData.state)) {
             startPolling(id, target);
           }
         }
@@ -299,7 +382,7 @@ export function useMission() {
   const resultsByPhase = useMemo(() => {
     const grouped: Record<string, ResultRow[]> = {};
     for (const row of results) {
-      const key = row.phase ?? "unknown";
+      const key = foldPhaseKey(row.phase ?? "unknown");
       (grouped[key] ??= []).push(row);
     }
     return grouped;
@@ -310,11 +393,13 @@ export function useMission() {
     [pipeline, status, resultsByPhase],
   );
 
-  const isActive = status ? ACTIVE_STATES.has(status.state) : false;
+  const isActive = status ? isMissionActive(status.state) : false;
   const totalFindings = results.length;
   const completedPhases = phases.filter(
     (p) => p.state === "done" || p.state === "skipped",
   ).length;
+  const timelineLength = phases.length;
+  const progressPercent = computeTimelineProgress(completedPhases, timelineLength);
 
   return {
     taskId,
@@ -330,6 +415,8 @@ export function useMission() {
     activeTarget,
     totalFindings,
     completedPhases,
+    timelineLength,
+    progressPercent,
     pipelineLength: pipeline.length,
   };
 }

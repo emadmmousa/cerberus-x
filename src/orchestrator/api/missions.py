@@ -66,6 +66,30 @@ def api_mission_hardening(job_id: str):
     return jsonify(payload)
 
 
+@missions_bp.post("/api/missions/<job_id>/cancel")
+@require_role(Role.OPERATOR)
+def api_mission_cancel(job_id: str):
+    try:
+        return jsonify(mission_svc.request_cancel(job_id))
+    except (JobNotFound, ForbiddenOrg) as exc:
+        return job_access_error_response(exc)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+
+@missions_bp.post("/api/missions/<job_id>/retry")
+@require_role(Role.OPERATOR)
+def api_mission_retry(job_id: str):
+    try:
+        return jsonify(mission_svc.retry_mission(job_id))
+    except (JobNotFound, ForbiddenOrg) as exc:
+        return job_access_error_response(exc)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
 @missions_bp.get("/status/<task_id>")
 @require_role(Role.VIEWER)
 def task_status(task_id: str):
@@ -161,16 +185,25 @@ def api_run():
         ai_mode=ai_mode,
         nl_goal=nl_goal,
         posture=posture,
+        osint_seeds=osint_seeds,
     )
-    if osint_seeds:
-        playbook_jobs[job_id]["osint_seeds"] = osint_seeds
 
     if ai_mode:
         from orchestrator.ai.runner import run_ai_mission
 
         def _ai_job():
-            job = playbook_jobs[job_id]
-            job["state"] = "STARTED"
+            cancelled = mission_svc.authoritative_cancellation_state(job_id)
+            if cancelled is None:
+                dash.add_log(f"AI mission state unavailable before start for {target}", level="ERROR")
+                return
+            if cancelled:
+                mission_svc.finalize_cancellation(job_id)
+                dash.add_log(f"AI mission cancelled before start for {target}")
+                audit_log("AI_MISSION_CANCELLED", {"job_id": job_id, "target": target})
+                return
+            job = mission_svc.mark_mission_started(job_id)
+            if job is None:
+                raise RuntimeError("mission state unavailable")
             dash.add_log(
                 f"AI mission started for {target} "
                 f"(goal={nl_goal or 'default'} posture={posture})"
@@ -192,14 +225,37 @@ def api_run():
                     osint_seeds=osint_seeds,
                     add_log=dash.add_log,
                 )
-                job["state"] = "SUCCESS"
-                playbook_jobs.persist(job_id)
-                dash.add_log(f"AI mission finished for {target}")
-                audit_log("AI_MISSION_COMPLETE", {"job_id": job_id, "target": target})
+                if mission_svc.cancellation_requested(job_id):
+                    job = mission_svc.finalize_cancellation(job_id)
+                else:
+                    job = mission_svc.record_mission_outcome(
+                        job_id, state="SUCCESS"
+                    )
+                if job is None:
+                    raise RuntimeError("mission state unavailable")
+                if job.get("state") == "CANCEL_REQUESTED":
+                    job = mission_svc.finalize_cancellation(job_id)
+                if job.get("state") == "CANCELLED":
+                    dash.add_log(f"AI mission cancelled for {target}")
+                    audit_log("AI_MISSION_CANCELLED", {"job_id": job_id, "target": target})
+                else:
+                    dash.add_log(f"AI mission finished for {target}")
+                    audit_log("AI_MISSION_COMPLETE", {"job_id": job_id, "target": target})
             except Exception as exc:
-                job["state"] = "FAILURE"
-                job["error"] = str(exc)
-                playbook_jobs.persist(job_id)
+                if mission_svc.cancellation_requested(job_id):
+                    job = mission_svc.finalize_cancellation(job_id)
+                else:
+                    job = mission_svc.record_mission_outcome(
+                        job_id, state="FAILURE", error=str(exc)
+                    )
+                    if job is None:
+                        raise RuntimeError("mission state unavailable")
+                if job.get("state") == "CANCEL_REQUESTED":
+                    job = mission_svc.finalize_cancellation(job_id)
+                if job.get("state") == "CANCELLED":
+                    dash.add_log(f"AI mission cancelled for {target}")
+                    audit_log("AI_MISSION_CANCELLED", {"job_id": job_id, "target": target})
+                    return
                 dash.add_log(f"AI mission failed for {target}: {exc}", level="ERROR")
                 audit_log(
                     "AI_MISSION_FAILED",

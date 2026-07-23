@@ -17,14 +17,16 @@ from flask_socketio import SocketIO, emit
 from .celery_app import app as celery_app
 from .cli import collect_chain_results, collect_group_results
 from .database import get_results, init_db, save_phase_result
+from tools.result_enrichment import enrich_result_rows
 from .decision_engine import DecisionEngine
 from .elasticsearch_client import ElasticsearchClient
+from .job_store import playbook_jobs
 from .metasploit_api import msf_bp
 from .metasploit_socketio import register_metasploit_socketio
 from .mcp import mcp_bp
 from .prometheus_metrics import metrics_endpoint, update_queue_length
 from .tasks import build_phase_workflow
-from tools.proxy_config import ALLOWED_PROTOCOLS, credentials_configured
+from tools.proxy_config import credentials_configured
 from tools import proxy_settings
 from tools.env_file import clear_oxylabs_keys, upsert_oxylabs_keys
 from tools.k8s_proxy_sync import sync_proxy_to_kubernetes
@@ -93,6 +95,15 @@ from .api import register_api_blueprints
 
 register_api_blueprints(app)
 
+try:
+    from orchestrator.tools_registry import preload_custom_tools
+
+    custom_count = preload_custom_tools()
+    if custom_count:
+        logger.info("Loaded %s custom tool(s) from registry", custom_count)
+except Exception as exc:
+    logger.debug("Custom tool preload skipped: %s", exc)
+
 # Security middleware (scoped WAF; optional limiter)
 app.before_request(WAFMiddleware.before_request)
 app.after_request(WAFMiddleware.after_request)
@@ -111,7 +122,6 @@ socketio = SocketIO(app, cors_allowed_origins="*")
 register_metasploit_socketio(socketio)
 
 log_store = []
-playbook_jobs = {}
 DEFAULT_PLAYBOOK = os.environ.get("PLAYBOOK_PATH", "playbooks/default.yaml")
 _queue_metrics_started = False
 STATIC_APP = Path(__file__).resolve().parent / "static" / "app"
@@ -136,11 +146,23 @@ except Exception as _vault_exc:  # pragma: no cover
     _vault = None
 
 
+@app.after_request
+def _spa_cache_headers(response):
+    """Ensure index.html is never cached so hashed asset URLs stay current."""
+    if request.path == "/" or (
+        request.path.endswith(".html") and not request.path.startswith("/api")
+    ):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+    return response
+
+
 @app.route("/")
 def index():
     spa = STATIC_APP / "index.html"
     if spa.is_file():
-        return send_from_directory(STATIC_APP, "index.html")
+        resp = send_from_directory(STATIC_APP, "index.html")
+        resp.headers["Cache-Control"] = "no-store, max-age=0"
+        return resp
     from flask import render_template
 
     return render_template("index.html")
@@ -339,19 +361,26 @@ def results():
     limit = int(request.args.get("limit", 100))
     if job_id:
         # Job-scoped mission polls must not mix in older target history from ES.
-        return jsonify(get_results(target, limit, job_id=job_id))
+        return jsonify(enrich_result_rows(get_results(target, limit, job_id=job_id)))
     if es_client.available:
         rows = es_client.search_results(target=target, limit=limit)
         if rows:
-            return jsonify(rows)
-    return jsonify(get_results(target, limit))
+            return jsonify(enrich_result_rows(rows))
+    return jsonify(enrich_result_rows(get_results(target, limit)))
 
 
 def _run_playbook_job(
     job_id, target, playbook, use_proxy=False, proxy_protocol="http", evasion=None
 ):
-    job = playbook_jobs[job_id]
-    job["state"] = "STARTED"
+    from orchestrator.services import missions as mission_svc
+
+    if mission_svc.cancellation_requested(job_id):
+        mission_svc.finalize_cancellation(job_id)
+        add_log("Mission cancellation requested before playbook start.")
+        return
+    job = mission_svc.mark_mission_started(job_id)
+    if job is None:
+        raise RuntimeError("mission state unavailable")
     job["use_proxy"] = use_proxy
     job["proxy_protocol"] = proxy_protocol
     resolved_evasion = evasion if isinstance(evasion, dict) else _resolve_evasion(playbook)
@@ -369,6 +398,10 @@ def _run_playbook_job(
         "random_delay_max": resolved_evasion.get("random_delay_max"),
         "target_waf": resolved_evasion.get("target_waf"),
     }
+    from tools.proxy_policy import resolve_use_proxy
+
+    use_proxy = resolve_use_proxy(requested=use_proxy, evasion=resolved_evasion)
+    job["use_proxy"] = use_proxy
     try:
         if use_proxy:
             flagged = os.getenv("OXYLABS_PROXY_CONFIGURED", "").lower() in {
@@ -393,9 +426,16 @@ def _run_playbook_job(
             )
 
         init_db()
+        from orchestrator.celery_errors import assert_full_arsenal_ready
+
+        assert_full_arsenal_ready()
         decision_engine = DecisionEngine(target, job_id=job_id)
 
         for phase in playbook.get("phases", []):
+            if mission_svc.cancellation_requested(job_id):
+                mission_svc.finalize_cancellation(job_id)
+                add_log("Mission cancellation requested; no further phases will be scheduled.")
+                break
             phase_name = phase.get("name")
             tools = phase.get("tools", [])
             parallel = phase.get("parallel", False)
@@ -407,41 +447,82 @@ def _run_playbook_job(
                     f"Skipping phase {phase_name} ({skip_reason})",
                     level="INFO",
                 )
-                job["phases"].append(
-                    {"phase": phase_name, "error": f"skipped: {skip_reason}"}
+                job = mission_svc.append_phase_evidence(
+                    job_id, {"phase": phase_name, "error": f"skipped: {skip_reason}"}
                 )
                 continue
 
+            phase_use_proxy = resolve_use_proxy(
+                requested=use_proxy,
+                waf_blocked=bool(decision_engine.state.get("waf_blocked")),
+                cdn=bool(decision_engine.state.get("cdn")),
+                evasion=resolved_evasion,
+            )
             add_log(
                 f"Running phase {phase_name} for {target} "
-                f"(parallel={parallel}, proxy={use_proxy})"
+                f"(parallel={parallel}, proxy={phase_use_proxy})"
             )
             workflow = build_phase_workflow(
                 phase_name,
                 tools,
                 target,
                 parallel=parallel,
-                use_proxy=use_proxy,
+                use_proxy=phase_use_proxy,
                 proxy_protocol=proxy_protocol,
                 evasion=resolved_evasion,
             )
             if workflow is None:
-                job["phases"].append({"phase": phase_name, "error": "No valid tools"})
+                job = mission_svc.append_phase_evidence(
+                    job_id, {"phase": phase_name, "error": "No valid tools"}
+                )
                 continue
+            from orchestrator.celery_errors import assert_workers_ready
+
+            assert_workers_ready([t.get("tool") for t in tools if t.get("tool")])
+            if mission_svc.cancellation_requested(job_id):
+                mission_svc.finalize_cancellation(job_id)
+                add_log("Mission cancellation requested; no further phases will be scheduled.")
+                break
             async_result = workflow.apply_async()
-            job["phases"].append({"phase": phase_name, "task_id": async_result.id})
+            phase_record = {"phase": phase_name, "task_id": async_result.id}
+            if parallel:
+                phase_record["child_task_ids"] = [
+                    child.id
+                    for child in (getattr(async_result, "results", None) or [])
+                    if getattr(child, "id", None)
+                ]
+            registered = mission_svc.register_phase_tasks(job_id, phase_record)
+            if registered is not None:
+                job = registered
+            if mission_svc.cancellation_requested(job_id):
+                mission_svc.revoke_task_ids(
+                    phase_record.get("child_task_ids") or [phase_record["task_id"]]
+                )
+                mission_svc.finalize_cancellation(job_id)
+                break
             if parallel:
                 phase_outputs = collect_group_results(async_result, timeout=600)
             else:
                 phase_outputs = collect_chain_results(async_result, timeout=600)
-            job.setdefault("results", {})[phase_name] = phase_outputs
+            merged = mission_svc.merge_phase_result(job_id, phase_name, phase_outputs, [])
+            if merged is None:
+                raise RuntimeError("mission state unavailable")
+            job = merged
             save_phase_result(target, phase_name, phase_outputs, job_id=job_id)
             decision_engine.evaluate_phase(phase_name, phase_outputs)
+            if mission_svc.cancellation_requested(job_id):
+                mission_svc.finalize_cancellation(job_id)
+                add_log("Mission cancellation requested; no further phases will be scheduled.")
+                break
 
             actions = decision_engine.generate_post_phase_actions(
                 phase_name, phase_outputs
             )
             for action in actions:
+                if mission_svc.cancellation_requested(job_id):
+                    mission_svc.finalize_cancellation(job_id)
+                    add_log("Mission cancellation requested; no further phases will be scheduled.")
+                    break
                 action_name = action.get("phase") or f"auto_{action['tool']}_{phase_name}"
                 add_log(f"Auto action {action_name}", level="INFO")
                 action_workflow = build_phase_workflow(
@@ -449,18 +530,38 @@ def _run_playbook_job(
                     [{"tool": action["tool"], "args": action["args"]}],
                     target,
                     parallel=False,
-                    use_proxy=use_proxy,
+                    use_proxy=resolve_use_proxy(
+                        requested=use_proxy,
+                        waf_blocked=bool(decision_engine.state.get("waf_blocked")),
+                        cdn=bool(decision_engine.state.get("cdn")),
+                        evasion=resolved_evasion,
+                    ),
                     proxy_protocol=proxy_protocol,
                     evasion=resolved_evasion,
                 )
                 if action_workflow is None:
                     continue
+                from orchestrator.celery_errors import assert_workers_ready
+
+                assert_workers_ready([action["tool"]])
+                if mission_svc.cancellation_requested(job_id):
+                    mission_svc.finalize_cancellation(job_id)
+                    add_log("Mission cancellation requested; no further phases will be scheduled.")
+                    break
                 action_result = action_workflow.apply_async()
-                job["phases"].append(
-                    {"phase": action_name, "task_id": action_result.id}
-                )
+                action_record = {"phase": action_name, "task_id": action_result.id}
+                registered = mission_svc.register_phase_tasks(job_id, action_record)
+                if registered is not None:
+                    job = registered
+                if mission_svc.cancellation_requested(job_id):
+                    mission_svc.revoke_task_ids([action_result.id])
+                    mission_svc.finalize_cancellation(job_id)
+                    break
                 action_output = collect_chain_results(action_result, timeout=300)
-                job.setdefault("results", {})[action_name] = action_output
+                merged = mission_svc.merge_phase_result(job_id, action_name, action_output, [])
+                if merged is None:
+                    raise RuntimeError("mission state unavailable")
+                job = merged
                 save_phase_result(target, action_name, action_output, job_id=job_id)
                 decision_engine.evaluate_phase(action_name, action_output)
                 decision_engine.mark_actions_fired([action])
@@ -474,6 +575,10 @@ def _run_playbook_job(
                     if action.get("phase") == "post_exploitation"
                 ]
                 for action in post_actions:
+                    if mission_svc.cancellation_requested(job_id):
+                        mission_svc.finalize_cancellation(job_id)
+                        add_log("Mission cancellation requested; no further phases will be scheduled.")
+                        break
                     action_name = action.get("phase") or f"auto_{action['tool']}_{phase_name}"
                     add_log(f"Auto action {action_name}", level="INFO")
                     action_workflow = build_phase_workflow(
@@ -481,18 +586,40 @@ def _run_playbook_job(
                         [{"tool": action["tool"], "args": action["args"]}],
                         target,
                         parallel=False,
-                        use_proxy=use_proxy,
+                        use_proxy=resolve_use_proxy(
+                            requested=use_proxy,
+                            waf_blocked=bool(decision_engine.state.get("waf_blocked")),
+                            cdn=bool(decision_engine.state.get("cdn")),
+                            evasion=resolved_evasion,
+                        ),
                         proxy_protocol=proxy_protocol,
                         evasion=resolved_evasion,
                     )
                     if action_workflow is None:
                         continue
+                    from orchestrator.celery_errors import assert_workers_ready
+
+                    assert_workers_ready([action["tool"]])
+                    if mission_svc.cancellation_requested(job_id):
+                        mission_svc.finalize_cancellation(job_id)
+                        add_log("Mission cancellation requested; no further phases will be scheduled.")
+                        break
                     action_result = action_workflow.apply_async()
-                    job["phases"].append(
-                        {"phase": action_name, "task_id": action_result.id}
-                    )
+                    action_record = {"phase": action_name, "task_id": action_result.id}
+                    registered = mission_svc.register_phase_tasks(job_id, action_record)
+                    if registered is not None:
+                        job = registered
+                    if mission_svc.cancellation_requested(job_id):
+                        mission_svc.revoke_task_ids([action_result.id])
+                        mission_svc.finalize_cancellation(job_id)
+                        break
                     action_output = collect_chain_results(action_result, timeout=300)
-                    job.setdefault("results", {})[action_name] = action_output
+                    merged = mission_svc.merge_phase_result(
+                        job_id, action_name, action_output, []
+                    )
+                    if merged is None:
+                        raise RuntimeError("mission state unavailable")
+                    job = merged
                     save_phase_result(
                         target, action_name, action_output, job_id=job_id
                     )
@@ -500,122 +627,42 @@ def _run_playbook_job(
                     decision_engine.mark_actions_fired([action])
 
             add_log(f"Completed phase {phase_name}")
-        job["state"] = "SUCCESS"
-        add_log(f"Playbook finished for {target}")
+        if mission_svc.cancellation_requested(job_id):
+            mission_svc.finalize_cancellation(job_id)
+        else:
+            job = mission_svc.record_mission_outcome(job_id, state="SUCCESS")
+            if job is None:
+                raise RuntimeError("mission state unavailable")
+            if job.get("state") in {"CANCEL_REQUESTED", "CANCELLED"}:
+                mission_svc.finalize_cancellation(job_id)
+                add_log(f"Playbook cancelled for {target}")
+            else:
+                add_log(f"Playbook finished for {target}")
     except Exception as exc:
-        job["state"] = "FAILURE"
-        job["error"] = str(exc)
-        add_log(f"Playbook failed for {target}: {exc}", level="ERROR")
-        # Audit log for failure
-        audit_log("PLAYBOOK_FAILED", {"job_id": job_id, "target": target, "error": str(exc)}, severity="high")
+        from orchestrator.services import missions as mission_svc
+
+        if mission_svc.cancellation_requested(job_id):
+            mission_svc.finalize_cancellation(job_id)
+            add_log(f"Playbook cancelled for {target}")
+        else:
+            job = mission_svc.record_mission_outcome(
+                job_id, state="FAILURE", error=str(exc)
+            )
+            if job is None:
+                raise RuntimeError("mission state unavailable")
+            if job.get("state") in {"CANCEL_REQUESTED", "CANCELLED"}:
+                mission_svc.finalize_cancellation(job_id)
+                add_log(f"Playbook cancelled for {target}")
+                return
+            add_log(f"Playbook failed for {target}: {exc}", level="ERROR")
+            audit_log("PLAYBOOK_FAILED", {"job_id": job_id, "target": target, "error": str(exc)}, severity="high")
 
 
-@app.route("/api/run", methods=["POST"])
-def api_run():
-    """Submit a playbook or AI-mode mission for a target."""
-    body = request.get_json(silent=True) or {}
-    target = request.args.get("target") or body.get("target")
-    if not target:
-        return jsonify({"error": "target is required"}), 400
-
-    use_proxy = bool(body.get("use_proxy", False))
-    proxy_protocol = body.get("proxy_protocol") or "http"
-    if proxy_protocol not in ALLOWED_PROTOCOLS:
-        return jsonify({"error": "invalid proxy_protocol"}), 400
-
-    ai_mode = bool(body.get("ai_mode", False))
-    nl_goal = str(body.get("nl_goal") or body.get("goal") or "").strip()
-    confirm_high_risk = bool(body.get("confirm_high_risk", False))
-
-    playbook_path = request.args.get("playbook", DEFAULT_PLAYBOOK)
-    try:
-        with open(playbook_path) as handle:
-            playbook = yaml.safe_load(handle)
-    except FileNotFoundError:
-        return jsonify({"error": f"playbook not found: {playbook_path}"}), 404
-
-    evasion_override = body.get("evasion")
-    if evasion_override is not None and not isinstance(
-        evasion_override, (str, dict)
-    ):
-        return jsonify({"error": "invalid evasion"}), 400
-    resolved_evasion = _resolve_evasion(playbook, evasion_override)
-
-    job_id = str(uuid.uuid4())
-    playbook_jobs[job_id] = {
-        "task_id": job_id,
-        "target": target,
-        "state": "PENDING",
-        "phases": [],
-        "use_proxy": use_proxy,
-        "proxy_protocol": proxy_protocol,
-        "ai_mode": ai_mode,
-        "nl_goal": nl_goal,
-    }
-
-    if ai_mode:
-        from .ai.runner import run_ai_mission
-
-        def _ai_job():
-            job = playbook_jobs[job_id]
-            job["state"] = "STARTED"
-            add_log(f"AI mission started for {target} (goal={nl_goal or 'default'})")
-            try:
-                from orchestrator.ai.prompts import persona_banner
-
-                add_log(persona_banner())
-                run_ai_mission(
-                    job=job,
-                    job_id=job_id,
-                    target=target,
-                    use_proxy=use_proxy,
-                    proxy_protocol=proxy_protocol,
-                    evasion=resolved_evasion,
-                    nl_goal=nl_goal,
-                    confirm_high_risk=confirm_high_risk,
-                    add_log=add_log,
-                )
-                job["state"] = "SUCCESS"
-                add_log(f"AI mission finished for {target}")
-                audit_log("AI_MISSION_COMPLETE", {"job_id": job_id, "target": target})
-            except Exception as exc:
-                job["state"] = "FAILURE"
-                job["error"] = str(exc)
-                add_log(f"AI mission failed for {target}: {exc}", level="ERROR")
-                audit_log("AI_MISSION_FAILED", {"job_id": job_id, "target": target, "error": str(exc)}, severity="high")
-
-        threading.Thread(target=_ai_job, daemon=True).start()
-        add_log(
-            f"Submitted AI job {job_id} for {target} "
-            f"(proxy={use_proxy}/{proxy_protocol})"
-        )
-        return jsonify(
-            {
-                "task_id": job_id,
-                "target": target,
-                "state": "PENDING",
-                "ai_mode": True,
-            }
-        )
-
-    threading.Thread(
-        target=_run_playbook_job,
-        args=(
-            job_id,
-            target,
-            playbook,
-            use_proxy,
-            proxy_protocol,
-            resolved_evasion,
-        ),
-        daemon=True,
-    ).start()
-    add_log(
-        f"Submitted playbook job {job_id} for {target} "
-        f"(proxy={use_proxy}/{proxy_protocol})"
-    )
-    audit_log("PLAYBOOK_SUBMITTED", {"job_id": job_id, "target": target, "playbook": playbook_path})
-    return jsonify({"task_id": job_id, "target": target, "state": "PENDING"})
+# NOTE: POST /api/run is served by the RBAC-gated handler in
+# orchestrator/api/missions.py (missions_api.api_run). The legacy duplicate that
+# lived here bypassed role enforcement, so it was removed to leave a single,
+# authorization- and RBAC-guarded launch path. _run_playbook_job above is still
+# used by that handler via orchestrator.dashboard._run_playbook_job.
 
 
 @app.route("/api/ai/sessions", methods=["GET"])

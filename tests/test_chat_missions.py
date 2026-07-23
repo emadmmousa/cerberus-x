@@ -94,7 +94,7 @@ def test_api_create_message_launch(monkeypatch):
     monkeypatch.setattr(
         intake,
         "run_intake",
-        lambda messages, parse_failures=0: {
+        lambda messages, parse_failures=0, osint_seeds=None, **kwargs: {
             "reply": "Ready to launch against lab.example.com.",
             "proposal": {
                 "target": "lab.example.com",
@@ -123,7 +123,10 @@ def test_api_create_message_launch(monkeypatch):
 
     r = c.post(
         f"/api/chat/missions/{chat_id}/messages",
-        json={"content": "Scan lab.example.com"},
+        json={
+            "content": "Scan lab.example.com",
+            "options": {"auto_run": False},
+        },
     )
     assert r.status_code == 200
     data = r.get_json()
@@ -139,3 +142,131 @@ def test_api_create_message_launch(monkeypatch):
     thread = r.get_json()
     assert thread["draft"] is None
     assert "job-chat-1" in thread["mission_ids"]
+
+
+def test_non_stream_message_auto_launches_ready_proposal(monkeypatch):
+    from orchestrator.api import chat_missions as cm
+    from orchestrator.chat import intake
+
+    monkeypatch.setattr(
+        intake,
+        "run_intake",
+        lambda messages, parse_failures=0, osint_seeds=None, **kwargs: {
+            "reply": "Launching authorized assessment.",
+            "proposal": {
+                "target": "lab.example.com",
+                "posture": "aggressive",
+                "nl_goal": "authorized assessment",
+                "stealth": "high",
+                "ready": True,
+                "missing": [],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        cm,
+        "_start_mission",
+        lambda **kwargs: {
+            "task_id": "job-auto-1",
+            "target": kwargs["target"],
+            "state": "PENDING",
+        },
+    )
+
+    client = _client()
+    chat_id = client.post("/api/chat/missions").get_json()["chat_id"]
+    response = client.post(
+        f"/api/chat/missions/{chat_id}/messages",
+        json={
+            "content": "Run an assessment of lab.example.com",
+            "options": {"auto_run": True, "always_run": False},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["mission_launched"]["task_id"] == "job-auto-1"
+    assert payload["launch_error"] is None
+    assert payload["draft"] is None
+
+
+def test_non_stream_message_respects_auto_run_off(monkeypatch):
+    from orchestrator.api import chat_missions as cm
+    from orchestrator.chat import intake
+
+    monkeypatch.setattr(
+        intake,
+        "run_intake",
+        lambda messages, parse_failures=0, osint_seeds=None, **kwargs: {
+            "reply": "Plan ready.",
+            "proposal": {
+                "target": "lab.example.com",
+                "posture": "aggressive",
+                "ready": True,
+                "missing": [],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        cm,
+        "_start_mission",
+        lambda **kwargs: pytest.fail("Auto Run off must not launch"),
+    )
+
+    client = _client()
+    chat_id = client.post("/api/chat/missions").get_json()["chat_id"]
+    response = client.post(
+        f"/api/chat/missions/{chat_id}/messages",
+        json={
+            "content": "Run an assessment of lab.example.com",
+            "options": {"auto_run": False, "always_run": False},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["mission_launched"] is None
+    assert payload["launch_error"] is None
+    assert payload["draft"]["ready"] is True
+
+
+def test_non_stream_auto_launch_preserves_draft_on_authz_denial(monkeypatch):
+    from orchestrator.api import chat_missions as cm
+    from orchestrator.chat import intake
+
+    monkeypatch.setattr(
+        intake,
+        "run_intake",
+        lambda messages, parse_failures=0, osint_seeds=None, **kwargs: {
+            "reply": "Launching.",
+            "proposal": {
+                "target": "offlist.example",
+                "posture": "aggressive",
+                "ready": True,
+                "missing": [],
+            },
+        },
+    )
+    monkeypatch.setattr(
+        cm,
+        "_start_mission",
+        lambda **kwargs: (_ for _ in ()).throw(
+            PermissionError("target is not authorized")
+        ),
+    )
+
+    client = _client()
+    chat_id = client.post("/api/chat/missions").get_json()["chat_id"]
+    response = client.post(
+        f"/api/chat/missions/{chat_id}/messages",
+        json={
+            "content": "Run an assessment of offlist.example",
+            "options": {"auto_run": True},
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert payload["mission_launched"] is None
+    assert "not authorized" in payload["launch_error"]
+    assert payload["draft"]["target"] == "offlist.example"

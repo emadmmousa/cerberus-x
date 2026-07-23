@@ -11,12 +11,22 @@ import json
 import logging
 import os
 from collections.abc import Iterator, MutableMapping
-from typing import Any, Optional
+from typing import Any, Callable, Optional
+
+from utils.redis_utils import _MemoryRedis
 
 logger = logging.getLogger(__name__)
 
 PREFIX = "firebreak:job:"
 DEFAULT_TTL = int(os.environ.get("FIREBREAK_JOB_TTL_SECONDS") or "86400")
+
+
+class SharedLifecycleStoreUnavailable(RuntimeError):
+    """A lifecycle operation cannot safely run without shared Redis."""
+
+
+class SharedLifecycleMutationConflict(RuntimeError):
+    """A shared lifecycle update exhausted its optimistic-lock retries."""
 
 
 def _redis():
@@ -67,6 +77,146 @@ class PlaybookJobStore(MutableMapping):
         """Flush local job dict to Redis after nested mutations."""
         if job_id in self._local:
             self._redis_set(job_id, self._local[job_id])
+
+    def persist_shared(self, job_id: str, value: dict[str, Any]) -> None:
+        """Create a lifecycle record in real shared Redis or fail closed."""
+        r = self._shared_lifecycle_redis()
+        try:
+            payload = json.dumps(value, default=str)
+            if hasattr(r, "setex"):
+                r.setex(self._rkey(job_id), self._ttl, payload)
+            else:
+                r.set(self._rkey(job_id), payload)
+        except Exception as exc:
+            raise SharedLifecycleStoreUnavailable(
+                "shared Redis lifecycle storage is unavailable"
+            ) from exc
+        self._local[job_id] = dict(value)
+
+    def reload(self, job_id: str) -> Optional[dict[str, Any]]:
+        """Reload a job from Redis, bypassing the in-process cache."""
+        remote = self._redis_get(job_id)
+        if remote is not None:
+            self._local[job_id] = remote
+            return remote
+        return self._local.get(job_id)
+
+    def reload_authoritative(self, job_id: str) -> dict[str, Any]:
+        """Read a lifecycle record from real shared Redis only."""
+        r = self._shared_lifecycle_redis()
+        try:
+            raw = r.get(self._rkey(job_id))
+            if not raw:
+                raise SharedLifecycleStoreUnavailable(
+                    "shared lifecycle record is missing"
+                )
+            remote = json.loads(raw)
+            if not isinstance(remote, dict):
+                raise SharedLifecycleStoreUnavailable(
+                    "shared lifecycle record is invalid"
+                )
+        except SharedLifecycleStoreUnavailable:
+            raise
+        except Exception as exc:
+            raise SharedLifecycleStoreUnavailable(
+                "shared Redis lifecycle storage is unavailable"
+            ) from exc
+        self._local[job_id] = remote
+        return remote
+
+    def merge_shared(self, job_id: str, merge) -> Optional[dict[str, Any]]:
+        """Atomically mutate a shared job record; never use `_local` fallback."""
+        return self.mutate_lifecycle(job_id, merge)
+
+    def _shared_lifecycle_redis(self):
+        """Return a real Redis client suitable for cross-replica lifecycle state."""
+        r = _redis()
+        if r is None or isinstance(r, _MemoryRedis) or not hasattr(r, "pipeline"):
+            raise SharedLifecycleStoreUnavailable(
+                "shared Redis lifecycle storage is unavailable"
+            )
+        return r
+
+    @staticmethod
+    def _preserve_cancellation(
+        current: dict[str, Any], updated: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Never let a stale terminal/result write clear a cancellation."""
+        current_state = str(current.get("state") or "").upper()
+        if not (
+            bool(current.get("cancel_requested"))
+            or current_state in {"CANCEL_REQUESTED", "CANCELLED"}
+        ):
+            return updated
+        updated["cancel_requested"] = True
+        if str(updated.get("state") or "").upper() != "CANCELLED":
+            updated["state"] = (
+                "CANCELLED" if current_state == "CANCELLED" else "CANCEL_REQUESTED"
+            )
+        return updated
+
+    def mutate_lifecycle(
+        self, job_id: str, mutate: Callable[[dict[str, Any]], dict[str, Any]]
+    ) -> dict[str, Any]:
+        """Atomically mutate lifecycle state on real shared Redis only.
+
+        This deliberately rejects the process-local Redis fallback: callers that
+        report cancellation or write terminal mission state must coordinate
+        across replicas.
+        """
+        r = self._shared_lifecycle_redis()
+        key = self._rkey(job_id)
+        for _ in range(5):
+            pipe = None
+            running_mutator = False
+            mutator_failed = False
+            try:
+                pipe = r.pipeline()
+                pipe.watch(key)
+                raw = pipe.get(key)
+                if not raw:
+                    pipe.unwatch()
+                    raise SharedLifecycleStoreUnavailable(
+                        "shared lifecycle record is missing"
+                    )
+                current = json.loads(raw)
+                if not isinstance(current, dict):
+                    raise SharedLifecycleStoreUnavailable("shared lifecycle record is invalid")
+                try:
+                    running_mutator = True
+                    updated = mutate(dict(current))
+                except Exception:
+                    mutator_failed = True
+                    pipe.unwatch()
+                    raise
+                finally:
+                    running_mutator = False
+                if not isinstance(updated, dict):
+                    raise TypeError("lifecycle mutator must return a dict")
+                updated = self._preserve_cancellation(current, updated)
+                payload = json.dumps(updated, default=str)
+                pipe.multi()
+                pipe.setex(key, self._ttl, payload)
+                pipe.execute()
+                self._local[job_id] = dict(updated)
+                return updated
+            except Exception as exc:
+                if exc.__class__.__name__ == "WatchError":
+                    continue
+                if isinstance(exc, SharedLifecycleStoreUnavailable):
+                    raise
+                if running_mutator or mutator_failed:
+                    raise
+                raise SharedLifecycleStoreUnavailable(
+                    "shared Redis lifecycle storage is unavailable"
+                ) from exc
+            finally:
+                if pipe is not None:
+                    try:
+                        pipe.reset()
+                    except Exception:
+                        pass
+        raise SharedLifecycleMutationConflict("shared lifecycle mutation conflict")
 
     def __getitem__(self, job_id: str) -> dict[str, Any]:
         if job_id in self._local:

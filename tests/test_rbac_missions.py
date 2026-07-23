@@ -1,7 +1,19 @@
 """RBAC + org isolation for Mission Control shell APIs."""
 
+import pytest
+
 from orchestrator import dashboard
 from orchestrator.job_store import playbook_jobs
+
+
+@pytest.fixture(autouse=True)
+def clear_persisted_rbac_override():
+    from security import admin_store
+
+    previous = admin_store.rbac_enforce_override()
+    admin_store.set_rbac_enforce(None)
+    yield
+    admin_store.set_rbac_enforce(previous)
 
 
 def test_missions_list_org_scoped(monkeypatch):

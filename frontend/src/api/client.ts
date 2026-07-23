@@ -245,6 +245,32 @@ export async function getStatus(taskId: string): Promise<TaskStatus> {
   return apiJson<TaskStatus>(`/status/${encodeURIComponent(taskId)}`);
 }
 
+export type MissionCancelResponse = {
+  task_id: string;
+  state: "CANCEL_REQUESTED";
+  revoked_task_ids: string[];
+};
+
+export type MissionRetryResponse = {
+  task_id: string;
+  retried_from: string;
+  state: string;
+};
+
+export async function cancelMission(taskId: string): Promise<MissionCancelResponse> {
+  return apiJson<MissionCancelResponse>(
+    `/api/missions/${encodeURIComponent(taskId)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export async function retryMission(taskId: string): Promise<MissionRetryResponse> {
+  return apiJson<MissionRetryResponse>(
+    `/api/missions/${encodeURIComponent(taskId)}/retry`,
+    { method: "POST" },
+  );
+}
+
 export async function getResults(
   target: string,
   jobId?: string | null,
