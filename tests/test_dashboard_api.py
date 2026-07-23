@@ -21,6 +21,26 @@ def test_api_run_requires_target():
     assert response.get_json()["error"] == "target is required"
 
 
+def test_worker_readiness_endpoint(monkeypatch):
+    monkeypatch.setattr(
+        "orchestrator.api.missions.worker_readiness",
+        lambda: {
+            "status": "stale",
+            "expected_count": 2,
+            "missing_tasks": ["orchestrator.tasks.run_missing_task"],
+            "message": "worker registry is stale",
+        },
+    )
+
+    response = dashboard.app.test_client().get("/api/workers/readiness")
+
+    assert response.status_code == 200
+    assert response.get_json()["status"] == "stale"
+    assert response.get_json()["missing_tasks"] == [
+        "orchestrator.tasks.run_missing_task"
+    ]
+
+
 def test_api_run_missing_playbook():
     client = dashboard.app.test_client()
     response = client.post("/api/run?target=example.com&playbook=missing.yaml")
@@ -87,6 +107,10 @@ def test_api_run_accepts_proxy_flags(monkeypatch):
             "evasion: medium\nphases: []\n"
         ),
     )
+    monkeypatch.setattr(
+        "tools.proxy_policy.credentials_configured",
+        lambda: True,
+    )
     client = dashboard.app.test_client()
     resp = client.post(
         "/api/run",
@@ -102,6 +126,41 @@ def test_api_run_accepts_proxy_flags(monkeypatch):
     assert captured["proxy_protocol"] == "http"
     assert captured["evasion"]["random_headers"] is True
     assert captured["evasion"]["random_delay_max"] >= 1.0
+
+
+def test_api_run_omitted_proxy_defaults_false(monkeypatch):
+    import orchestrator.api.missions as missions_api
+
+    captured = {}
+
+    def _create_job_record(job_id, **kwargs):
+        captured.update(kwargs)
+        dashboard.playbook_jobs[job_id] = {"task_id": job_id, **kwargs}
+
+    class DormantThread:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(missions_api.mission_svc, "create_job_record", _create_job_record)
+    monkeypatch.setattr(missions_api.threading, "Thread", DormantThread)
+    monkeypatch.setattr(
+        "builtins.open",
+        lambda *a, **k: __import__("io").StringIO(
+            "evasion: aggressive\nphases: []\n"
+        ),
+    )
+    monkeypatch.setattr("tools.proxy_policy.credentials_configured", lambda: True)
+
+    response = dashboard.app.test_client().post(
+        "/api/run",
+        json={"target": "example.com"},
+    )
+
+    assert response.status_code == 200
+    assert captured["use_proxy"] is False
 
 
 def test_playbook_summary_lists_phases():

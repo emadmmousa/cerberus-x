@@ -11,6 +11,7 @@ from celery.result import AsyncResult
 from flask import Blueprint, jsonify, request
 
 from orchestrator.celery_app import app as celery_app
+from orchestrator.celery_errors import assert_full_arsenal_ready, worker_readiness
 from orchestrator.job_store import playbook_jobs
 from orchestrator.services import missions as mission_svc
 from security.audit import audit_log
@@ -40,6 +41,12 @@ def api_missions_list():
         limit = 50
     rows = mission_svc.list_missions(limit=limit)
     return jsonify({"count": len(rows), "org_id": tenant_id(), "missions": rows})
+
+
+@missions_bp.get("/api/workers/readiness")
+@require_role(Role.VIEWER)
+def api_worker_readiness():
+    return jsonify(worker_readiness())
 
 
 @missions_bp.get("/api/missions/<job_id>/hardening")
@@ -95,13 +102,27 @@ def api_run():
     if proxy_protocol not in ALLOWED_PROTOCOLS:
         return jsonify({"error": "invalid proxy_protocol"}), 400
 
+    # Authorization gate — every launch path enforces the authorized-target
+    # allowlist (no-op when FIREBREAK_REQUIRE_AUTHZ is off).
+    from scanner import enforce_launch_authorization
+
+    try:
+        osint_seeds = enforce_launch_authorization(
+            target,
+            osint_seeds=body.get("osint_seeds"),
+            posture=body.get("posture"),
+            path="/api/run",
+        )
+    except PermissionError as exc:
+        return jsonify({"error": str(exc), "reason": "unauthorized_target"}), 403
+
     ai_mode = bool(body.get("ai_mode", False))
     nl_goal = str(body.get("nl_goal") or body.get("goal") or "").strip()
     confirm_high_risk = bool(body.get("confirm_high_risk", False))
-    from orchestrator.ai.posture import normalize_posture
+    from orchestrator.ai.posture import DEFAULT_POSTURE, normalize_posture
     from orchestrator.playbook_catalog import playbook_for_posture
 
-    posture = normalize_posture(str(body.get("posture") or "balanced"))
+    posture = normalize_posture(str(body.get("posture") or DEFAULT_POSTURE))
     playbook_path = (
         request.args.get("playbook")
         or body.get("playbook")
@@ -118,6 +139,19 @@ def api_run():
         return jsonify({"error": "invalid evasion"}), 400
     resolved_evasion = dash._resolve_evasion(playbook, evasion_override)
 
+    try:
+        assert_full_arsenal_ready()
+    except RuntimeError as exc:
+        return (
+            jsonify(
+                {
+                    "error": str(exc),
+                    "reason": "worker_preflight_failed",
+                }
+            ),
+            503,
+        )
+
     job_id = str(uuid.uuid4())
     mission_svc.create_job_record(
         job_id,
@@ -128,6 +162,8 @@ def api_run():
         nl_goal=nl_goal,
         posture=posture,
     )
+    if osint_seeds:
+        playbook_jobs[job_id]["osint_seeds"] = osint_seeds
 
     if ai_mode:
         from orchestrator.ai.runner import run_ai_mission
@@ -153,6 +189,7 @@ def api_run():
                     nl_goal=nl_goal,
                     confirm_high_risk=confirm_high_risk,
                     posture=posture,
+                    osint_seeds=osint_seeds,
                     add_log=dash.add_log,
                 )
                 job["state"] = "SUCCESS"
