@@ -372,6 +372,10 @@ def build_sqlmap_args(
     args = list(existing or [])
     if "--batch" not in args and "-b" not in args:
         args.insert(0, "--batch")
+    if not _has_flag(args, "--answers"):
+        args.append(
+            "--answers=quit=N,follow=Y,redirect=Y,resend=Y,sitemap=N,tamper=Y"
+        )
 
     def add(flag: str) -> None:
         if not _has_flag(args, flag.split("=", 1)[0]):
@@ -509,6 +513,119 @@ def follow_on_sqlmap_actions(
             }
         )
     return actions
+
+
+# Rotating sqlmap strategies when a single pass finds nothing (authorized SQLi).
+SQLMAP_METHOD_ROTATION: list[dict[str, Any]] = [
+    {
+        "id": "forms_beustq",
+        "label": "Form crawl + full BEUSTQ",
+        "args": ["--batch", "--forms", "--crawl=3", "--level=5", "--risk=3", "--technique=BEUSTQ", "--threads=4"],
+    },
+    {
+        "id": "crawl_deep",
+        "label": "Deep crawl + aggressive risk",
+        "args": ["--batch", "--crawl=5", "--level=5", "--risk=3", "--threads=4", "--smart"],
+    },
+    {
+        "id": "union_only",
+        "label": "Union-based only",
+        "args": ["--batch", "--forms", "--technique=U", "--level=4", "--risk=3"],
+    },
+    {
+        "id": "error_based",
+        "label": "Error-based extraction",
+        "args": ["--batch", "--forms", "--technique=E", "--level=5", "--risk=3"],
+    },
+    {
+        "id": "time_blind",
+        "label": "Time-based blind",
+        "args": ["--batch", "--forms", "--technique=T", "--time-sec=5", "--level=5", "--risk=3"],
+    },
+    {
+        "id": "waf_tamper",
+        "label": "WAF tamper chain",
+        "args": [
+            "--batch",
+            "--forms",
+            "--tamper=space2comment,randomcase,between,charencode,percentage",
+            "--level=5",
+            "--risk=3",
+        ],
+    },
+    {
+        "id": "hpp_pollution",
+        "label": "HTTP parameter pollution",
+        "args": ["--batch", "--forms", "--hpp", "--level=4", "--risk=3", "--technique=BEUSTQ"],
+    },
+    {
+        "id": "enum_dbs",
+        "label": "Enumerate databases",
+        "args": ["--batch", "--forms", "--dbs", "--threads=4", "--level=3", "--risk=2"],
+    },
+    {
+        "id": "mysql_hint",
+        "label": "MySQL-targeted BEUSTQ",
+        "args": ["--batch", "--forms", "--dbms=MySQL", "--technique=BEUSTQ", "--level=5", "--risk=3"],
+    },
+    {
+        "id": "postgres_hint",
+        "label": "PostgreSQL-targeted BEUSTQ",
+        "args": ["--batch", "--forms", "--dbms=PostgreSQL", "--technique=BEUSTQ", "--level=5", "--risk=3"],
+    },
+    {
+        "id": "mssql_hint",
+        "label": "MSSQL-targeted BEUSTQ",
+        "args": [
+            "--batch",
+            "--forms",
+            "--dbms=Microsoft SQL Server",
+            "--technique=BEUSTQ",
+            "--level=5",
+            "--risk=3",
+        ],
+    },
+    {
+        "id": "oracle_hint",
+        "label": "Oracle-targeted BEUSTQ",
+        "args": ["--batch", "--forms", "--dbms=Oracle", "--technique=BEUSTQ", "--level=5", "--risk=3"],
+    },
+]
+
+_DBMS_METHOD_HINTS: dict[str, str] = {
+    "mysql": "mysql_hint",
+    "mariadb": "mysql_hint",
+    "postgres": "postgres_hint",
+    "postgresql": "postgres_hint",
+    "mssql": "mssql_hint",
+    "sqlserver": "mssql_hint",
+    "microsoft sql server": "mssql_hint",
+    "oracle": "oracle_hint",
+}
+
+
+def next_sqlmap_method(
+    *,
+    tried: set[str],
+    dbms: Optional[str] = None,
+) -> dict[str, Any] | None:
+    """Return the next untried sqlmap argv profile for database access hunting."""
+    preferred: list[str] = []
+    hint = _DBMS_METHOD_HINTS.get((dbms or "").strip().lower())
+    if hint and hint not in tried:
+        preferred.append(hint)
+    for entry in SQLMAP_METHOD_ROTATION:
+        method_id = str(entry["id"])
+        if method_id in tried or method_id in preferred:
+            continue
+        preferred.append(method_id)
+    for method_id in preferred:
+        if method_id in tried:
+            continue
+        for entry in SQLMAP_METHOD_ROTATION:
+            if entry["id"] == method_id:
+                return dict(entry)
+    return None
 
 
 def resolve_sqli_intensity(evasion: Optional[Dict[str, Any]] = None) -> str:

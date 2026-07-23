@@ -25,7 +25,26 @@ from tools.wrappers import (
     responder,
     bloodhound,
     sliver,
+    darkweb,
+    httpx_probe,
+    breach_intel,
+    katana,
+    subfinder,
+    gau,
+    sherlock,
+    feroxbuster,
+    naabu,
+    dnsx,
+    amass,
+    dalfox,
+    waybackurls,
+    sslscan,
+    arjun,
+    enum4linux,
+    commix,
+    wpscan,
 )
+from tools.wrappers import scaffold_bundle
 
 _PROXY_TOOLS = frozenset(
     {
@@ -37,6 +56,11 @@ _PROXY_TOOLS = frozenset(
         "nikto",
         "hydra",
         "xsstrike",
+        "feroxbuster",
+        "dalfox",
+        "commix",
+        "arjun",
+        "wpscan",
     }
 )
 
@@ -57,7 +81,7 @@ def run_gobuster_task(
     )
 
 
-@app.task(bind=True)
+@app.task(bind=True, soft_time_limit=150, time_limit=180)
 def run_whatweb_task(
     self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
 ):
@@ -81,7 +105,7 @@ def run_sqlmap_task(
     )
 
 
-@app.task(bind=True)
+@app.task(bind=True, soft_time_limit=270, time_limit=300)
 def run_nuclei_task(
     self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
 ):
@@ -120,6 +144,49 @@ def run_theharvester_task(self, target, args=None, evasion=None):
 
 
 @app.task(bind=True)
+def run_darkweb_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "Dark web OSINT..."})
+    return darkweb.scan(target, args)
+
+
+@app.task(bind=True, soft_time_limit=120, time_limit=150)
+def run_breach_intel_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "Breach intel lookup..."})
+    return breach_intel.run(target, args)
+
+
+@app.task(bind=True, soft_time_limit=120, time_limit=150)
+def run_subfinder_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "Subfinder scraping..."})
+    return subfinder.scan(target, args)
+
+
+@app.task(bind=True, soft_time_limit=120, time_limit=150)
+def run_gau_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "GAU archive scrape..."})
+    return gau.scan(target, args)
+
+
+@app.task(bind=True, soft_time_limit=200, time_limit=240)
+def run_sherlock_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "Sherlock username scrape..."})
+    return sherlock.scan(target, args)
+
+
+@app.task(bind=True, soft_time_limit=200, time_limit=240)
+def run_katana_task(
+    self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
+):
+    self.update_state(state="STARTED", meta={"status": "Katana crawling..."})
+    return katana.scan(
+        target,
+        args,
+        use_proxy=use_proxy,
+        proxy_protocol=proxy_protocol,
+    )
+
+
+@app.task(bind=True)
 def run_ffuf_task(
     self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
 ):
@@ -133,7 +200,7 @@ def run_ffuf_task(
     )
 
 
-@app.task(bind=True)
+@app.task(bind=True, soft_time_limit=120, time_limit=150)
 def run_hydra_task(
     self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
 ):
@@ -173,7 +240,7 @@ def run_zmap_task(self, target, args=None, evasion=None):
     return zmap.scan(target, args)
 
 
-@app.task(bind=True)
+@app.task(bind=True, soft_time_limit=210, time_limit=240)
 def run_nikto_task(
     self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
 ):
@@ -229,6 +296,105 @@ def run_bloodhound_task(self, target, args=None, evasion=None):
 def run_sliver_task(self, target, args=None, evasion=None):
     self.update_state(state="STARTED", meta={"status": "Sliver payload generation..."})
     return sliver.scan(target, args)
+
+
+@app.task(bind=True, soft_time_limit=75, time_limit=90)
+def run_httpx_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "HTTP probing..."})
+    return httpx_probe.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=300, time_limit=360)
+def run_feroxbuster_task(
+    self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
+):
+    self.update_state(state="STARTED", meta={"status": "Feroxbuster fuzzing..."})
+    return feroxbuster.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=120, time_limit=150)
+def run_naabu_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "Naabu port scanning..."})
+    return naabu.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=120, time_limit=150)
+def run_dnsx_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "dnsx enumeration..."})
+    return dnsx.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=300, time_limit=360)
+def run_amass_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "Amass subdomain enum..."})
+    return amass.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=240, time_limit=300)
+def run_dalfox_task(
+    self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
+):
+    self.update_state(state="STARTED", meta={"status": "Dalfox XSS scanning..."})
+    return dalfox.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=120, time_limit=150)
+def run_waybackurls_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "Wayback URL harvest..."})
+    return waybackurls.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=120, time_limit=150)
+def run_sslscan_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "SSL/TLS audit..."})
+    return sslscan.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=180, time_limit=210)
+def run_arjun_task(
+    self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
+):
+    self.update_state(state="STARTED", meta={"status": "Arjun param discovery..."})
+    return arjun.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=180, time_limit=210)
+def run_enum4linux_task(self, target, args=None, evasion=None):
+    self.update_state(state="STARTED", meta={"status": "enum4linux-ng scanning..."})
+    return enum4linux.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=300, time_limit=360)
+def run_commix_task(
+    self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
+):
+    self.update_state(state="STARTED", meta={"status": "Commix command injection..."})
+    return commix.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=300, time_limit=360)
+def run_wpscan_task(
+    self, target, args=None, use_proxy=False, proxy_protocol="http", evasion=None
+):
+    self.update_state(state="STARTED", meta={"status": "WPScan auditing..."})
+    return wpscan.scan(target, args, evasion=evasion)
+
+
+@app.task(bind=True, soft_time_limit=900, time_limit=1080)
+def run_scaffold_bundle_task(self, target, args=None, evasion=None, scaffold_id=None):
+    """Run a specialist scaffold recipe (maps to multiple CLI wrappers)."""
+    label = scaffold_id or "unknown"
+    self.update_state(
+        state="STARTED",
+        meta={"status": f"Scaffold specialist {label}..."},
+    )
+    return scaffold_bundle.scan(
+        target,
+        args,
+        evasion=evasion,
+        scaffold_id=scaffold_id,
+        tool_name=f"scaffold/{label}" if label else None,
+    )
 
 
 @app.task(bind=True, soft_time_limit=180, time_limit=210)
@@ -295,6 +461,12 @@ _TASK_MAP = {
     "masscan": run_masscan_task,
     "rustscan": run_rustscan_task,
     "theharvester": run_theharvester_task,
+    "subfinder": run_subfinder_task,
+    "gau": run_gau_task,
+    "sherlock": run_sherlock_task,
+    "darkweb": run_darkweb_task,
+    "breach_intel": run_breach_intel_task,
+    "katana": run_katana_task,
     "ffuf": run_ffuf_task,
     "hydra": run_hydra_task,
     "john": run_john_task,
@@ -309,7 +481,51 @@ _TASK_MAP = {
     "responder": run_responder_task,
     "bloodhound": run_bloodhound_task,
     "sliver": run_sliver_task,
+    "httpx": run_httpx_task,
+    "feroxbuster": run_feroxbuster_task,
+    "naabu": run_naabu_task,
+    "dnsx": run_dnsx_task,
+    "amass": run_amass_task,
+    "dalfox": run_dalfox_task,
+    "waybackurls": run_waybackurls_task,
+    "sslscan": run_sslscan_task,
+    "arjun": run_arjun_task,
+    "enum4linux": run_enum4linux_task,
+    "commix": run_commix_task,
+    "wpscan": run_wpscan_task,
 }
+
+
+def _register_scaffold_tasks() -> None:
+    from orchestrator.ai.scaffold_tools import (
+        EXPECTED_SCAFFOLD_COUNT,
+        assert_all_scaffolds_wired,
+        scaffold_tool_names,
+    )
+
+    assert_all_scaffolds_wired()
+    names = scaffold_tool_names()
+    for name in names:
+        _TASK_MAP[name] = run_scaffold_bundle_task
+
+    wired_scaffolds = {key for key in _TASK_MAP if key.startswith("scaffold/")}
+    if len(wired_scaffolds) != EXPECTED_SCAFFOLD_COUNT:
+        raise RuntimeError(
+            f"expected {EXPECTED_SCAFFOLD_COUNT} scaffold/* tasks in _TASK_MAP, "
+            f"got {len(wired_scaffolds)}"
+        )
+    if wired_scaffolds != names:
+        missing = sorted(names - wired_scaffolds)
+        extra = sorted(wired_scaffolds - names)
+        raise RuntimeError(
+            f"scaffold task map mismatch missing={missing[:5]} extra={extra[:5]}"
+        )
+    for name in names:
+        if _TASK_MAP[name] is not run_scaffold_bundle_task:
+            raise RuntimeError(f"{name} must map to run_scaffold_bundle_task")
+
+
+_register_scaffold_tasks()
 
 
 def build_phase_workflow(
@@ -329,13 +545,24 @@ def build_phase_workflow(
     """
     if evasion is None:
         evasion = {}
+    from orchestrator.ai.scaffold_tools import expand_phase_tools, is_scaffold_tool, resolve_scaffold_id
+    from tools.normalize_args import normalize_tool_args
+
+    tools_list = expand_phase_tools(tools_list or [])
+
     task_list = []
     for tool in tools_list:
         tool_name = tool.get("tool")
-        args = [
-            arg.replace("{{target}}", target) if isinstance(arg, str) else arg
-            for arg in tool.get("args", [])
-        ]
+        args = normalize_tool_args(
+            tool_name, target, tool.get("args", []), evasion=evasion
+        )
+        if is_scaffold_tool(tool_name):
+            sid = resolve_scaffold_id(tool_name)
+            if sid:
+                task_list.append(
+                    run_scaffold_bundle_task.si(target, args, evasion, sid)
+                )
+            continue
         task_fn = _TASK_MAP.get(tool_name)
         if task_fn is None:
             # Operator-approved custom tool from the runtime registry.

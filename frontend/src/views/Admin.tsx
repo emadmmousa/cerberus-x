@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, Navigate, useParams } from "react-router-dom";
 import {
   associateUserOrg,
   addAuthorizedTarget,
@@ -28,82 +29,183 @@ import {
   type AuthorizedTargetRow,
   type MissionSummaryRow,
 } from "../api/client";
+import { AuditTimeline } from "../components/AuditTimeline";
+import { ListPagination } from "../components/ListPagination";
+import { PageHero } from "../components/PageHero";
+import { usePagination } from "../hooks/usePagination";
+import {
+  ADMIN_SECTIONS,
+  adminSectionById,
+  isAdminSectionId,
+  type AdminSectionId,
+} from "../lib/adminSections";
+import { computeTimelineProgress, missionStats } from "../lib/missionSummary";
+import { accessGuardBadge, accessGuardOverview, ACCESS_GUARD_PRODUCT } from "../lib/accessGuard";
 import { useAuth } from "../providers/AuthProvider";
-
-type TabId =
-  | "users"
-  | "orgs"
-  | "auth"
-  | "rbac"
-  | "edition"
-  | "ops"
-  | "targets"
-  | "missions"
-  | "logs";
-
-const TABS: Array<{ id: TabId; label: string }> = [
-  { id: "users", label: "Users" },
-  { id: "orgs", label: "Organizations" },
-  { id: "auth", label: "Auth method" },
-  { id: "rbac", label: "RBAC" },
-  { id: "edition", label: "Edition" },
-  { id: "ops", label: "Ops" },
-  { id: "targets", label: "Targets" },
-  { id: "missions", label: "Missions" },
-  { id: "logs", label: "Logs" },
-];
 
 export function Admin() {
   const { refresh } = useAuth();
-  const [tab, setTab] = useState<TabId>("users");
+  const { section } = useParams<{ section?: string }>();
   const [banner, setBanner] = useState<{ kind: "ok" | "err"; msg: string } | null>(
     null,
   );
+  const [settings, setSettings] = useState<AdminSettings | null>(null);
+  const [missionRows, setMissionRows] = useState<MissionSummaryRow[]>([]);
 
   const flash = useCallback((kind: "ok" | "err", msg: string) => {
     setBanner({ kind, msg });
     window.setTimeout(() => setBanner(null), 4000);
   }, []);
 
-  return (
-    <div className="mission">
-      <section className="panel" aria-label="Admin console">
-        <div className="section-label">Admin console</div>
-        <p className="section-sub">
-          Manage users, organizations, authentication, RBAC, edition, ops,
-          missions, and audit logs.
-        </p>
-        <div className="admin-tabs" role="tablist">
-          {TABS.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              className={`admin-tab${tab === t.id ? " admin-tab--active" : ""}`}
-              onClick={() => setTab(t.id)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-        {banner && (
-          <p className={banner.kind === "ok" ? "ok-text" : "error-text"}>
-            {banner.msg}
-          </p>
-        )}
-      </section>
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([getAdminSettings(), listMissions()])
+      .then(([adminSettings, missions]) => {
+        if (cancelled) return;
+        setSettings(adminSettings);
+        setMissionRows(missions.missions ?? []);
+      })
+      .catch(() => {
+        /* sections surface their own errors */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-      {tab === "users" && <UsersTab flash={flash} />}
-      {tab === "orgs" && <OrgsTab flash={flash} />}
-      {tab === "auth" && <AuthTab flash={flash} />}
-      {tab === "rbac" && <RbacTab flash={flash} onChange={refresh} />}
-      {tab === "edition" && <EditionTab flash={flash} onChange={refresh} />}
-      {tab === "ops" && <OpsTab flash={flash} />}
-      {tab === "targets" && <TargetsTab flash={flash} />}
-      {tab === "missions" && <MissionsTab flash={flash} />}
-      {tab === "logs" && <LogsTab flash={flash} />}
+  const fleet = useMemo(() => missionStats(missionRows), [missionRows]);
+  const fleetProgress = useMemo(
+    () => computeTimelineProgress(fleet.done, fleet.total),
+    [fleet.done, fleet.total],
+  );
+  const fleetTone =
+    fleet.active > 0 ? "running" : fleet.failed > 0 ? "failure" : "success";
+
+  if (section && !isAdminSectionId(section)) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  const activeSection: AdminSectionId | null = isAdminSectionId(section) ? section : null;
+  const sectionMeta = activeSection ? adminSectionById(activeSection) : null;
+
+  return (
+    <div className="page-workspace">
+      <PageHero
+        crumbs={[
+          { label: "Console", to: "/missions" },
+          { label: "Administration", to: "/admin" },
+          ...(sectionMeta ? [{ label: sectionMeta.label }] : []),
+        ]}
+        title={sectionMeta?.label ?? "Administration"}
+        lede={
+          sectionMeta?.description ??
+          "Unified control plane for identity, platform policy, authorized targets, missions, and audit."
+        }
+        status={{
+          label: fleet.active > 0 ? `${fleet.active} active missions` : "Console ready",
+          tone: fleetTone,
+          pulse: fleet.active > 0,
+        }}
+        badges={
+          <>
+            {settings?.effective.edition && (
+              <span className="badge badge--ok">{settings.effective.edition}</span>
+            )}
+            {settings && (
+              <span className="badge">
+                {ACCESS_GUARD_PRODUCT} {accessGuardBadge(settings.effective.rbac_enforce)}
+              </span>
+            )}
+          </>
+        }
+        meta={
+          fleet.total > 0 ? (
+            <span>
+              {fleet.done}/{fleet.total} missions complete · {fleet.active} active ·{" "}
+              {fleet.failed} failed
+            </span>
+          ) : (
+            <span>No missions recorded yet</span>
+          )
+        }
+        progress={fleet.total > 0 ? fleetProgress : null}
+        progressAriaLabel={`Mission fleet ${fleetProgress} percent complete`}
+      />
+
+      <div className="admin-workspace">
+        <div className="admin-workspace__main">
+          {banner && (
+            <div
+              className={`admin-banner ${banner.kind === "ok" ? "ok-text" : "error-text"}`}
+              role="status"
+            >
+              {banner.msg}
+            </div>
+          )}
+
+          {!activeSection && (
+            <AdminOverview settings={settings} fleet={fleet} />
+          )}
+
+          {activeSection === "users" && <UsersTab flash={flash} />}
+          {activeSection === "orgs" && <OrgsTab flash={flash} />}
+          {activeSection === "auth" && <AuthTab flash={flash} />}
+          {activeSection === "rbac" && <RbacTab flash={flash} onChange={refresh} />}
+          {activeSection === "edition" && <EditionTab flash={flash} onChange={refresh} />}
+          {activeSection === "ops" && <OpsTab flash={flash} />}
+          {activeSection === "targets" && <TargetsTab flash={flash} />}
+          {activeSection === "missions" && <MissionsTab flash={flash} />}
+          {activeSection === "logs" && <LogsTab flash={flash} />}
+        </div>
+      </div>
     </div>
+  );
+}
+
+function AdminOverview({
+  settings,
+  fleet,
+}: {
+  settings: AdminSettings | null;
+  fleet: ReturnType<typeof missionStats>;
+}) {
+  return (
+    <section className="panel admin-panel" aria-label="Settings overview">
+      <div className="admin-section-head">
+        <div>
+          <h2 className="admin-section-head__title">Settings hub</h2>
+          <p className="admin-section-head__lede">
+            Jump to any control plane area — identity, platform automation, and live operations.
+          </p>
+        </div>
+      </div>
+
+      <div className="admin-overview">
+        {ADMIN_SECTIONS.map((section) => (
+          <Link key={section.id} to={section.path} className="admin-overview-card">
+            <div className="admin-overview-card__head">
+              <span className="admin-overview-card__icon" aria-hidden="true">
+                {section.icon}
+              </span>
+              <div>
+                <div className="admin-overview-card__title">{section.label}</div>
+                <div className="admin-overview-card__group">{section.group}</div>
+              </div>
+            </div>
+            <p className="admin-overview-card__desc">{section.description}</p>
+            <span className="admin-overview-card__cta">Open settings →</span>
+          </Link>
+        ))}
+      </div>
+
+      {settings && (
+        <p className="result-card__meta" style={{ marginTop: "1rem" }}>
+          Effective edition: {settings.effective.edition} · {ACCESS_GUARD_PRODUCT}{" "}
+          {accessGuardOverview(settings.effective.rbac_enforce)} ·{" "}
+          {fleet.total} missions tracked
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -172,6 +274,8 @@ function UsersTab({ flash }: { flash: FlashFn }) {
       flash("err", errMsg(err));
     }
   }
+
+  const usersPage = usePagination(users, { pageSize: 10 });
 
   return (
     <>
@@ -257,7 +361,7 @@ function UsersTab({ flash }: { flash: FlashFn }) {
               </tr>
             </thead>
             <tbody>
-              {users.map((u) => (
+              {usersPage.items.map((u) => (
                 <tr key={u.username}>
                   <td className="mono">{u.username}</td>
                   <td>
@@ -325,6 +429,18 @@ function UsersTab({ flash }: { flash: FlashFn }) {
             </tbody>
           </table>
         </div>
+        <ListPagination
+          page={usersPage.page}
+          totalPages={usersPage.totalPages}
+          total={usersPage.total}
+          rangeStart={usersPage.rangeStart}
+          rangeEnd={usersPage.rangeEnd}
+          pageSize={usersPage.pageSize}
+          pageSizeOptions={usersPage.pageSizeOptions}
+          onPageChange={usersPage.setPage}
+          onPageSizeChange={usersPage.setPageSize}
+          label="Users pagination"
+        />
       </section>
     </>
   );
@@ -397,6 +513,8 @@ function OrgsTab({ flash }: { flash: FlashFn }) {
     }
   }
 
+  const orgsPage = usePagination(orgs, { pageSize: 10 });
+
   return (
     <>
       <section className="panel" aria-label="Create organization">
@@ -442,7 +560,7 @@ function OrgsTab({ flash }: { flash: FlashFn }) {
               </tr>
             </thead>
             <tbody>
-              {orgs.map((o) => (
+              {orgsPage.items.map((o) => (
                 <tr key={o.id}>
                   <td className="mono">{o.id}</td>
                   <td>{o.name}</td>
@@ -468,6 +586,18 @@ function OrgsTab({ flash }: { flash: FlashFn }) {
             </tbody>
           </table>
         </div>
+        <ListPagination
+          page={orgsPage.page}
+          totalPages={orgsPage.totalPages}
+          total={orgsPage.total}
+          rangeStart={orgsPage.rangeStart}
+          rangeEnd={orgsPage.rangeEnd}
+          pageSize={orgsPage.pageSize}
+          pageSizeOptions={orgsPage.pageSizeOptions}
+          onPageChange={orgsPage.setPage}
+          onPageSizeChange={orgsPage.setPageSize}
+          label="Organizations pagination"
+        />
       </section>
 
       <section className="panel" aria-label="Associate user">
@@ -600,7 +730,7 @@ function AuthTab({ flash }: { flash: FlashFn }) {
 }
 
 // --------------------------------------------------------------------------
-// RBAC
+// Access Guard (RBAC)
 // --------------------------------------------------------------------------
 function RbacTab({ flash, onChange }: { flash: FlashFn; onChange: () => void }) {
   const [settings, setSettings] = useState<AdminSettings | null>(null);
@@ -623,8 +753,8 @@ function RbacTab({ flash, onChange }: { flash: FlashFn; onChange: () => void }) 
       flash(
         "ok",
         value === null
-          ? "RBAC set to defer to environment"
-          : `RBAC enforce ${value ? "ON" : "OFF"}`,
+          ? `${ACCESS_GUARD_PRODUCT} set to defer to environment`
+          : `${ACCESS_GUARD_PRODUCT} ${value ? "enforced" : "off (lab mode)"}`,
       );
       await load();
       onChange();
@@ -643,10 +773,11 @@ function RbacTab({ flash, onChange }: { flash: FlashFn; onChange: () => void }) 
   ];
 
   return (
-    <section className="panel" aria-label="RBAC enforce">
-      <div className="section-label">RBAC enforcement</div>
+    <section className="panel" aria-label="Access Guard enforcement">
+      <div className="section-label">{ACCESS_GUARD_PRODUCT} enforcement</div>
       <p className="section-sub">
-        Effective now: <strong>{effective ? "ENFORCED" : "OFF (lab)"}</strong>.
+        Controls who can run missions and open admin settings. Effective now:{" "}
+        <strong>{effective ? "ENFORCED" : "OFF (lab)"}</strong>.
         Enabling enforcement requires an admin password or configured SSO to
         avoid lockout.
       </p>
@@ -818,7 +949,7 @@ function OpsTab({ flash }: { flash: FlashFn }) {
         <p className="error-text">
           secret_key_insecure: SECRET_KEY is still the default{" "}
           <span className="mono">firebreak-secret</span>. Change it before
-          enforcing RBAC in production.
+          enforcing {ACCESS_GUARD_PRODUCT} in production.
         </p>
       )}
       {OPS_FLAGS.map((flag) => {
@@ -868,7 +999,7 @@ function OpsTab({ flash }: { flash: FlashFn }) {
 // --------------------------------------------------------------------------
 function TargetsTab({ flash }: { flash: FlashFn }) {
   const [rows, setRows] = useState<AuthorizedTargetRow[]>([]);
-  const [form, setForm] = useState({ target: "", notes: "", expiry: "" });
+  const [form, setForm] = useState({ target: "", kind: "domain", notes: "", expiry: "" });
 
   const load = useCallback(async () => {
     try {
@@ -892,11 +1023,12 @@ function TargetsTab({ flash }: { flash: FlashFn }) {
     try {
       await addAuthorizedTarget({
         target,
+        kind: form.kind,
         notes: form.notes.trim() || undefined,
         expiry: form.expiry.trim() || undefined,
       });
-      flash("ok", `Added ${target} (www + apex variants included)`);
-      setForm({ target: "", notes: "", expiry: "" });
+      flash("ok", `Added ${target}`);
+      setForm({ target: "", kind: "domain", notes: "", expiry: "" });
       await load();
     } catch (err) {
       flash("err", errMsg(err));
@@ -914,21 +1046,37 @@ function TargetsTab({ flash }: { flash: FlashFn }) {
     }
   }
 
+  const targetsPage = usePagination(rows, { pageSize: 10 });
+
   return (
     <>
       <section className="panel" aria-label="Add authorized target">
         <div className="section-label">Add authorized target</div>
         <p className="section-sub">
-          Manage engagement scope without editing JSON by hand. Firebreak accepts
-          apex and www variants for each host (http/https included).
+          Manage engagement scope for domains, emails, usernames, mobile numbers, social
+          profile URLs, and full names.
         </p>
         <div className="admin-form">
           <div className="field">
-            <label>Target / URL / app</label>
+            <label>Identifier type</label>
+            <select
+              value={form.kind}
+              onChange={(e) => setForm({ ...form, kind: e.target.value })}
+            >
+              <option value="domain">Domain</option>
+              <option value="email">Email</option>
+              <option value="username">Username</option>
+              <option value="mobile">Mobile number</option>
+              <option value="social_url">Social profile URL</option>
+              <option value="full_name">Full name</option>
+            </select>
+          </div>
+          <div className="field">
+            <label>Target value</label>
             <input
               value={form.target}
               onChange={(e) => setForm({ ...form, target: e.target.value })}
-              placeholder="wks.agency or https://app.example.com"
+              placeholder="company.com, person@company.com, @handle, +1 555 0100…"
             />
           </div>
           <div className="field">
@@ -958,6 +1106,7 @@ function TargetsTab({ flash }: { flash: FlashFn }) {
         <table className="admin-table">
           <thead>
             <tr>
+              <th>Kind</th>
               <th>Target</th>
               <th>Notes</th>
               <th>Expiry</th>
@@ -966,8 +1115,9 @@ function TargetsTab({ flash }: { flash: FlashFn }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {targetsPage.items.map((row) => (
               <tr key={row.target}>
+                <td>{row.kind ?? "domain"}</td>
                 <td className="mono">{row.target}</td>
                 <td>{row.notes ?? "—"}</td>
                 <td className="mono">{row.expiry ?? "—"}</td>
@@ -985,13 +1135,25 @@ function TargetsTab({ flash }: { flash: FlashFn }) {
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={5} className="empty-state">
+                <td colSpan={6} className="empty-state">
                   No authorized targets yet.
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        <ListPagination
+          page={targetsPage.page}
+          totalPages={targetsPage.totalPages}
+          total={targetsPage.total}
+          rangeStart={targetsPage.rangeStart}
+          rangeEnd={targetsPage.rangeEnd}
+          pageSize={targetsPage.pageSize}
+          pageSizeOptions={targetsPage.pageSizeOptions}
+          onPageChange={targetsPage.setPage}
+          onPageSizeChange={targetsPage.setPageSize}
+          label="Authorized targets pagination"
+        />
       </section>
     </>
   );
@@ -1029,6 +1191,8 @@ function MissionsTab({ flash }: { flash: FlashFn }) {
   const isLive = (s?: string) =>
     !["SUCCESS", "FAILURE", "STOPPED", "REVOKED"].includes((s ?? "").toUpperCase());
 
+  const missionsPage = usePagination(rows, { pageSize: 10 });
+
   return (
     <section className="panel" aria-label="Missions admin">
       <div className="page-head">
@@ -1051,7 +1215,7 @@ function MissionsTab({ flash }: { flash: FlashFn }) {
             </tr>
           </thead>
           <tbody>
-            {rows.map((m) => (
+            {missionsPage.items.map((m) => (
               <tr key={m.task_id}>
                 <td className="mono">{m.target || m.task_id}</td>
                 <td>
@@ -1107,6 +1271,18 @@ function MissionsTab({ flash }: { flash: FlashFn }) {
           </tbody>
         </table>
       </div>
+      <ListPagination
+        page={missionsPage.page}
+        totalPages={missionsPage.totalPages}
+        total={missionsPage.total}
+        rangeStart={missionsPage.rangeStart}
+        rangeEnd={missionsPage.rangeEnd}
+        pageSize={missionsPage.pageSize}
+        pageSizeOptions={missionsPage.pageSizeOptions}
+        onPageChange={missionsPage.setPage}
+        onPageSizeChange={missionsPage.setPageSize}
+        label="Missions pagination"
+      />
     </section>
   );
 }
@@ -1116,98 +1292,25 @@ function MissionsTab({ flash }: { flash: FlashFn }) {
 // --------------------------------------------------------------------------
 function LogsTab({ flash }: { flash: FlashFn }) {
   const [events, setEvents] = useState<AuditEvent[]>([]);
-  const [filter, setFilter] = useState("");
+  const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
+      setLoading(true);
       const data = await getAdminLogs(200);
       setEvents(data.events ?? []);
     } catch (err) {
       flash("err", errMsg(err));
+    } finally {
+      setLoading(false);
     }
   }, [flash]);
 
   useEffect(() => {
     void load();
+    const id = window.setInterval(() => void load(), 8000);
+    return () => window.clearInterval(id);
   }, [load]);
 
-  const shown = filter
-    ? events.filter(
-        (e) =>
-          (e.event_type ?? "").toLowerCase().includes(filter.toLowerCase()) ||
-          (e.actor ?? "").toLowerCase().includes(filter.toLowerCase()),
-      )
-    : events;
-
-  return (
-    <section className="panel" aria-label="Audit logs">
-      <div className="page-head">
-        <div className="page-head__text">
-          <div className="section-label">Audit logs</div>
-          <p className="section-sub">Every action, who performed it, and when.</p>
-        </div>
-        <button type="button" className="btn" onClick={() => void load()}>
-          Refresh
-        </button>
-      </div>
-      <div className="field" style={{ marginBottom: "1rem" }}>
-        <label>Filter (event type or actor)</label>
-        <input
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          placeholder="e.g. MISSION_STOP or admin"
-        />
-      </div>
-      <div className="admin-table-wrap">
-        <table className="admin-table admin-table--logs">
-          <thead>
-            <tr>
-              <th>Time</th>
-              <th>Event</th>
-              <th>Actor</th>
-              <th>Severity</th>
-              <th>Detail</th>
-            </tr>
-          </thead>
-          <tbody>
-            {shown.map((e, i) => (
-              <tr key={`${e.timestamp}-${i}`}>
-                <td className="mono admin-log-time">
-                  {e.timestamp ? new Date(e.timestamp).toLocaleString() : "—"}
-                </td>
-                <td className="mono">{e.event_type}</td>
-                <td>
-                  {e.actor || "system"}
-                  {e.actor_role ? ` (${e.actor_role})` : ""}
-                </td>
-                <td>
-                  <span
-                    className={`badge ${
-                      e.severity === "critical" || e.severity === "high"
-                        ? "badge--err"
-                        : "badge--ok"
-                    }`}
-                  >
-                    {e.severity ?? "info"}
-                  </span>
-                </td>
-                <td className="admin-log-detail mono">
-                  {typeof e.data === "object"
-                    ? JSON.stringify(e.data)
-                    : String(e.data ?? "")}
-                </td>
-              </tr>
-            ))}
-            {shown.length === 0 && (
-              <tr>
-                <td colSpan={5} className="empty-state">
-                  No log events.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
+  return <AuditTimeline events={events} onRefresh={() => void load()} loading={loading} />;
 }

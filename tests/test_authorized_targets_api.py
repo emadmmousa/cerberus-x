@@ -38,3 +38,11 @@ def test_targets_api_crud(tmp_path, monkeypatch):
     deleted = client.delete("/api/authorized-targets/wks.agency")
     assert deleted.status_code == 200
     assert client.get("/api/authorized-targets").get_json()["count"] == 0
+
+
+def test_targets_default_to_output_dir(tmp_path, monkeypatch):
+    monkeypatch.delenv("AUTHORIZED_TARGETS_FILE", raising=False)
+    monkeypatch.setenv("FIREBREAK_OUTPUT_DIR", str(tmp_path / "output"))
+    from scanner.authorization import targets_file_path
+
+    assert targets_file_path() == tmp_path / "output" / "authorized_targets.json"

@@ -27,7 +27,8 @@ def list_targets():
 @require_role(Role.OPERATOR)
 def add_target():
     body = request.get_json(silent=True) or {}
-    target = str(body.get("target") or body.get("host") or body.get("url") or "").strip()
+    target = str(body.get("target") or body.get("host") or body.get("url") or body.get("value") or "").strip()
+    kind = str(body.get("kind") or body.get("type") or "").strip().lower() or None
     if not target:
         return jsonify({"error": "target is required"}), 400
     try:
@@ -36,9 +37,12 @@ def add_target():
             notes=body.get("notes") or body.get("note"),
             expiry=body.get("expiry"),
             authorized=bool(body.get("authorized", True)),
+            kind=kind,
         )
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 500
     audit_log("AUTHZ_TARGET_API_ADD", {"target": row.get("target") or target})
     return jsonify({"ok": True, "target": row}), 201
 
@@ -50,6 +54,8 @@ def delete_target(target: str):
         removed = remove_target_entry(target)
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
+    except PermissionError as exc:
+        return jsonify({"error": str(exc)}), 500
     if not removed:
         return jsonify({"error": "not found", "target": target}), 404
     audit_log("AUTHZ_TARGET_API_REMOVE", {"target": target})

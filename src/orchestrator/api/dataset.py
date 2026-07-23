@@ -86,7 +86,13 @@ def api_dataset_contribute():
         warning = str(exc)
     audit_log(
         "DATASET_CONTRIBUTE",
-        {"id": rec.get("id"), "license": rec.get("license"), "persisted": persisted},
+        {
+            "id": rec.get("id"),
+            "license": rec.get("license"),
+            "posture": rec.get("posture"),
+            "persisted": persisted,
+            "prompt_preview": str(rec.get("prompt") or "")[:160],
+        },
     )
     payload = {"accepted": True, "persisted": persisted, "record": rec}
     if warning:

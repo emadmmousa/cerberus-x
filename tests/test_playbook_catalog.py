@@ -2,9 +2,12 @@
 
 from orchestrator.playbook_catalog import (
     POSTURE_PLAYBOOKS,
+    SPECIALIST_PLAYBOOKS,
     list_playbooks,
+    list_specialist_playbooks,
     playbook_for_posture,
     render_hardening_markdown,
+    specialist_playbook,
 )
 
 
@@ -35,3 +38,12 @@ def test_render_hardening_markdown():
     assert "# Hardening report — lab.example" in md
     assert "Harden SSH" in md
     assert "job-1" in md
+
+
+def test_specialist_playbooks_registered():
+    assert specialist_playbook("advanced_web_recon") == SPECIALIST_PLAYBOOKS["advanced_web_recon"]
+    rows = list_specialist_playbooks()
+    ids = {row["id"] for row in rows}
+    assert "sqli_recon_chain" in ids
+    assert "xss_hunt_chain" in ids
+    assert all(row["phase_count"] >= 3 for row in rows)

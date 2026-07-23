@@ -38,12 +38,13 @@ def api_ai_plan():
     if not target:
         return jsonify({"error": "target is required"}), 400
     from orchestrator.ai import planner
+    from orchestrator.ai.posture import DEFAULT_POSTURE, normalize_posture
 
     plan = planner.suggest_next_phase(
         target,
         body.get("results") if isinstance(body.get("results"), dict) else {},
         nl_goal=str(body.get("nl_goal") or ""),
         step=int(body.get("step") or 0),
-        posture=str(body.get("posture") or "balanced"),
+        posture=normalize_posture(str(body.get("posture") or DEFAULT_POSTURE)),
     )
     return jsonify(plan)

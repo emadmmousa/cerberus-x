@@ -59,6 +59,9 @@ def init_db():
         conn.commit()
 
 
+from tools.result_enrichment import enrich_tool_result
+
+
 def _normalize_phase_outputs(phase_outputs):
     """Normalize list/dict/single-tool outputs into (tool, payload) rows."""
     rows = []
@@ -100,13 +103,14 @@ def save_phase_result(target, phase_name, phase_outputs, job_id=None, org_id=Non
     rows = _normalize_phase_outputs(phase_outputs)
     with get_db() as conn:
         for tool_name, payload in rows:
+            enriched = enrich_tool_result(tool_name, payload)
             conn.execute(
                 "INSERT INTO results (target, phase, tool, result_json, job_id, org_id) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                (target, phase_name, tool_name, json.dumps(payload), job_id, org),
+                (target, phase_name, tool_name, json.dumps(enriched), job_id, org),
             )
             _maybe_index_es(
-                target, phase_name, tool_name, payload, job_id=job_id, org_id=org
+                target, phase_name, tool_name, enriched, job_id=job_id, org_id=org
             )
         conn.commit()
     paths = export_target_reports(target, get_results(target, limit=10000, org_id=org))
@@ -143,7 +147,7 @@ def get_results(target=None, limit=100, job_id=None, org_id=None):
                 "target": row[0],
                 "phase": row[1],
                 "tool": row[2],
-                "result": json.loads(row[3]),
+                "result": enrich_tool_result(row[2], json.loads(row[3])),
                 "timestamp": row[4],
                 "job_id": row[5],
                 "org_id": row[6] if len(row) > 6 else None,

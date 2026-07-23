@@ -1,0 +1,69 @@
+name: Advanced Web Recon
+description: >-
+  Field-tested web recon pipeline — subdomains, live hosts, passive URLs,
+  params, tech fingerprint, dirs, nuclei, WordPress, ports. Authorized targets only.
+evasion: low
+phases:
+  - name: subdomain_enum
+    parallel: true
+    tools:
+      - tool: subfinder
+        args: ["-all", "-recursive", "-silent"]
+      - tool: amass
+        args: ["enum", "-passive"]
+      - tool: dnsx
+        args: ["-silent"]
+  - name: live_hosts
+    parallel: true
+    depends_on: ["subdomain_enum"]
+    tools:
+      - tool: httpx
+        args: ["-ports", "80,443,8080,8000,8888", "-threads", "200", "-silent", "-status-code", "-title", "-tech-detect"]
+      - tool: whatweb
+        args: ["-a", "3"]
+  - name: passive_urls
+    parallel: true
+    depends_on: ["live_hosts"]
+    tools:
+      - tool: katana
+        args: ["-d", "5", "-ps", "-pss", "waybackarchive,commoncrawl,alienvault", "-jc", "-fx", "-silent"]
+      - tool: gau
+        args: ["--subs", "--mc", "200"]
+      - tool: waybackurls
+        args: []
+  - name: param_discovery
+    parallel: false
+    depends_on: ["passive_urls"]
+    tools:
+      - tool: arjun
+        args: ["--stable", "--rate-limit", "10"]
+  - name: dir_bruteforce
+    parallel: true
+    depends_on: ["param_discovery"]
+    tools:
+      - tool: feroxbuster
+        args: ["-q", "--threads", "20"]
+      - tool: ffuf
+        args: ["-ac", "-recursion", "-recursion-depth", "2"]
+      - tool: gobuster
+        args: ["dir", "-w", "/usr/share/dirb/wordlists/common.txt"]
+  - name: exposure_scan
+    parallel: true
+    depends_on: ["dir_bruteforce"]
+    tools:
+      - tool: nuclei
+        args: ["-severity", "critical,high,medium", "-tags", "exposure,token,api", "-silent"]
+      - tool: nikto
+        args: ["-maxtime", "120"]
+      - tool: sslscan
+        args: ["--no-failed"]
+  - name: cms_and_ports
+    parallel: true
+    depends_on: ["exposure_scan"]
+    tools:
+      - tool: wpscan
+        args: ["--no-update", "--random-user-agent", "--enumerate", "ap,u"]
+      - tool: naabu
+        args: ["-top-ports", "1000", "-silent"]
+      - tool: nmap
+        args: ["-sV", "-T4", "-p", "21,22,80,443,8080,8443,3389,445"]

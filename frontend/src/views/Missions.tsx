@@ -14,8 +14,9 @@ import {
 } from "../components/MissionChat";
 import { MissionRail } from "../components/MissionRail";
 import { MissionsPromptsPanel } from "../components/MissionsPromptsPanel";
+import { OsintTabPanel } from "../components/OsintTabPanel";
 import { OperationsCommandBar } from "../components/OperationsCommandBar";
-import { loadChatOptions } from "../lib/chatAgentOptions";
+import { loadChatOptions, saveChatOptions } from "../lib/chatAgentOptions";
 import { buildStrikePromptMessage } from "../lib/strikePromptMessage";
 import type { AggressivePrompt } from "../lib/aggressivePrompts";
 import type { OsintSeed } from "../lib/osintTargets";
@@ -23,13 +24,14 @@ import { usePageVisible } from "../lib/usePageVisible";
 import { missionStats } from "../lib/missionSummary";
 import { useAuth } from "../providers/AuthProvider";
 
-type Mode = "chat" | "prompts" | "manual";
+type Mode = "chat" | "prompts" | "manual" | "osint";
 const WORKER_READINESS_POLL_MS = 15_000;
 
 function parseMode(params: URLSearchParams): Mode {
   const value = params.get("mode");
   if (value === "manual") return "manual";
   if (value === "prompts") return "prompts";
+  if (value === "osint") return "osint";
   return "chat";
 }
 
@@ -48,6 +50,10 @@ export function Missions() {
   const chatRef = useRef<MissionChatHandle | null>(null);
 
   const stats = useMemo(() => missionStats(rows), [rows]);
+
+  useEffect(() => {
+    saveChatOptions({ ...loadChatOptions(), osintSeeds });
+  }, [osintSeeds]);
 
   const loadRail = useCallback(() => {
     listMissions()
@@ -169,7 +175,7 @@ export function Missions() {
                   compact
                   chromeless
                   instantChat
-                  showOsintPanel
+                  showOsintPanel={false}
                   osintSeeds={osintSeeds}
                   onOsintSeedsChange={setOsintSeeds}
                   onMissionLaunched={() => {
@@ -182,10 +188,12 @@ export function Missions() {
 
               {mode === "prompts" && (
                 <MissionsPromptsPanel
-                  osintSeeds={osintSeeds}
-                  onOsintSeedsChange={setOsintSeeds}
                   onSelectPrompt={handleSelectPrompt}
                 />
+              )}
+
+              {mode === "osint" && (
+                <OsintTabPanel seeds={osintSeeds} onChange={setOsintSeeds} />
               )}
 
               {mode === "manual" && (

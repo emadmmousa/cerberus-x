@@ -5,11 +5,18 @@ import subprocess
 from tools.waf_evasion import build_evasion_headers, random_delay
 from tools.wrappers._argv import coerce_argv
 from tools.wrappers._proxy import merge_env, proxy_meta
+from tools.wrappers._wordlists import DEFAULT_WORDLIST, WORDLIST_ALIASES, resolve_wordlist
 from tools.wrappers._web_url import canonicalize_web_url, force_url_arg
 
-WORDLIST = "/usr/share/dirb/wordlists/common.txt"
+WORDLIST = DEFAULT_WORDLIST
+QUICK_WORDLIST = "/usr/share/dirb/wordlists/small.txt"
+_MAXTIME_RE = re.compile(r"maximum running time", re.IGNORECASE)
+_PROGRESS_RE = re.compile(
+    r"Progress:\s*\[(?P<done>\d+)/(?P<total>\d+)\].*?Errors:\s*(?P<errors>\d+)",
+    re.IGNORECASE,
+)
 _WORDLIST_ALIASES = {
-    "/usr/share/wordlists/dirb/common.txt": WORDLIST,
+    **WORDLIST_ALIASES,
     "/usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt": WORDLIST,
 }
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
@@ -21,6 +28,97 @@ _RESULT_RE = re.compile(
 
 def _url(target: str) -> str:
     return canonicalize_web_url(target).rstrip("/")
+
+
+def _maxtime_ceiling() -> int:
+    raw = (os.environ.get("FIREBREAK_FFUF_MAXTIME") or "300").strip()
+    try:
+        return max(30, int(raw))
+    except ValueError:
+        return 300
+
+
+def _flag_value(args: list[str], flag: str, default: int) -> int:
+    for index, arg in enumerate(args):
+        if arg == flag and index + 1 < len(args):
+            try:
+                return max(1, int(str(args[index + 1]).strip()))
+            except ValueError:
+                return default
+        prefix = f"{flag}="
+        if isinstance(arg, str) and arg.startswith(prefix):
+            try:
+                return max(1, int(arg.split("=", 1)[1].strip()))
+            except ValueError:
+                return default
+    return default
+
+
+def _wordlist_from_args(args: list[str]) -> str | None:
+    for index, arg in enumerate(args):
+        if arg in {"-w", "--wordlist"} and index + 1 < len(args):
+            return str(args[index + 1]).strip()
+        if isinstance(arg, str) and arg.startswith(("-w=", "--wordlist=")):
+            return arg.split("=", 1)[1].strip()
+    return None
+
+
+def _count_wordlist_lines(path: str | None) -> int:
+    if not path or not os.path.isfile(path):
+        return 2000
+    try:
+        with open(path, encoding="utf-8", errors="ignore") as handle:
+            return sum(1 for line in handle if line.strip())
+    except OSError:
+        return 2000
+
+
+def _stealthy_evasion(evasion: dict) -> bool:
+    return bool(
+        evasion.get("random_headers")
+        or evasion.get("rotate_user_agent")
+        or float(evasion.get("random_delay_min") or 0) > 0
+    )
+
+
+def _compute_maxtime(args: list[str], *, rate_default: int = 15) -> int:
+    """Scale ffuf wall time to wordlist size and effective throughput."""
+    wordlist = _wordlist_from_args(args)
+    lines = _count_wordlist_lines(wordlist)
+    rate = _flag_value(args, "-rate", 0) or _flag_value(args, "--rate", 0)
+    threads = _flag_value(args, "-t", 10)
+    throughput = rate if rate > 0 else max(threads * 2, rate_default)
+    throughput = max(throughput, 5)
+    needed = int(lines / throughput) + 45
+    return max(60, min(_maxtime_ceiling(), needed))
+
+
+def _set_maxtime(args: list[str], seconds: int) -> list[str]:
+    args = _drop_flag(args, "-maxtime", "--maxtime")
+    return [*args, "-maxtime", str(max(30, seconds))]
+
+
+def _prefer_quick_wordlist(args: list[str]) -> list[str]:
+    """Under CDN/stealth, prefer a smaller list so bounded runs still finish."""
+    try:
+        quick = resolve_wordlist(QUICK_WORDLIST)
+    except FileNotFoundError:
+        return args
+    args = _drop_flag(args, "-w", "--wordlist")
+    return [*args, "-w", quick]
+
+
+def _progress_stats(output: str) -> dict[str, int]:
+    stats = {"done": 0, "total": 0, "errors": 0}
+    for match in _PROGRESS_RE.finditer(_ANSI_RE.sub("", output or "")):
+        stats["done"] = max(stats["done"], int(match.group("done")))
+        stats["total"] = max(stats["total"], int(match.group("total")))
+        stats["errors"] = max(stats["errors"], int(match.group("errors")))
+    return stats
+
+
+def _hit_maxtime(output: str) -> bool:
+    return bool(_MAXTIME_RE.search(output or ""))
 
 
 def _drop_flag(args: list[str], *flags: str) -> list[str]:
@@ -85,12 +183,7 @@ def _cdn_backoff(args: list[str], evasion: dict) -> list[str]:
     Cloudflare/CDN edges often stall ffuf at 0 req/sec when auto-calibrate
     plus random stealth headers plus high thread counts collide.
     """
-    stealthy = bool(
-        evasion.get("random_headers")
-        or evasion.get("rotate_user_agent")
-        or float(evasion.get("random_delay_min") or 0) > 0
-    )
-    if not stealthy:
+    if not _stealthy_evasion(evasion):
         return args
 
     # Auto-calibrate with rotating headers produces unstable baselines → hang.
@@ -124,19 +217,10 @@ def _cdn_backoff(args: list[str], evasion: dict) -> list[str]:
             continue
         stripped.append(arg)
     args = stripped
-    # Slow, small bursts; keep total wall time bounded.
+    args = _prefer_quick_wordlist(args)
+    # Slow, small bursts; wall time scales to the (smaller) wordlist.
     args.extend(["-t", "5", "-rate", "8"])
-    if "-maxtime" not in args:
-        args.extend(["-maxtime", "45"])
-    else:
-        # Cap existing maxtime under CDN backoff.
-        idx = args.index("-maxtime")
-        if idx + 1 < len(args):
-            try:
-                if int(args[idx + 1]) > 45:
-                    args[idx + 1] = "45"
-            except ValueError:
-                args[idx + 1] = "45"
+    args = _set_maxtime(args, _compute_maxtime(args, rate_default=8))
     return args
 
 
@@ -226,8 +310,6 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
                 pass
     if "-ac" not in fixed and "--auto-calibrate" not in fixed:
         fixed.append("-ac")
-    if "-maxtime" not in fixed:
-        fixed.extend(["-maxtime", "60"])
     if evasion.get("random_headers", False):
         headers = build_evasion_headers(evasion, target=url)
         for key, value in headers.items():
@@ -235,6 +317,17 @@ def _normalize_args(args: list[str], url: str, evasion=None) -> list[str]:
                 continue
             fixed.extend(["-H", f"{key}: {value}"])
     fixed = _cdn_backoff(fixed, evasion)
+    if "-maxtime" not in fixed and "--maxtime" not in fixed:
+        fixed = _set_maxtime(fixed, _compute_maxtime(fixed))
+    elif not _stealthy_evasion(evasion):
+        idx = fixed.index("-maxtime") if "-maxtime" in fixed else fixed.index("--maxtime")
+        try:
+            current = int(fixed[idx + 1])
+        except (ValueError, IndexError):
+            current = 60
+        budget = _compute_maxtime(fixed)
+        if current < budget:
+            fixed = _set_maxtime(fixed, budget)
     return force_url_arg(fixed, url, flags=("-u", "--url"), with_fuzz=True)
 
 
@@ -248,9 +341,10 @@ def _parse_results(output: str) -> list[dict]:
         if not match:
             continue
         path = match.group("path").strip()
-        # Empty FUZZ / blank wordlist line often matches the site root.
-        if not path or path.startswith(":: Progress"):
+        if path.startswith(":: Progress"):
             continue
+        if not path:
+            path = "/"
         results.append(
             {
                 "path": path,
@@ -259,6 +353,21 @@ def _parse_results(output: str) -> list[dict]:
             }
         )
     return results
+
+
+def _annotate_runtime(payload: dict, output: str) -> dict:
+    stats = _progress_stats(output)
+    if stats["total"] > 0:
+        payload["progress"] = stats
+    if _hit_maxtime(output):
+        payload["timed_out"] = True
+        payload["partial"] = stats["done"] > 0 or bool(payload.get("results"))
+        if payload["partial"] and not payload.get("results"):
+            payload.setdefault(
+                "note",
+                "ffuf hit the runtime limit before finishing the wordlist",
+            )
+    return payload
 
 
 def scan(
@@ -280,8 +389,6 @@ def scan(
             WORDLIST,
             "-mc",
             "200,301,302,401,403",
-            "-maxtime",
-            "60",
             "-ac",
         ]
         if evasion.get("random_headers", False):
@@ -289,6 +396,8 @@ def scan(
             for key, value in headers.items():
                 args.extend(["-H", f"{key}: {value}"])
         args = _cdn_backoff(args, evasion)
+        if "-maxtime" not in args and "--maxtime" not in args:
+            args = _set_maxtime(args, _compute_maxtime(args))
     else:
         args = _normalize_args(list(args), url, evasion)
     if evasion.get("random_delay_min", 0) > 0:
@@ -303,13 +412,16 @@ def scan(
             cmd, stderr=subprocess.STDOUT, text=True, env=env
         )
         results = _parse_results(output)
-        payload = {
-            "tool": "ffuf",
-            "target": url,
-            "results": results,
-            "raw_output": output,
-            "proxy": meta,
-        }
+        payload = _annotate_runtime(
+            {
+                "tool": "ffuf",
+                "target": url,
+                "results": results,
+                "raw_output": output,
+                "proxy": meta,
+            },
+            output,
+        )
         if not results and _looks_like_cdn_stall(output):
             payload["stalled"] = True
             payload["error"] = (
@@ -327,13 +439,16 @@ def scan(
     except subprocess.CalledProcessError as e:
         output = str(e.output or "")
         results = _parse_results(output)
-        payload = {
-            "tool": "ffuf",
-            "target": url,
-            "results": results,
-            "raw_output": output,
-            "proxy": meta,
-        }
+        payload = _annotate_runtime(
+            {
+                "tool": "ffuf",
+                "target": url,
+                "results": results,
+                "raw_output": output,
+                "proxy": meta,
+            },
+            output,
+        )
         if results:
             return payload
         if _looks_like_cdn_stall(output):

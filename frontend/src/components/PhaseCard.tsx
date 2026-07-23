@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { forwardRef } from "react";
 import type { PhaseView } from "../hooks/useMission";
 import { PHASE_LABELS } from "../lib/summarizeFinding";
 import { ResultCard } from "./ResultCard";
@@ -14,24 +14,67 @@ const STATE_LABEL: Record<PhaseView["state"], string> = {
 type Props = {
   phase: PhaseView;
   index: number;
+  isCurrent?: boolean;
+  isSelected?: boolean;
+  open?: boolean;
+  onToggle?: () => void;
+  onNodeClick?: () => void;
 };
 
-export function PhaseCard({ phase, index }: Props) {
-  const [open, setOpen] = useState(false);
+export const PhaseCard = forwardRef<HTMLDivElement, Props>(function PhaseCard(
+  {
+    phase,
+    index,
+    isCurrent = false,
+    isSelected = false,
+    open = false,
+    onToggle,
+    onNodeClick,
+  },
+  ref,
+) {
   const hasResults = phase.findings.length > 0;
   const label = PHASE_LABELS[phase.name] ?? phase.name.replace(/_/g, " ");
+  const expanded = open;
+  const toggle = onToggle ?? (() => undefined);
+
+  const nodeLabel = `${label} — ${STATE_LABEL[phase.state]}`;
 
   return (
-    <div className={`phase-card phase-card--${phase.state}`}>
+    <div
+      ref={ref}
+      className={[
+        "phase-card",
+        `phase-card--${phase.state}`,
+        isCurrent ? "phase-card--current" : "",
+        isSelected ? "phase-card--selected" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <div className="phase-card__rail">
-        <span className="phase-card__node" />
+        <button
+          type="button"
+          className="phase-card__node"
+          aria-label={`Open step ${index + 1}: ${nodeLabel}`}
+          aria-expanded={expanded}
+          aria-current={isCurrent ? "step" : undefined}
+          onClick={() => {
+            onNodeClick?.();
+            if (!expanded) toggle();
+          }}
+        >
+          {phase.state === "done" && (
+            <span className="phase-card__node-check" aria-hidden="true" />
+          )}
+        </button>
       </div>
       <div className="phase-card__body">
         <button
           type="button"
           className="phase-card__head"
-          onClick={() => setOpen((v) => !v)}
-          aria-expanded={open}
+          onClick={toggle}
+          aria-expanded={expanded}
         >
           <span className="phase-card__index">
             {String(index + 1).padStart(2, "0")}
@@ -46,7 +89,7 @@ export function PhaseCard({ phase, index }: Props) {
               {phase.findings.length} result{phase.findings.length === 1 ? "" : "s"}
             </span>
           )}
-          <span className="phase-card__chevron">{open ? "\u2212" : "+"}</span>
+          <span className="phase-card__chevron">{expanded ? "\u2212" : "+"}</span>
         </button>
 
         <div className="phase-card__tools">
@@ -64,7 +107,7 @@ export function PhaseCard({ phase, index }: Props) {
           <p className="phase-card__cond">Skipped based on earlier results.</p>
         )}
 
-        {open && (
+        {expanded && (
           <div className="phase-card__findings">
             {hasResults ? (
               phase.findings.map((row, i) => (
@@ -74,7 +117,13 @@ export function PhaseCard({ phase, index }: Props) {
               <p className="result-card__meta">
                 {phase.state === "running"
                   ? "Collecting results\u2026"
-                  : "No results recorded for this step yet."}
+                  : phase.state === "failed" && phase.error
+                    ? phase.error
+                    : phase.state === "failed"
+                      ? "Phase failed before results were saved."
+                      : phase.state === "skipped"
+                        ? "This step was skipped."
+                        : "No results recorded for this step yet."}
               </p>
             )}
           </div>
@@ -82,4 +131,4 @@ export function PhaseCard({ phase, index }: Props) {
       </div>
     </div>
   );
-}
+});

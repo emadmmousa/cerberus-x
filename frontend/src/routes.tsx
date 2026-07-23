@@ -1,34 +1,46 @@
+import { lazy, Suspense, type ReactNode } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AppShell } from "./components/AppShell";
+import { PageLoader } from "./components/PageLoader";
 import { RequireAuth } from "./components/RequireAuth";
-import { Admin } from "./views/Admin";
-import { AiLab } from "./views/AiLab";
 import { Landing } from "./views/Landing";
 import { Login } from "./views/Login";
-import { MissionDetail } from "./views/MissionDetail";
-import { Missions } from "./views/Missions";
-import { NewMission } from "./views/NewMission";
 import { Privacy } from "./views/Privacy";
 import { Signup } from "./views/Signup";
 import { Terms } from "./views/Terms";
 
+const Admin = lazy(() => import("./views/Admin").then((m) => ({ default: m.Admin })));
+const AiLab = lazy(() => import("./views/AiLab").then((m) => ({ default: m.AiLab })));
+const MissionDetail = lazy(() =>
+  import("./views/MissionDetail").then((m) => ({ default: m.MissionDetail })),
+);
+const Missions = lazy(() => import("./views/Missions").then((m) => ({ default: m.Missions })));
+const Profile = lazy(() => import("./views/Profile").then((m) => ({ default: m.Profile })));
+const NewMission = lazy(() =>
+  import("./views/NewMission").then((m) => ({ default: m.NewMission })),
+);
+
+function Lazy({ children }: { children: ReactNode }) {
+  return <Suspense fallback={<PageLoader />}>{children}</Suspense>;
+}
+
 export function AppRoutes() {
   return (
     <Routes>
-      {/* Public marketing + auth + legal */}
       <Route path="/" element={<Landing />} />
       <Route path="/login" element={<Login />} />
       <Route path="/signup" element={<Signup />} />
       <Route path="/privacy" element={<Privacy />} />
       <Route path="/terms" element={<Terms />} />
 
-      {/* Authenticated console */}
       <Route element={<AppShell />}>
         <Route
           path="/missions"
           element={
             <RequireAuth minRole="viewer">
-              <Missions />
+              <Lazy>
+                <Missions />
+              </Lazy>
             </RequireAuth>
           }
         />
@@ -36,7 +48,9 @@ export function AppRoutes() {
           path="/missions/new"
           element={
             <RequireAuth minRole="operator">
-              <NewMission />
+              <Lazy>
+                <NewMission />
+              </Lazy>
             </RequireAuth>
           }
         />
@@ -44,7 +58,19 @@ export function AppRoutes() {
           path="/missions/:id"
           element={
             <RequireAuth minRole="viewer">
-              <MissionDetail />
+              <Lazy>
+                <MissionDetail />
+              </Lazy>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <RequireAuth minRole="viewer">
+              <Lazy>
+                <Profile />
+              </Lazy>
             </RequireAuth>
           }
         />
@@ -52,7 +78,19 @@ export function AppRoutes() {
           path="/ai-lab"
           element={
             <RequireAuth minRole="operator">
-              <AiLab />
+              <Lazy>
+                <AiLab />
+              </Lazy>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/ai-lab/:section"
+          element={
+            <RequireAuth minRole="operator">
+              <Lazy>
+                <AiLab />
+              </Lazy>
             </RequireAuth>
           }
         />
@@ -60,7 +98,19 @@ export function AppRoutes() {
           path="/admin"
           element={
             <RequireAuth minRole="viewer">
-              <Admin />
+              <Lazy>
+                <Admin />
+              </Lazy>
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/admin/:section"
+          element={
+            <RequireAuth minRole="viewer">
+              <Lazy>
+                <Admin />
+              </Lazy>
             </RequireAuth>
           }
         />

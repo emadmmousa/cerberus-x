@@ -18,6 +18,21 @@ def llm_configured() -> bool:
     return bool((os.environ.get("FIREBREAK_LLM_BASE_URL") or "").strip())
 
 
+def llm_reachable(timeout: float = 2.0) -> bool:
+    """Best-effort ping of the configured OpenAI-compat base (Ollama /api/tags)."""
+    base = (os.environ.get("FIREBREAK_LLM_BASE_URL") or "").strip().rstrip("/")
+    if not base:
+        return False
+    if base.endswith("/v1"):
+        base = base[:-3].rstrip("/")
+    tags_url = f"{base}/api/tags"
+    try:
+        resp = requests.get(tags_url, timeout=timeout)
+        return resp.ok
+    except Exception:
+        return False
+
+
 def chat_model() -> str:
     """Model for conversational (natural-language) chat.
 
@@ -54,6 +69,7 @@ def chat_completion(
     temperature: float | None = None,
     timeout: float = 90.0,
     model: Optional[str] = None,
+    think: bool | None = None,
 ) -> Optional[str]:
     """
     Call an OpenAI-compatible /v1/chat/completions endpoint.
@@ -77,7 +93,11 @@ def chat_completion(
         body["presence_penalty"] = 0.1
     # DeepSeek Instant / R1-style models: keep planner replies JSON-clean.
     think_raw = (os.environ.get("FIREBREAK_LLM_THINK") or "false").strip().lower()
-    body["think"] = think_raw in {"1", "true", "yes", "on"}
+    body["think"] = (
+        think
+        if think is not None
+        else think_raw in {"1", "true", "yes", "on"}
+    )
     try:
         resp = requests.post(
             url,
@@ -89,6 +109,7 @@ def chat_completion(
             timeout=timeout,
         )
         resp.raise_for_status()
+        resp.encoding = "utf-8"
         data = resp.json()
         message = data["choices"][0]["message"]
         content = message.get("content")
@@ -108,11 +129,16 @@ def chat_completion_stream(
     temperature: float | None = None,
     timeout: float = 120.0,
     model: Optional[str] = None,
+    think: bool | None = None,
+    stream_reasoning: bool = False,
 ):
     """Yield assistant content deltas from an OpenAI-compatible streaming endpoint.
 
     Yields plain text chunks. Silently yields nothing when the LLM is
     unavailable so callers can fall back to a non-streaming path.
+
+    When ``stream_reasoning`` is false (default), reasoning/thinking deltas are
+    suppressed so operator chat stays clean; the model may still think server-side.
     """
     url = completions_url()
     if not url:
@@ -130,7 +156,11 @@ def chat_completion_stream(
         body["top_p"] = float(os.environ.get("FIREBREAK_LLM_TOP_P", "0.95"))
         body["presence_penalty"] = 0.1
     think_raw = (os.environ.get("FIREBREAK_LLM_THINK") or "false").strip().lower()
-    body["think"] = think_raw in {"1", "true", "yes", "on"}
+    body["think"] = (
+        think
+        if think is not None
+        else think_raw in {"1", "true", "yes", "on"}
+    )
     try:
         resp = requests.post(
             url,
@@ -143,6 +173,7 @@ def chat_completion_stream(
             stream=True,
         )
         resp.raise_for_status()
+        resp.encoding = "utf-8"
         for line in resp.iter_lines(decode_unicode=True):
             if not line:
                 continue
@@ -160,9 +191,14 @@ def chat_completion_stream(
                 delta = chunk["choices"][0]["delta"]
             except (KeyError, IndexError, TypeError):
                 continue
-            piece = delta.get("content") or delta.get("reasoning_content")
+            piece = delta.get("content")
             if isinstance(piece, str) and piece:
                 yield piece
+                continue
+            if stream_reasoning:
+                reasoning = delta.get("reasoning_content")
+                if isinstance(reasoning, str) and reasoning:
+                    yield reasoning
     except Exception as exc:  # pragma: no cover - network dependent
         logger.debug("LLM chat_completion_stream failed: %s", exc)
         return

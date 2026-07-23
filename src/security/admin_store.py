@@ -237,6 +237,116 @@ def verify_credentials(username: str, password: str) -> Optional[dict[str, Any]]
     return None
 
 
+def username_available(username: str, *, exclude: Optional[str] = None) -> bool:
+    """Return True when ``username`` is free (or unchanged for ``exclude``)."""
+    ensure_seed()
+    _load_map(USERS_KEY, _users)
+    username = (username or "").strip()
+    if not username:
+        return False
+    if exclude and username == (exclude or "").strip():
+        return True
+    return username not in _users
+
+
+def rename_user(old_username: str, new_username: str) -> dict[str, Any]:
+    """Change the account key and username field."""
+    ensure_seed()
+    old_username = (old_username or "").strip()
+    new_username = (new_username or "").strip()
+    if not old_username or not new_username:
+        raise ValueError("username is required")
+    if old_username == new_username:
+        rec = _users.get(old_username)
+        if not rec:
+            raise ValueError("user not found")
+        return _public_user(rec)
+    if new_username in _users:
+        raise ValueError("username already taken")
+    rec = _users.pop(old_username, None)
+    if not rec:
+        raise ValueError("user not found")
+    rec["username"] = new_username
+    rec["updated_at"] = _now()
+    _users[new_username] = rec
+    _save_map(USERS_KEY, _users)
+    return _public_user(rec)
+
+
+def get_profile_payload(username: str) -> Optional[dict[str, Any]]:
+    """Public profile fields plus org display name when present."""
+    rec = get_user(username)
+    if not rec:
+        return None
+    out = _public_user(rec)
+    org_id = rec.get("org_id")
+    org = _orgs.get(org_id) if org_id else None
+    if org:
+        out["org_name"] = org.get("name")
+    members = sum(1 for u in _users.values() if u.get("org_id") == org_id)
+    out["can_edit_org_name"] = bool(org_id and members == 1 and org_id in _orgs)
+    out["can_edit_username"] = rec.get("auth_method") == "local" and not rec.get("disabled")
+    out["can_edit_password"] = bool(
+        rec.get("auth_method") == "local"
+        and rec.get("password_hash")
+        and not rec.get("disabled")
+    )
+    return out
+
+
+def update_self_profile(
+    username: str,
+    *,
+    current_password: str,
+    new_username: Optional[str] = None,
+    new_password: Optional[str] = None,
+    org_name: Optional[str] = None,
+) -> dict[str, Any]:
+    """Self-service profile updates (local accounts with password verification)."""
+    ensure_seed()
+    username = (username or "").strip()
+    rec = _users.get(username)
+    if not rec or rec.get("disabled"):
+        raise ValueError("user not found")
+    if rec.get("auth_method") != "local":
+        raise ValueError("profile is managed by your identity provider")
+    if not rec.get("password_hash"):
+        raise ValueError("set a password in admin settings before changing profile")
+    if not verify_credentials(username, current_password or ""):
+        raise ValueError("current password is incorrect")
+
+    new_username = (new_username or "").strip() or None
+    if new_username and new_username != username:
+        if len(new_username) < 3:
+            raise ValueError("username must be at least 3 characters")
+        if not username_available(new_username, exclude=username):
+            raise ValueError("username already taken")
+        rec = _users.pop(username)
+        rec["username"] = new_username
+        username = new_username
+
+    if new_password:
+        if len(new_password) < 8:
+            raise ValueError("password must be at least 8 characters")
+        rec["password_hash"] = generate_password_hash(new_password)
+
+    if org_name is not None:
+        org_id = rec.get("org_id")
+        members = sum(1 for u in _users.values() if u.get("org_id") == org_id)
+        if not org_id or org_id not in _orgs or members != 1:
+            raise ValueError("organization name cannot be changed")
+        org_rec = _orgs[org_id]
+        org_rec["name"] = (org_name or org_rec.get("name") or org_id).strip()
+        org_rec["updated_at"] = _now()
+        _orgs[org_id] = org_rec
+        _save_map(ORGS_KEY, _orgs)
+
+    rec["updated_at"] = _now()
+    _users[username] = rec
+    _save_map(USERS_KEY, _users)
+    return get_profile_payload(username) or _public_user(rec)
+
+
 # ---------------------------------------------------------------------------
 # Organizations
 # ---------------------------------------------------------------------------

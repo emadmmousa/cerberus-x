@@ -18,6 +18,83 @@ def _url(target: str) -> str:
     return canonicalize_web_url(target)
 
 
+def _sqlmap_ran_injection_tests(output: str) -> bool:
+    lowered = (output or "").lower()
+    return any(
+        needle in lowered
+        for needle in (
+            "testing if the target url",
+            "testing for sql injection",
+            "testing '",
+            "sql injection point",
+            "parameter '",
+            "parameters:",
+            "appears to be injectable",
+            "is vulnerable",
+            "target url is not injectable",
+            "not injectable",
+            "testing connection to the target",
+            "heuristic (basic) test shows",
+        )
+    )
+
+
+def _analyze_sqlmap_output(output: str, *, vulnerable: bool) -> dict[str, object]:
+    """Derive structured flags from sqlmap stdout/stderr."""
+    if vulnerable:
+        return {}
+    lowered = (output or "").lower()
+    explicit_no_surface = any(
+        phrase in lowered
+        for phrase in (
+            "no usable links found",
+            "no injection point",
+            "no parameter(s) found",
+            "does not appear to be dynamic",
+        )
+    )
+    crawled = any(
+        phrase in lowered
+        for phrase in (
+            "starting crawler",
+            "searching for links with depth",
+            "normalize crawling results",
+        )
+    )
+    crawl_without_tests = crawled and not _sqlmap_ran_injection_tests(output)
+    no_surface = explicit_no_surface or crawl_without_tests
+    waf_blocked = any(
+        token in lowered
+        for token in (
+            "just a moment",
+            "cloudflare",
+            "403 forbidden",
+            "attention required",
+            "cf-mitigated",
+        )
+    )
+    flags: dict[str, object] = {}
+    if no_surface:
+        flags["partial"] = True
+        flags["no_injection_surface"] = True
+        if crawl_without_tests and not explicit_no_surface:
+            flags["note"] = (
+                "Crawler finished but sqlmap never reached an injectable parameter — "
+                "SQLi check inconclusive."
+            )
+        else:
+            flags["note"] = (
+                "No injectable GET parameters or forms found — SQLi check inconclusive."
+            )
+    if waf_blocked:
+        flags["waf_blocked"] = True
+        flags["partial"] = True
+        flags["note"] = flags.get("note") or (
+            "Target may be WAF/CDN blocked — sqlmap could not reach injectable surface."
+        )
+    return flags
+
+
 def _infer_dbms(evasion: dict | None, args: list[str]) -> str | None:
     if evasion and evasion.get("dbms"):
         return str(evasion["dbms"])
@@ -78,7 +155,7 @@ def scan(
             cmd, stderr=subprocess.STDOUT, text=True, env=env
         )
         vulnerable = "vulnerable" in output.lower() or "sql injection" in output.lower()
-        return {
+        payload = {
             "tool": "sqlmap",
             "target": url,
             "vulnerable": vulnerable,
@@ -97,6 +174,8 @@ def scan(
                 else None,
             },
         }
+        payload.update(_analyze_sqlmap_output(output, vulnerable=vulnerable))
+        return payload
     except FileNotFoundError:
         return {
             "tool": "sqlmap",

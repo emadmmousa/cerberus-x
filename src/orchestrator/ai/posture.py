@@ -7,6 +7,7 @@ from typing import Any, Literal
 Posture = Literal["aggressive", "defensive", "balanced"]
 
 VALID_POSTURES = frozenset({"aggressive", "defensive", "balanced"})
+DEFAULT_POSTURE: Posture = "aggressive"
 
 # Tools typically used for proof-of-impact / exploitation (authorized only).
 OFFENSIVE_TOOLS = frozenset(
@@ -15,10 +16,19 @@ OFFENSIVE_TOOLS = frozenset(
         "metasploit",
         "hydra",
         "xsstrike",
+        "dalfox",
+        "commix",
+        "wpscan",
         "responder",
         "impacket",
         "crackmapexec",
         "bloodhound",
+        "enum4linux",
+        "john",
+        "hashcat",
+        "winpeas",
+        "linpeas",
+        "sliver",
     }
 )
 
@@ -36,14 +46,14 @@ DEFENSIVE_PREFERRED = (
 
 
 def normalize_posture(raw: str | None) -> Posture:
-    value = (raw or "balanced").strip().lower()
+    value = (raw or DEFAULT_POSTURE).strip().lower()
     if value in {"offense", "offensive", "red", "attack"}:
         return "aggressive"
     if value in {"defense", "blue", "audit", "harden"}:
         return "defensive"
     if value in VALID_POSTURES:
         return value  # type: ignore[return-value]
-    return "balanced"
+    return DEFAULT_POSTURE
 
 
 def filter_allowlist(allow: set[str], posture: Posture) -> set[str]:
@@ -76,7 +86,7 @@ def posture_instruction(posture: Posture) -> str:
 def hardening_recommendations(
     results_by_phase: dict[str, Any],
     *,
-    posture: Posture = "balanced",
+    posture: Posture = DEFAULT_POSTURE,
 ) -> list[dict[str, str]]:
     """Derive defensive remediation bullets from mission findings (CISA-style hygiene)."""
     recs: list[dict[str, str]] = []

@@ -75,7 +75,47 @@ TOOL_CATALOG: list[dict[str, Any]] = [
         "risk": "low",
         "maturity": "executable",
         "binaries": ["theHarvester", "theharvester"],
-        "description": "OSINT emails/hosts",
+        "description": "Public OSINT — harvest emails and subdomains from open sources",
+    },
+    {
+        "name": "subfinder",
+        "category": "web_recon",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["subfinder"],
+        "description": "Passive subdomain scrape — ProjectDiscovery subfinder",
+    },
+    {
+        "name": "gau",
+        "category": "web_recon",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["gau"],
+        "description": "Archive URL scrape — wayback/OTX/urlscan passive URLs",
+    },
+    {
+        "name": "sherlock",
+        "category": "web_recon",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["sherlock"],
+        "description": "Username OSINT — scrape public profiles across hundreds of sites",
+    },
+    {
+        "name": "darkweb",
+        "category": "dark_web",
+        "risk": "medium",
+        "maturity": "executable",
+        "binaries": ["curl"],
+        "description": "Hidden-web OSINT — scrape indexes and Tor services for seed matches",
+    },
+    {
+        "name": "breach_intel",
+        "category": "dark_web",
+        "risk": "medium",
+        "maturity": "executable",
+        "binaries": [],
+        "description": "Breach DB lookup — match DeHashed + LeakCheck records to OSINT seeds",
     },
     {
         "name": "nikto",
@@ -92,6 +132,110 @@ TOOL_CATALOG: list[dict[str, Any]] = [
         "maturity": "executable",
         "binaries": ["nuclei"],
         "description": "Template vulnerability scan",
+    },
+    {
+        "name": "httpx",
+        "category": "web_recon",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["pd-httpx", "httpx"],
+        "description": "HTTP probe and tech fingerprint",
+    },
+    {
+        "name": "katana",
+        "category": "web_recon",
+        "risk": "medium",
+        "maturity": "executable",
+        "binaries": ["katana"],
+        "description": "Web crawler for endpoint discovery",
+    },
+    {
+        "name": "feroxbuster",
+        "category": "web_recon",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["feroxbuster"],
+        "description": "Fast recursive web content discovery",
+    },
+    {
+        "name": "naabu",
+        "category": "port_host",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["naabu"],
+        "description": "Fast port scanner (ProjectDiscovery)",
+    },
+    {
+        "name": "dnsx",
+        "category": "web_recon",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["dnsx"],
+        "description": "DNS enumeration and resolution toolkit",
+    },
+    {
+        "name": "amass",
+        "category": "web_recon",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["amass"],
+        "description": "Passive subdomain enumeration (OWASP Amass)",
+    },
+    {
+        "name": "dalfox",
+        "category": "vuln",
+        "risk": "medium",
+        "maturity": "executable",
+        "binaries": ["dalfox"],
+        "description": "Parameter-aware XSS scanner",
+    },
+    {
+        "name": "waybackurls",
+        "category": "web_recon",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["waybackurls"],
+        "description": "Historical URL discovery from Wayback",
+    },
+    {
+        "name": "sslscan",
+        "category": "vuln",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["sslscan"],
+        "description": "SSL/TLS cipher and certificate audit",
+    },
+    {
+        "name": "arjun",
+        "category": "web_recon",
+        "risk": "low",
+        "maturity": "executable",
+        "binaries": ["arjun"],
+        "description": "HTTP parameter discovery",
+    },
+    {
+        "name": "enum4linux",
+        "category": "windows_ad",
+        "risk": "high",
+        "maturity": "executable",
+        "binaries": ["enum4linux-ng"],
+        "description": "SMB/NetBIOS/LDAP enumeration",
+    },
+    {
+        "name": "commix",
+        "category": "vuln",
+        "risk": "high",
+        "maturity": "executable",
+        "binaries": ["python3"],
+        "description": "Automated command injection detection",
+    },
+    {
+        "name": "wpscan",
+        "category": "vuln",
+        "risk": "medium",
+        "maturity": "executable",
+        "binaries": ["wpscan"],
+        "description": "WordPress vulnerability scanner",
     },
     {
         "name": "xsstrike",
@@ -202,6 +346,45 @@ TOOL_CATALOG: list[dict[str, Any]] = [
 ]
 
 
+def _slug_scaffold_category(category: str) -> str:
+    return (
+        (category or "scaffold")
+        .lower()
+        .replace(" & ", "_")
+        .replace("/", "_")
+        .replace(" ", "_")
+    )[:48]
+
+
+def scaffold_inventory_rows() -> list[dict[str, Any]]:
+    from orchestrator.ai.scaffold_tools import EXPECTED_SCAFFOLD_COUNT, list_scaffold_tools
+
+    rows: list[dict[str, Any]] = []
+    for item in list_scaffold_tools():
+        rows.append(
+            {
+                "name": item["name"],
+                "category": _slug_scaffold_category(str(item.get("category") or "scaffold")),
+                "risk": item.get("risk") or "medium",
+                "maturity": "scaffold",
+                "binaries": [],
+                "bundle_tools": list(item.get("tools") or []),
+                "scaffold_id": item.get("scaffold_id"),
+                "description": item.get("description")
+                or f"Specialist scaffold: {item.get('label') or item.get('scaffold_id')}",
+            }
+        )
+    if len(rows) != EXPECTED_SCAFFOLD_COUNT:
+        raise RuntimeError(
+            f"expected {EXPECTED_SCAFFOLD_COUNT} scaffold inventory rows, got {len(rows)}"
+        )
+    return rows
+
+
+CLI_TOOL_CATALOG: list[dict[str, Any]] = TOOL_CATALOG
+TOOL_CATALOG = CLI_TOOL_CATALOG + scaffold_inventory_rows()
+
+
 def catalog_by_name() -> dict[str, dict[str, Any]]:
     return {entry["name"]: entry for entry in TOOL_CATALOG}
 
@@ -236,6 +419,14 @@ def probe_local_tool(entry: dict[str, Any]) -> dict[str, Any]:
         status = "framework"
         detail = "Uses Metasploit RPC (separate service), not a local binary"
         ready = True
+    elif maturity == "scaffold":
+        bundle = entry.get("bundle_tools") or []
+        ready = bool(bundle)
+        status = "scaffold"
+        preview = ", ".join(bundle[:4])
+        if len(bundle) > 4:
+            preview += ", …"
+        detail = f"Specialist bundle ({len(bundle)} tools): {preview}"
     elif maturity == "artifact":
         ready = bool(found_art)
         status = "ready" if ready else "missing_artifact"

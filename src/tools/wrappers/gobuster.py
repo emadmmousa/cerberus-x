@@ -8,8 +8,9 @@ from urllib.request import ProxyHandler, Request, build_opener, urlopen
 from tools.wrappers._argv import coerce_argv
 from tools.wrappers._proxy import merge_env, proxy_meta
 from tools.wrappers._web_url import canonicalize_web_url, force_url_arg
+from tools.wrappers._wordlists import DEFAULT_WORDLIST, resolve_wordlist, rewrite_wordlist_arg
 
-WORDLIST = "/usr/share/dirb/wordlists/common.txt"
+WORDLIST = DEFAULT_WORDLIST
 _WILDCARD_LENGTH_RE = re.compile(r"Length:\s*(\d+)", re.IGNORECASE)
 _WILDCARD_STATUS_RE = re.compile(r"=>\s*(\d{3})\s*\(Length:", re.IGNORECASE)
 _ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07")
@@ -76,6 +77,12 @@ def sanitize_args(args: list | None, *, url: str | None = None) -> list[str]:
         body.extend(["-t", "20"])
     if mode == "dir" and "-b" not in body and "--status-codes-blacklist" not in body:
         body.extend(["-b", "404"])
+
+    body = rewrite_wordlist_arg(body)
+    if "-w" not in body and "--wordlist" not in body and not any(
+        str(a).startswith(("-w=", "--wordlist=")) for a in body
+    ):
+        body.extend(["-w", resolve_wordlist(None)])
 
     return [mode, *body]
 
@@ -230,6 +237,24 @@ def scan(target, args=None, use_proxy: bool = False, proxy_protocol: str = "http
         }
     except subprocess.CalledProcessError as exc:
         message = str(exc.output or exc)
+        if "wordlist file" in message.lower() and "does not exist" in message.lower():
+            retry_args = rewrite_wordlist_arg(list(args))
+            if "-w" in retry_args:
+                idx = retry_args.index("-w")
+                if idx + 1 < len(retry_args):
+                    retry_args[idx + 1] = resolve_wordlist(None)
+            try:
+                output = _run(retry_args, env=env)
+                return {
+                    "tool": "gobuster",
+                    "target": url,
+                    "directories": _parse_directories(output),
+                    "raw_output": output,
+                    "proxy": meta,
+                    "wordlist_fallback": True,
+                }
+            except subprocess.CalledProcessError:
+                pass
         reported = _length_from_error(message)
         status = _status_from_error(message)
         retry_args = list(args)

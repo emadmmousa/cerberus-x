@@ -1,0 +1,39 @@
+name: XSS Hunt Chain
+description: >-
+  GAU/katana URL harvest, dalfox/xsstrike XSS pipeline, nuclei exposure templates,
+  WAF-bypass friendly ffuf probes. Authorized targets only.
+evasion: medium
+phases:
+  - name: url_collection
+    parallel: true
+    tools:
+      - tool: gau
+        args: ["--subs", "--mc", "200"]
+      - tool: katana
+        args: ["-d", "5", "-jc", "-silent"]
+      - tool: httpx
+        args: ["-silent", "-status-code", "-content-type"]
+  - name: js_surface
+    parallel: true
+    depends_on: ["url_collection"]
+    tools:
+      - tool: katana
+        args: ["-d", "3", "-ef", "woff,css,png,svg,jpg", "-silent"]
+      - tool: nuclei
+        args: ["-tags", "exposure,token", "-severity", "critical,high,medium", "-silent"]
+  - name: xss_scan
+    parallel: false
+    depends_on: ["js_surface"]
+    tools:
+      - tool: dalfox
+        args: ["--silence", "--waf-bypass"]
+      - tool: xsstrike
+        args: ["--timeout", "30", "--skip"]
+      - tool: scaffold/xss-chain-strike
+  - name: waf_probe
+    parallel: true
+    depends_on: ["xss_scan"]
+    tools:
+      - tool: ffuf
+        args: ["-ac", "-mc", "200,403,406"]
+      - tool: scaffold/waf-bypass-strike

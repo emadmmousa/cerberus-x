@@ -2,6 +2,7 @@ import pytest
 
 from tools.metasploit_rpc import MetasploitRpcError
 from tools.wrappers import metasploit
+from tools.wrappers.metasploit import DEFAULT_MODULE
 
 
 class FakeClient:
@@ -243,10 +244,7 @@ def test_scan_preserves_explicit_rhosts_and_coerces_false_and_negative_int(
 @pytest.mark.parametrize(
     ("args", "message"),
     [
-        ([], "module path is required"),
-        (["portscan"], "full module path"),
         (["auxiliary/"], "full module path"),
-        (["/scanner/portscan/tcp"], "full module path"),
         (
             ["auxiliary/scanner/portscan/tcp", "THREADS"],
             "KEY=VALUE",
@@ -264,6 +262,46 @@ def test_scan_returns_structured_errors_for_malformed_arguments(args, message):
     assert result["target"] == "example.test"
     assert result["code"] == "invalid_arguments"
     assert message in result["error"]
+
+
+def test_scan_defaults_empty_args_to_tcp_portscan(monkeypatch):
+    client = FakeClient(
+        module_options={"RHOSTS": {"required": True}},
+        execution_result={"job_id": 1, "uuid": "run-default"},
+    )
+    install_client(monkeypatch, client)
+
+    result = metasploit.scan("distrokid.com", [])
+
+    assert result["module"] == DEFAULT_MODULE
+    assert client.execute_calls
+    assert client.execute_calls[0][2]["RHOSTS"] == "distrokid.com"
+
+
+def test_scan_normalizes_partial_module_paths(monkeypatch):
+    client = FakeClient(
+        module_options={"RHOSTS": {"required": True}},
+        execution_result={"job_id": 2, "uuid": "run-norm"},
+    )
+    install_client(monkeypatch, client)
+
+    cases = [
+        (["/scanner/portscan/tcp"], "auxiliary/scanner/portscan/tcp"),
+        (["portscan"], "auxiliary/scanner/portscan/tcp"),
+        (["scanner/portscan/tcp"], "auxiliary/scanner/portscan/tcp"),
+        (
+            ["apache_path_traversal"],
+            "exploit/multi/http/apache_path_traversal",
+        ),
+    ]
+    for args, expected in cases:
+        client.execute_calls.clear()
+        result = metasploit.scan("example.test", args)
+        assert result["module"] == expected, args
+        assert client.execute_calls[0][0:2] == (
+            expected.split("/", 1)[0],
+            expected.split("/", 1)[1],
+        )
 
 
 def test_scan_reports_all_missing_required_options_without_executing(monkeypatch):
@@ -308,6 +346,20 @@ def test_scan_returns_safe_structured_rpc_errors(monkeypatch):
         "code": "rpc_error",
         "error": "RPC service unavailable",
     }
+
+
+def test_scan_classifies_missing_module(monkeypatch):
+    client = FakeClient(error=MetasploitRpcError("Invalid Module"))
+    install_client(monkeypatch, client)
+
+    result = metasploit.scan(
+        "distrokid.com",
+        ["exploit/linux/http/panos_telemetry_cmd_exec", "RPORT=443", "SSL=true"],
+    )
+
+    assert result["code"] == "invalid_module"
+    assert result["error"] == "Invalid Module"
+    assert result["module"] == "exploit/linux/http/panos_telemetry_cmd_exec"
 
 
 def test_scan_rejects_non_mapping_module_options_response(monkeypatch):

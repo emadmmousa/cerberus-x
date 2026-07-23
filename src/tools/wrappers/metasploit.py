@@ -14,6 +14,24 @@ DEFAULT_MODULE = "auxiliary/scanner/portscan/tcp"
 DEFAULT_JOB_WAIT_SECONDS = 90
 DEFAULT_JOB_POLL_INTERVAL = 2.0
 
+MSF_MODULE_TYPES = frozenset({"exploit", "auxiliary", "post", "payload", "encoder", "nop"})
+
+# Common planner/LLM shorthands → full MSF module paths.
+MODULE_ALIASES: dict[str, str] = {
+    "portscan": DEFAULT_MODULE,
+    "tcp_portscan": DEFAULT_MODULE,
+    "http_version": "auxiliary/scanner/http/http_version",
+    "ssl_version": "auxiliary/scanner/ssl/ssl_version",
+    "dir_scanner": "auxiliary/scanner/http/dir_scanner",
+    "wordpress_scanner": "auxiliary/scanner/http/wordpress_scanner",
+    "apache_path_traversal": "exploit/multi/http/apache_path_traversal",
+    "log4shell": "exploit/multi/http/log4shell_header_injection",
+    "log4shell_header_injection": "exploit/multi/http/log4shell_header_injection",
+    "ms17_010": "exploit/windows/smb/ms17_010_eternalblue",
+    "eternalblue": "exploit/windows/smb/ms17_010_eternalblue",
+    "bluekeep": "exploit/windows/rdp/cve_2019_0708_bluekeep_rce",
+}
+
 
 _IPV4_CIDR = re.compile(
     r"^(?:\d{1,3}\.){3}\d{1,3}/\d{1,2}$"
@@ -49,6 +67,13 @@ def _host(target: str) -> str:
     return value
 
 
+def _classify_rpc_error(message: str) -> str:
+    lower = (message or "").lower()
+    if "invalid module" in lower:
+        return "invalid_module"
+    return "rpc_error"
+
+
 def _error(
     target: str,
     code: str,
@@ -79,20 +104,80 @@ def _coerce_option(value: str) -> str | bool | int:
     return normalized
 
 
+def _module_from_shorthand(name: str) -> str | None:
+    """Resolve bare module names via aliases and the CVE/port exploit maps."""
+    key = name.strip().lower().strip("/")
+    if not key:
+        return None
+    alias = MODULE_ALIASES.get(key)
+    if alias:
+        return alias
+    try:
+        from tools.cve_exploit_map import CVE_EXPLOIT_MAP, SERVICE_PORT_EXPLOITS
+    except ImportError:
+        return None
+    for module, _ in CVE_EXPLOIT_MAP.values():
+        if key == module or key == module.rsplit("/", 1)[-1]:
+            return module
+    for specs in SERVICE_PORT_EXPLOITS.values():
+        for module, _ in specs:
+            if key == module or key == module.rsplit("/", 1)[-1]:
+                return module
+    return None
+
+
+def normalize_module_path(raw: str) -> str:
+    """Coerce planner/LLM module tokens into a full Metasploit module path."""
+    value = (raw or "").strip()
+    if not value:
+        raise ValueError("Metasploit module path is required")
+    value = value.strip("/")
+    first = value.split("/", 1)[0].lower()
+
+    if first in MSF_MODULE_TYPES:
+        if "/" not in value or not value.split("/", 1)[1]:
+            raise ValueError("Metasploit module must use a full module path")
+        return value
+
+    if first in {"scanner", "gather", "admin", "server", "dos", "fuzzers", "client"}:
+        return f"auxiliary/{value}"
+
+    if first in {
+        "multi",
+        "linux",
+        "windows",
+        "osx",
+        "bsd",
+        "solaris",
+        "aix",
+        "unix",
+        "android",
+        "apple_ios",
+    }:
+        return f"exploit/{value}"
+
+    resolved = _module_from_shorthand(value)
+    if resolved:
+        return resolved
+
+    if "/" in value:
+        return f"auxiliary/{value}"
+
+    raise ValueError("Metasploit module must use a full module path")
+
+
 def _parse_args(
     args: list[str] | None,
 ) -> tuple[str, str, str, dict[str, Any]]:
-    if args is None:
+    if not args:
         args = [DEFAULT_MODULE]
     if not args:
         raise ValueError("Metasploit module path is required")
 
-    module = args[0]
-    if not isinstance(module, str):
+    if not isinstance(args[0], str):
         raise ValueError("Metasploit module path must be a string")
-    module = module.strip()
-    if "/" not in module:
-        raise ValueError("Metasploit module must use a full module path")
+
+    module = normalize_module_path(args[0])
     module_type, module_name = module.split("/", 1)
     if not module_type or not module_name:
         raise ValueError("Metasploit module must use a full module path")
@@ -292,7 +377,12 @@ def scan(target: str, args: list[str] | None = None) -> dict[str, Any]:
             }
         return result
     except MetasploitRpcError as exc:
-        return _error(target, "rpc_error", str(exc), module=module)
+        return _error(
+            target,
+            _classify_rpc_error(str(exc)),
+            str(exc),
+            module=module,
+        )
     except Exception:
         return _error(
             target,

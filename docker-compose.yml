@@ -122,12 +122,14 @@ services:
       - FIREBREAK_OUTPUT_DIR=/app/output
       - FIREBREAK_DB_PATH=/app/output/results.db
       - FIREBREAK_ENV_FILE=/app/.env
+      - FIREBREAK_PROXY_DEFAULT=${FIREBREAK_PROXY_DEFAULT:-true}
       - FIREBREAK_MCP_ENABLED=${FIREBREAK_MCP_ENABLED:-true}
       - FIREBREAK_MCP_API_KEY=${FIREBREAK_MCP_API_KEY:-}
       - FIREBREAK_MCP_RATE_LIMIT_PER_MIN=${FIREBREAK_MCP_RATE_LIMIT_PER_MIN:-30}
       - FIREBREAK_AI_REQUIRE_CONFIRM=${FIREBREAK_AI_REQUIRE_CONFIRM:-false}
       - FIREBREAK_REQUIRE_AUTHZ=${FIREBREAK_REQUIRE_AUTHZ:-false}
-      - AUTHORIZED_TARGETS_FILE=${AUTHORIZED_TARGETS_FILE:-/app/authorized_targets.json}
+      - AUTHORIZED_TARGETS_FILE=${AUTHORIZED_TARGETS_FILE:-/app/output/authorized_targets.json}
+      - FIREBREAK_CUSTOM_TOOLS_FILE=${FIREBREAK_CUSTOM_TOOLS_FILE:-/app/output/custom_tools.json}
       - FIREBREAK_LLM_BASE_URL=${FIREBREAK_LLM_BASE_URL:-http://ollama:11434/v1}
       - FIREBREAK_LLM_API_KEY=${FIREBREAK_LLM_API_KEY:-ollama}
       - FIREBREAK_LLM_MODEL=${FIREBREAK_LLM_MODEL:-firebreak}
@@ -147,13 +149,15 @@ services:
       - FIREBREAK_LLM_UNRESTRICTED=${FIREBREAK_LLM_UNRESTRICTED:-true}
       - FIREBREAK_LLM_TEMPERATURE=${FIREBREAK_LLM_TEMPERATURE:-0.9}
       - FIREBREAK_LLM_TOP_P=${FIREBREAK_LLM_TOP_P:-0.95}
+      - FIREBREAK_BREACH_INTEL_ENABLED=${FIREBREAK_BREACH_INTEL_ENABLED:-true}
+      - DEHASHED_API_KEY=${DEHASHED_API_KEY:-}
+      - LEAKCHECK_API_KEY=${LEAKCHECK_API_KEY:-}
     volumes:
       - ./src:/app/src
       - ./playbooks:/app/playbooks
       - ./training:/app/training:ro
       - ./output:/app/output
       - ./.env:/app/.env
-      - ./authorized_targets.json:/app/authorized_targets.json:ro
     # Dashboard is the only host-facing entry point; bind to localhost only.
     ports:
       - "127.0.0.1:5000:5000"
@@ -227,6 +231,8 @@ services:
         condition: service_healthy
       metasploit:
         condition: service_healthy
+      tor:
+        condition: service_started
     env_file:
       - path: .env
         required: true
@@ -240,16 +246,25 @@ services:
       - MSF_RPC_SSL=false
       - MSF_RPC_VERIFY_SSL=false
       - FIREBREAK_OUTPUT_DIR=/app/output
+      - FIREBREAK_TOR_SOCKS=tor:9050
+      - FIREBREAK_DARKWEB_ENABLED=${FIREBREAK_DARKWEB_ENABLED:-true}
+      - FIREBREAK_BREACH_INTEL_ENABLED=${FIREBREAK_BREACH_INTEL_ENABLED:-true}
+      - DEHASHED_API_KEY=${DEHASHED_API_KEY:-}
+      - LEAKCHECK_API_KEY=${LEAKCHECK_API_KEY:-}
+      - FIREBREAK_LOCAL_PROXY_HOST=${FIREBREAK_LOCAL_PROXY_HOST:-127.0.0.1}
+      - FIREBREAK_LOCAL_PROXY_PORT=${FIREBREAK_LOCAL_PROXY_PORT:-18080}
+      - FIREBREAK_PROXY_DEFAULT=${FIREBREAK_PROXY_DEFAULT:-true}
     volumes:
       - ./src:/app/src
       - ./output:/app/output
+      - ./.env:/app/.env
     # Raw sockets for masscan/rustscan SYN scans.
     cap_add:
       - NET_RAW
       - NET_ADMIN
     deploy:
       replicas: 4
-    command: ["celery", "-A", "orchestrator.tasks", "worker", "--concurrency=8", "--loglevel=info"]
+    command: ["celery", "-A", "orchestrator.tasks", "worker", "--concurrency=8", "--loglevel=info", "--autoreload"]
     networks:
       - firebreak-net
 
@@ -274,6 +289,13 @@ services:
     command: ["celery", "-A", "orchestrator.celery_app", "beat", "--loglevel=INFO"]
     networks:
       - firebreak-net
+
+  tor:
+    image: dperson/torproxy:latest
+    container_name: firebreak-tor
+    networks:
+      - firebreak-net
+    restart: unless-stopped
 
   vault:
     image: hashicorp/vault:1.15

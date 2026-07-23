@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 DEFAULT_SERVICE = "ssh"
 DEFAULT_LOGIN = "admin"
-DEFAULT_TIMEOUT_SECONDS = 60
+DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("FIREBREAK_HYDRA_TIMEOUT", "90"))
 _WORDLIST_CANDIDATES = (
     "/usr/share/nmap/nselib/data/passwords.lst",
     "/usr/share/john/password.lst",
@@ -102,6 +102,8 @@ def _build_command(target: str, args: list[str] | None) -> tuple[str, str, list[
             wordlist,
             "-t",
             "4",
+            "-W",
+            "3",
             "-f",
             host,
             service,
@@ -188,6 +190,35 @@ def _tcp_reachable(host: str, port: int, timeout: float = 3.0) -> bool:
         return False
 
 
+def _ssh_banner_valid(host: str, port: int = 22, timeout: float = 5.0) -> bool:
+    """True when the port speaks SSH (not a CDN tarpit accepting TCP)."""
+    import socket
+
+    try:
+        with socket.create_connection((host, port), timeout=timeout) as sock:
+            sock.settimeout(timeout)
+            banner = sock.recv(256).decode("utf-8", errors="ignore")
+            return banner.startswith("SSH-")
+    except OSError:
+        return False
+
+
+def _target_implies_web(target: str) -> bool:
+    lowered = str(target or "").lower().strip()
+    if lowered.startswith(("http://", "https://")):
+        return True
+    if lowered.startswith(("ssh://", "ftp://", "sftp://")):
+        return False
+    return "/" in lowered
+
+
+def _ensure_wait_flag(command: list[str]) -> list[str]:
+    if "-W" not in command and not any(str(a).startswith("-W=") for a in command):
+        insert_at = 1
+        return [*command[:insert_at], "-W", "3", *command[insert_at:]]
+    return command
+
+
 def scan(
     target,
     args=None,
@@ -198,11 +229,41 @@ def scan(
     from tools.wrappers._proxy import merge_env, proxy_meta
 
     host, service, command = _build_command(target, list(args) if args else None)
+    command = _ensure_wait_flag(command)
     resolved, meta = proxy_meta("hydra", use_proxy, proxy_protocol)
     env = merge_env(resolved["env"])
 
-    # Skip brute-force when the service port is filtered/closed (common on CDN edges).
     port = _service_port(service, command)
+    if service.lower() == "ssh":
+        if _target_implies_web(target):
+            return {
+                "tool": "hydra",
+                "target": host,
+                "service": service,
+                "credentials": [],
+                "skipped": True,
+                "raw_output": (
+                    "Skipped: default SSH brute-force is not run against HTTP(S) targets. "
+                    "Use an explicit ssh://host target or a web form module."
+                ),
+                "proxy": meta,
+            }
+        ssh_port = port if port is not None else 22
+        if not _ssh_banner_valid(host, ssh_port):
+            return {
+                "tool": "hydra",
+                "target": host,
+                "service": service,
+                "credentials": [],
+                "skipped": True,
+                "raw_output": (
+                    f"Skipped: {host}:{ssh_port} does not present an SSH banner "
+                    f"(likely filtered, CDN, or wrong service)."
+                ),
+                "proxy": meta,
+            }
+
+    # Skip brute-force when the service port is filtered/closed (common on CDN edges).
     if port is not None and not _tcp_reachable(host, port):
         return {
             "tool": "hydra",
@@ -266,6 +327,7 @@ def scan(
             "service": service,
             "credentials": _parse_credentials(output),
             "raw_output": output,
+            "partial": True,
             "error": f"hydra timed out after {timeout}s",
             "proxy": meta,
         }

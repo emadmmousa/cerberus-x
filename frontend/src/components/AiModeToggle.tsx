@@ -17,6 +17,8 @@ type Props = {
   onPlaybookChange: (path: string) => void;
   playbooks?: PlaybookOption[];
   disabled?: boolean;
+  hidePosture?: boolean;
+  hidePlaybook?: boolean;
 };
 
 export function AiModeToggle({
@@ -32,9 +34,12 @@ export function AiModeToggle({
   onPlaybookChange,
   playbooks = [],
   disabled,
+  hidePosture = false,
+  hidePlaybook = false,
 }: Props) {
   return (
     <div className="options-block">
+      {!hidePosture && (
       <div className="field">
         <label htmlFor="posture">Posture</label>
         <select
@@ -47,12 +52,14 @@ export function AiModeToggle({
           }
           disabled={disabled}
         >
+          <option value="aggressive">Aggressive (offense, default)</option>
           <option value="balanced">Balanced (offense + defense)</option>
-          <option value="aggressive">Aggressive (offense)</option>
           <option value="defensive">Defensive (hardening)</option>
         </select>
       </div>
+      )}
 
+      {!hidePlaybook && (
       <div className="field">
         <label htmlFor="playbook">Playbook</label>
         <select
@@ -73,6 +80,7 @@ export function AiModeToggle({
         </select>
         <p className="options-block__hint">{playbook}</p>
       </div>
+      )}
 
       <label className="toggle-row options-block__toggle">
         <span className="toggle">

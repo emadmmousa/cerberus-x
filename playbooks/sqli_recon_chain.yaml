@@ -1,0 +1,44 @@
+name: SQLi Recon Chain
+description: >-
+  Subdomain/tech recon, URL harvest, SQLi candidate filtering, sqlmap validation,
+  header/time-based probes. Authorized targets only.
+evasion: medium
+phases:
+  - name: stack_recon
+    parallel: true
+    tools:
+      - tool: subfinder
+        args: ["-all", "-silent"]
+      - tool: httpx
+        args: ["-silent", "-status-code", "-tech-detect"]
+      - tool: whatweb
+        args: ["-a", "3"]
+  - name: url_harvest
+    parallel: true
+    depends_on: ["stack_recon"]
+    tools:
+      - tool: gau
+        args: ["--subs", "--mc", "200"]
+      - tool: katana
+        args: ["-d", "5", "-ps", "-pss", "waybackarchive,commoncrawl,alienvault", "-f", "qurl", "-silent"]
+      - tool: waybackurls
+        args: []
+  - name: param_surface
+    parallel: false
+    depends_on: ["url_harvest"]
+    tools:
+      - tool: arjun
+        args: ["-m", "GET,POST", "--rate-limit", "10"]
+  - name: sqli_validation
+    parallel: false
+    depends_on: ["param_surface"]
+    tools:
+      - tool: sqlmap
+        args: ["--batch", "--forms", "--crawl=2", "--level=5", "--risk=3", "--random-agent", "--technique=BEUSTQ"]
+      - tool: scaffold/sqli-impact-strike
+  - name: template_sqli
+    parallel: true
+    depends_on: ["sqli_validation"]
+    tools:
+      - tool: nuclei
+        args: ["-tags", "sqli", "-severity", "critical,high", "-silent"]

@@ -13,6 +13,7 @@ import {
 import { ThemeProvider } from "../providers/ThemeProvider";
 import { ThemeToggle } from "../components/ThemeToggle";
 import { AuthProvider } from "../providers/AuthProvider";
+import { ShellLayoutProvider } from "../providers/ShellLayoutProvider";
 import { AppShell } from "../components/AppShell";
 
 function resetThemeStorage() {
@@ -134,9 +135,11 @@ describe("AppShell theme chrome", () => {
     render(
       <MemoryRouter>
         <ThemeProvider>
-          <AuthProvider>
-            <AppShell />
-          </AuthProvider>
+          <ShellLayoutProvider>
+            <AuthProvider>
+              <AppShell />
+            </AuthProvider>
+          </ShellLayoutProvider>
         </ThemeProvider>
       </MemoryRouter>,
     );
@@ -144,5 +147,25 @@ describe("AppShell theme chrome", () => {
     expect(
       screen.getByRole("button", { name: /switch to light theme/i }),
     ).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: /collapse sidebar/i }).length).toBeGreaterThan(0);
+  });
+
+  it("toggles sidebar collapse and persists", () => {
+    render(
+      <MemoryRouter>
+        <ThemeProvider>
+          <ShellLayoutProvider>
+            <AuthProvider>
+              <AppShell />
+            </AuthProvider>
+          </ShellLayoutProvider>
+        </ThemeProvider>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getAllByRole("button", { name: /collapse sidebar/i })[0]);
+    expect(document.documentElement.hasAttribute("data-sidebar-collapsed")).toBe(true);
+    expect(window.localStorage.getItem("firebreak-sidebar-collapsed")).toBe("1");
+    expect(screen.getAllByRole("button", { name: /expand sidebar/i }).length).toBeGreaterThan(0);
   });
 });

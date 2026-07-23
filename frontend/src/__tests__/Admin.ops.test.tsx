@@ -1,5 +1,5 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AuthProvider } from "../providers/AuthProvider";
 import { ThemeProvider } from "../providers/ThemeProvider";
@@ -43,6 +43,7 @@ vi.mock("../api/client", async () => {
     ...actual,
     listAdminUsers: vi.fn(async () => []),
     listAdminOrgs: vi.fn(async () => [{ id: "default", name: "Default", user_count: 0 }]),
+    listMissions: vi.fn(async () => ({ missions: [], count: 0 })),
     getAdminSettings: vi.fn(async () => mockSettings),
     setOpsSettings: vi.fn(async (body) => ({
       ...mockSettings.settings,
@@ -90,10 +91,12 @@ function renderAdmin() {
   );
 
   return render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={["/admin/ops"]}>
       <ThemeProvider>
         <AuthProvider>
-          <Admin />
+          <Routes>
+            <Route path="/admin/:section" element={<Admin />} />
+          </Routes>
         </AuthProvider>
       </ThemeProvider>
     </MemoryRouter>,
@@ -107,8 +110,6 @@ describe("Admin Ops tab", () => {
 
   it("loads ops settings and calls setOpsSettings when Auto-Scale ON is clicked", async () => {
     renderAdmin();
-
-    fireEvent.click(screen.getByRole("tab", { name: /ops/i }));
 
     await waitFor(() => {
       expect(getAdminSettings).toHaveBeenCalled();

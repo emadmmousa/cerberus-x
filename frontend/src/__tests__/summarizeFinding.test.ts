@@ -3,6 +3,7 @@ import {
   summarizeFinding,
   summarizeMission,
   stripAnsi,
+  isSqlmapInconclusive,
   PHASE_LABELS,
 } from "../lib/summarizeFinding";
 import type { ResultRow } from "../api/client";
@@ -156,14 +157,33 @@ describe("summarizeFinding", () => {
     expect(s.bullets.join(" ")).toMatch(/IIS|ASP\.NET/i);
   });
 
-  it("marks whatweb execution expired as failed", () => {
+  it("marks whatweb cloudflare challenge as partial", () => {
+    const s = summarizeFinding("whatweb", {
+      tool: "whatweb",
+      target: "https://distrokid.com",
+      http_status: "403 Forbidden",
+      waf_blocked: true,
+      waf_vendor: "Cloudflare",
+      partial: true,
+      technologies: ["HTML5", "Cloudflare"],
+      page_title: "Just a moment...",
+      note: "Cloudflare challenge page detected (403 Forbidden) — app fingerprint limited.",
+      raw_output: "https://distrokid.com [403 Forbidden] Title[Just a moment...]",
+    });
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ")).toMatch(/challenge|Cloudflare/i);
+    expect(s.bullets.join(" ")).not.toMatch(/Stack signals: Cookies/i);
+  });
+
+  it("marks whatweb execution expired as partial when no stack captured", () => {
     const s = summarizeFinding("whatweb", {
       tool: "whatweb",
       raw_output: "ERROR Opening: https://www.takwene.com - execution expired",
+      partial: true,
       proxy: { enabled: false, mode: "direct_fallback" },
     });
-    expect(s.status).toBe("failed");
-    expect(s.bullets.join(" ").toLowerCase()).toMatch(/timed out/);
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/timeout/);
   });
 
   it("marks hydra ssh disconnect as failed", () => {
@@ -215,6 +235,23 @@ describe("summarizeFinding", () => {
     });
     expect(s.status).toBe("partial");
     expect(s.bullets.join(" ").toLowerCase()).toMatch(/cdn|stall/);
+  });
+
+  it("treats ffuf maxtime with progress as partial, not connection timeout", () => {
+    const raw =
+      ":: Progress: [344/4614] :: Job [1/1] :: 8 req/sec :: Duration: [0:00:45] :: Errors: 2 ::\n" +
+      "[WARN] Maximum running time for entire process reached, exiting.\n";
+    const s = summarizeFinding("ffuf", {
+      tool: "ffuf",
+      results: [],
+      timed_out: true,
+      partial: true,
+      raw_output: raw,
+      proxy: { enabled: false, mode: "direct" },
+    });
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/time limit|partial/);
+    expect(s.bullets.join(" ").toLowerCase()).not.toMatch(/connection timed out/);
   });
 
   it("reports xsstrike connect failure without calling it a timeout", () => {
@@ -310,6 +347,77 @@ describe("summarizeFinding", () => {
     });
     expect(s.status).toBe("ok");
     expect(s.bullets.some((b) => /session|access/i.test(b))).toBe(true);
+  });
+
+  it("summarizes metasploit invalid module separately from rpc outage", () => {
+    const s = summarizeFinding("metasploit", {
+      error: "Invalid Module",
+      code: "invalid_module",
+      module: "exploit/linux/http/panos_telemetry_cmd_exec",
+    });
+    expect(s.status).toBe("failed");
+    expect(s.bullets.join(" ")).toMatch(/not installed|Invalid Module/i);
+    expect(s.bullets.join(" ")).not.toMatch(/^Exploitation service unavailable\.$/);
+  });
+
+  it("marks sqlmap crawl-only runs without injection tests as partial", () => {
+    const s = summarizeFinding("sqlmap", {
+      tool: "sqlmap",
+      target: "https://distrokid.com",
+      vulnerable: false,
+      raw_output:
+        "[10:25:18] [INFO] starting crawler for target URL 'https://distrokid.com'\n" +
+        "[10:25:18] [INFO] searching for links with depth 1\n" +
+        "[10:25:18] [INFO] searching for links with depth 2\n" +
+        "[10:25:18] [INFO] searching for links with depth 3\n" +
+        "do you want to normalize crawling results [Y/n] Y\n",
+    });
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/inconclusive|injectable parameter/);
+  });
+
+  it("marks union-only sqlmap with no usable links as partial", () => {
+    const s = summarizeFinding("sqlmap", {
+      tool: "sqlmap",
+      target: "https://distrokid.com",
+      vulnerable: false,
+      sqli: { technique: "U", intensity: "aggressive" },
+      raw_output:
+        "[10:29:28] [INFO] starting crawler for target URL 'https://distrokid.com'\n" +
+        "[10:29:28] [WARNING] no usable links found (with GET parameters) or forms\n",
+    });
+    expect(s.status).toBe("partial");
+    expect(isSqlmapInconclusive({
+      vulnerable: false,
+      raw_output: "[WARNING] no usable links found (with GET parameters) or forms",
+    })).toBe(true);
+  });
+
+  it("marks legacy sqlmap rows without backend flags as partial", () => {
+    const s = summarizeFinding("sqlmap", {
+      tool: "sqlmap",
+      target: "https://distrokid.com",
+      vulnerable: false,
+      raw_output:
+        "[10:23:23] [INFO] starting crawler for target URL 'https://distrokid.com'\n" +
+        "[10:23:23] [WARNING] no usable links found (with GET parameters) or forms\n" +
+        "[10:23:23] [WARNING] your sqlmap version is outdated\n",
+    });
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/inconclusive|no injectable/);
+    expect(s.bullets.join(" ")).not.toMatch(/No SQL injection confirmed/i);
+  });
+
+  it("marks sqlmap with no injectable surface as partial", () => {
+    const s = summarizeFinding("sqlmap", {
+      tool: "sqlmap",
+      vulnerable: false,
+      partial: true,
+      no_injection_surface: true,
+      raw_output: "[WARNING] no usable links found (with GET parameters) or forms",
+    });
+    expect(s.status).toBe("partial");
+    expect(s.bullets.join(" ").toLowerCase()).toMatch(/inconclusive|no injectable/);
   });
 
   it("summarizes metasploit rpc failure", () => {

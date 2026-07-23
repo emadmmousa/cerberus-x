@@ -40,9 +40,10 @@ def _mark(job_id: str) -> None:
 
 
 def _record_from_job(job_id: str, job: dict[str, Any]) -> dict[str, Any]:
+    from orchestrator.ai.posture import DEFAULT_POSTURE
     from orchestrator.dataset.pipeline import normalize_record
 
-    posture = job.get("posture") or (job.get("ai") or {}).get("posture") or "balanced"
+    posture = job.get("posture") or (job.get("ai") or {}).get("posture") or DEFAULT_POSTURE
     target = job.get("target") or ""
     goal = job.get("nl_goal") or (job.get("ai") or {}).get("goal") or ""
     phases = list((job.get("results") or {}).keys())

@@ -7,6 +7,8 @@ from tools.wrappers._argv import coerce_argv
 from tools.wrappers._proxy import merge_env, proxy_meta
 from tools.wrappers._web_url import canonicalize_web_url
 
+DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("FIREBREAK_NUCLEI_TIMEOUT", "240"))
+
 TEMPLATE_ROOTS = (
     os.environ.get("NUCLEI_TEMPLATES_DIR", "/root/nuclei-templates"),
     "/home/nuclei/nuclei-templates",
@@ -110,6 +112,8 @@ def scan(
             args = ["-t", _resolve_template_arg("http/cves/"), *args]
         if "-silent" not in args and "--silent" not in args:
             args = [*args, "-silent"]
+    if "-timeout" not in args and not any(str(a).startswith("-timeout=") for a in args):
+        args = [*args, "-timeout", "12"]
     if evasion.get("random_delay_min", 0) > 0:
         random_delay(
             evasion.get("random_delay_min"), evasion.get("random_delay_max")
@@ -118,9 +122,22 @@ def scan(
     cmd = ["nuclei", "-u", url, *args, *resolved["flags"]]
     env = merge_env(resolved["env"])
     try:
-        output = subprocess.check_output(
-            cmd, stderr=subprocess.STDOUT, text=True, env=env
+        completed = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=DEFAULT_TIMEOUT_SECONDS,
+            start_new_session=True,
+            env=env,
         )
+        output = (completed.stdout or "") + (completed.stderr or "")
+        if completed.returncode != 0 and not output.strip():
+            return {
+                "tool": "nuclei",
+                "target": url,
+                "error": f"nuclei exited with code {completed.returncode}",
+                "proxy": meta,
+            }
     except FileNotFoundError as e:
         return {
             "tool": "nuclei",
@@ -128,15 +145,33 @@ def scan(
             "error": str(e),
             "proxy": meta,
         }
-    except subprocess.CalledProcessError as e:
-        output = e.output or ""
-        if not output:
-            return {
-                "tool": "nuclei",
-                "target": url,
-                "error": str(e),
-                "proxy": meta,
-            }
+    except subprocess.TimeoutExpired as exc:
+        output = (exc.stdout or "") + (exc.stderr or "")
+        findings = []
+        ansi = re.compile(r"\x1b\[[0-9;]*m")
+        allowed = {"info", "low", "medium", "high", "critical", "unknown"}
+        for line in output.split("\n"):
+            clean = ansi.sub("", line).strip()
+            if "[" not in clean or "]" not in clean:
+                continue
+            match = re.match(
+                r"^\[(?P<severity>[^\]]+)\]\s+(?P<title>.+?)\s*(?:\[(?P<protocol>[^\]]+)\])?\s*(?P<url>https?://\S+)?\s*$",
+                clean,
+            )
+            if match and match.group("severity").strip().lower() in allowed:
+                findings.append({"severity": match.group("severity").strip().lower(), "title": match.group("title").strip()})
+        payload = {
+            "tool": "nuclei",
+            "target": url,
+            "findings": findings,
+            "raw_output": output,
+            "partial": True,
+            "error": f"nuclei timed out after {DEFAULT_TIMEOUT_SECONDS}s",
+            "proxy": meta,
+        }
+        if findings:
+            return payload
+        return payload
 
     findings = []
     ansi = re.compile(r"\x1b\[[0-9;]*m")

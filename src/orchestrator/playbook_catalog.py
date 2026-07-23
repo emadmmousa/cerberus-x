@@ -7,7 +7,7 @@ from typing import Any
 
 import yaml
 
-from orchestrator.ai.posture import Posture, normalize_posture
+from orchestrator.ai.posture import DEFAULT_POSTURE, Posture, normalize_posture
 
 PLAYBOOKS_DIR = Path(__file__).resolve().parents[2] / "playbooks"
 
@@ -16,6 +16,14 @@ POSTURE_PLAYBOOKS: dict[Posture, str] = {
     "balanced": "playbooks/balanced_offense_defense.yaml",
     "aggressive": "playbooks/complete_dark_arsenal.yaml",
     "defensive": "playbooks/defensive_audit.yaml",
+}
+
+# Operator-selectable specialist pipelines (chat / manual / prompts deck).
+SPECIALIST_PLAYBOOKS: dict[str, str] = {
+    "advanced_web_recon": "playbooks/advanced_web_recon.yaml",
+    "sqli_recon_chain": "playbooks/sqli_recon_chain.yaml",
+    "xss_hunt_chain": "playbooks/xss_hunt_chain.yaml",
+    "waf_bypass_recon": "playbooks/waf_bypass_recon.yaml",
 }
 
 
@@ -51,11 +59,38 @@ def playbook_for_posture(posture: str | None) -> str:
     return POSTURE_PLAYBOOKS[normalize_posture(posture)]
 
 
+def specialist_playbook(slug: str | None) -> str | None:
+    key = (slug or "").strip().lower().replace("-", "_")
+    return SPECIALIST_PLAYBOOKS.get(key)
+
+
+def list_specialist_playbooks() -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for slug, rel in SPECIALIST_PLAYBOOKS.items():
+        path = PLAYBOOKS_DIR / Path(rel).name
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception:
+            data = {}
+        phases = data.get("phases") or []
+        rows.append(
+            {
+                "id": slug,
+                "path": rel,
+                "name": data.get("name") or slug,
+                "description": (data.get("description") or "").strip(),
+                "phase_count": len(phases) if isinstance(phases, list) else 0,
+                "evasion": data.get("evasion"),
+            }
+        )
+    return rows
+
+
 def render_hardening_markdown(
     target: str,
     recommendations: list[dict[str, str]],
     *,
-    posture: str = "balanced",
+    posture: str = DEFAULT_POSTURE,
     job_id: str | None = None,
 ) -> str:
     lines = [

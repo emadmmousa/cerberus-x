@@ -50,7 +50,11 @@ def playbook_summary():
 @catalog_bp.get("/api/playbooks")
 @require_role(Role.VIEWER)
 def playbooks_catalog():
-    from orchestrator.playbook_catalog import list_playbooks, playbook_for_posture
+    from orchestrator.playbook_catalog import (
+        list_playbooks,
+        list_specialist_playbooks,
+        playbook_for_posture,
+    )
 
     posture = request.args.get("posture")
     rows = list_playbooks()
@@ -60,14 +64,75 @@ def playbooks_catalog():
             "playbooks": rows,
             "recommended": playbook_for_posture(posture) if posture else None,
             "default": DEFAULT_PLAYBOOK,
+            "specialist": list_specialist_playbooks(),
         }
     )
+
+
+@catalog_bp.get("/api/recon/methodology")
+@require_role(Role.VIEWER)
+def recon_methodology():
+    from orchestrator.playbook_catalog import list_specialist_playbooks
+    from tools.recon_methodology import FULL_WEB_RECON_TOOLS, RECON_PHASES, methodology_summary
+
+    return jsonify(
+        {
+            "summary": methodology_summary(max_phases=len(RECON_PHASES)),
+            "phases": RECON_PHASES,
+            "full_tool_rotation": list(FULL_WEB_RECON_TOOLS),
+            "specialist_playbooks": list_specialist_playbooks(),
+        }
+    )
+
+
+@catalog_bp.get("/api/recon/dorks")
+@require_role(Role.OPERATOR)
+def recon_dorks():
+    from tools.google_dorks import dorks_for_domain, sample_dorks
+
+    domain = (request.args.get("domain") or "").strip()
+    if not domain:
+        return jsonify({"error": "domain query parameter is required"}), 400
+    try:
+        limit = int(request.args.get("limit") or "50")
+    except ValueError:
+        limit = 50
+    limit = max(1, min(limit, 500))
+    include_catalog = request.args.get("catalog", "1").lower() not in {"0", "false", "no"}
+    try:
+        rows = dorks_for_domain(domain, include_catalog=include_catalog, catalog_limit=limit)
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify(
+        {
+            "domain": domain,
+            "count": len(rows),
+            "sample": sample_dorks(domain, count=min(12, limit)),
+            "dorks": rows[:limit],
+        }
+    )
+
+
+@catalog_bp.get("/api/recon/xss-payloads")
+@require_role(Role.OPERATOR)
+def recon_xss_payloads():
+    from tools.xss_payloads import payloads_for_context
+
+    context = request.args.get("context") or "html"
+    rows = payloads_for_context(context)
+    return jsonify({"context": context, "count": len(rows), "payloads": rows})
 
 
 @catalog_bp.get("/api/tools")
 @require_role(Role.VIEWER)
 def tools_catalog():
-    from orchestrator.mcp.registry import known_tools, list_tool_descriptors
+    from orchestrator.mcp.registry import known_tools, list_scaffold_descriptors, list_tool_descriptors
+    from orchestrator.ai.scaffold_tools import (
+        EXPECTED_SCAFFOLD_COUNT,
+        list_scaffold_tools,
+        scaffold_tool_names,
+    )
+    from orchestrator.tasks import _TASK_MAP
     from tools.inventory import list_catalog
 
     wired = known_tools()
@@ -75,19 +140,54 @@ def tools_catalog():
         category=request.args.get("category"),
         risk=request.args.get("risk"),
     )
-    tools = [row for row in catalog if row["name"] in wired]
-    missing_wiring = sorted(wired - {row["name"] for row in catalog})
+    tools = [row for row in catalog if row["name"] in wired and not str(row["name"]).startswith("scaffold/")]
+    scaffold_rows = list_scaffold_tools(limit=200)
+    missing_wiring = sorted(
+        name for name in wired if name not in {row["name"] for row in catalog} and not name.startswith("scaffold/")
+    )
     return jsonify(
         {
             "count": len(tools),
-            "wired_count": len(wired),
+            "wired_count": len(_TASK_MAP),
+            "scaffold_count": len(scaffold_tool_names()),
             "note": (
-                "Firebreak ships 23 scanner wrappers. Metasploit adds a large module "
-                "library behind the single 'metasploit' tool; Nuclei uses template packs."
+                f"Firebreak ships {len(_TASK_MAP) - len(scaffold_tool_names())} CLI scanner wrappers "
+                f"plus {EXPECTED_SCAFFOLD_COUNT} scaffold/* specialist bundle wrappers. "
+                "Metasploit adds a large module library behind one tool; Nuclei uses template packs."
             ),
             "tools": tools,
+            "scaffolds": scaffold_rows,
             "descriptors": list_tool_descriptors(request.args.get("category")),
+            "scaffold_descriptors": list_scaffold_descriptors(),
             "unmapped_task_map": missing_wiring,
+        }
+    )
+
+
+@catalog_bp.get("/api/methods")
+@require_role(Role.VIEWER)
+def attack_methods_catalog():
+    from orchestrator.mcp.registry import known_tools
+    from tools.attack_methods import (
+        compile_aggressive_phases,
+        list_methods,
+        list_technique_families,
+        methods_summary_for_llm,
+    )
+
+    posture = request.args.get("posture")
+    allow = known_tools()
+    methods = list_methods(posture=posture)
+    for row in methods:
+        row["tools"] = [t for t in row.get("tools") or [] if t in allow]
+    return jsonify(
+        {
+            "count": len(methods),
+            "posture": posture or "aggressive",
+            "methods": methods,
+            "technique_families": list_technique_families(),
+            "summary": methods_summary_for_llm(posture=posture, allow=allow),
+            "aggressive_phases": compile_aggressive_phases(allow),
         }
     )
 

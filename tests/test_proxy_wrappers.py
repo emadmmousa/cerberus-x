@@ -39,11 +39,12 @@ def test_hydra_sets_env(monkeypatch):
             "tools.wrappers._proxy._preflight_upstream_note", return_value=None
         ):
             with patch("tools.wrappers.hydra._tcp_reachable", return_value=True):
-                with patch("tools.wrappers.hydra.subprocess.run") as mock:
-                    mock.return_value.stdout = ""
-                    mock.return_value.stderr = ""
-                    mock.return_value.returncode = 0
-                    hydra.scan("example.com", use_proxy=True)
+                with patch("tools.wrappers.hydra._ssh_banner_valid", return_value=True):
+                    with patch("tools.wrappers.hydra.subprocess.run") as mock:
+                        mock.return_value.stdout = ""
+                        mock.return_value.stderr = ""
+                        mock.return_value.returncode = 0
+                        hydra.scan("example.com", use_proxy=True)
     env = mock.call_args.kwargs.get("env")
     assert env is not None
     assert env["HYDRA_PROXY_HTTP"] == "http://127.0.0.1:18080"

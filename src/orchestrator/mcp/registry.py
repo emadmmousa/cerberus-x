@@ -6,6 +6,11 @@ from typing import Any
 
 from orchestrator.tasks import _TASK_MAP
 from tools.inventory import TOOL_CATALOG, catalog_by_name
+from orchestrator.ai.scaffold_tools import (
+    EXPECTED_SCAFFOLD_COUNT,
+    list_scaffold_tools,
+    scaffold_tool_names,
+)
 
 HIGH_RISK = frozenset(
     entry["name"] for entry in TOOL_CATALOG if entry.get("risk") == "high"
@@ -94,7 +99,11 @@ def _custom_tools() -> list[dict[str, Any]]:
 
 
 def known_tools() -> set[str]:
-    """Built-in wrappers plus enabled operator-approved custom tools."""
+    """Built-in CLI wrappers, all scaffold specialists, plus custom tools."""
     names = set(_TASK_MAP.keys())
     names.update(t["name"] for t in _custom_tools() if t.get("name"))
     return names
+
+
+def list_scaffold_descriptors() -> list[dict[str, Any]]:
+    return list_scaffold_tools()

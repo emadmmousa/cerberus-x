@@ -190,24 +190,67 @@ describe("ManualMissionForm / derivePhases", () => {
     expect(phases[0].state).toBe("failed");
   });
 
+  it("AI mode maps suffixed phase results to executed steps", () => {
+    const phases = derivePhases(
+      [],
+      {
+        task_id: "ai2",
+        state: "SUCCESS",
+        ai_mode: true,
+        phases: [
+          { phase: "surface_variants_s0", task_id: "t0" },
+          { phase: "recon_s1", task_id: "t1" },
+          { phase: "attack_s3", task_id: "t3" },
+        ],
+        results: {
+          attack_s3: [{ tool: "nuclei", findings: [] }],
+        },
+        ai: {
+          steps: [
+            {
+              phase_name: "attack_s3",
+              parallel: false,
+              tools: [{ tool: "nuclei", args: ["-silent"] }],
+            },
+          ],
+        },
+      },
+      {
+        attack_s3: [
+          {
+            target: "example.com",
+            tool: "nuclei",
+            phase: "attack_s3",
+            timestamp: "2026-01-01",
+            result: { findings: [{ name: "x" }] },
+          },
+        ],
+      },
+    );
+
+    const attack = phases.find((p) => p.name === "attack_s3");
+    expect(attack?.state).toBe("done");
+    expect(attack?.findings).toHaveLength(1);
+    expect(attack?.tools).toEqual(["nuclei"]);
+  });
+
   it("renders launch controls", async () => {
     vi.stubGlobal("fetch", mockFetch());
     renderNewMission();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /^start$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /start mission/i })).toBeInTheDocument();
     });
   });
 
-  it("launches with Start after enabling proxy in Options", async () => {
+  it("launches with proxy when configured", async () => {
     const fetchMock = mockFetch();
     vi.stubGlobal("fetch", fetchMock);
     renderNewMission();
 
-    fireEvent.change(screen.getByLabelText(/website or host/i), {
+    fireEvent.change(screen.getByLabelText(/^target$/i), {
       target: { value: "test.com" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /^options$/i }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -216,8 +259,8 @@ describe("ManualMissionForm / derivePhases", () => {
       );
     });
 
-    fireEvent.click(screen.getByLabelText(/^proxy$/i));
-    fireEvent.click(screen.getByRole("button", { name: /^start$/i }));
+    // Proxy defaults on when credentials are configured (see ManualMissionForm useEffect).
+    fireEvent.click(screen.getByRole("button", { name: /start mission/i }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -232,8 +275,8 @@ describe("ManualMissionForm / derivePhases", () => {
             evasion: "aggressive",
             ai_mode: false,
             confirm_high_risk: true,
-            posture: "balanced",
-            playbook: "playbooks/balanced_offense_defense.yaml",
+            posture: "aggressive",
+            playbook: "playbooks/complete_dark_arsenal.yaml",
           }),
         }),
       );
@@ -245,10 +288,11 @@ describe("ManualMissionForm / derivePhases", () => {
     renderNewMission();
 
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /^start$/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /start mission/i })).toBeInTheDocument();
     });
-    expect(screen.queryByLabelText(/^stealth$/i)).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /^options$/i }));
     expect(screen.getByLabelText(/^stealth$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/proxy settings/i)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /advanced options/i }));
+    expect(screen.getByText(/proxy settings/i)).toBeInTheDocument();
   });
 });

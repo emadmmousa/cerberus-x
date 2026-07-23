@@ -24,7 +24,7 @@ const FEATURES = [
   },
   {
     title: "Scoped & auditable",
-    body: "Every mission is bound to your authorized targets, with full audit trail, RBAC, and org isolation.",
+    body: "Every mission is bound to your authorized targets, with full audit trail, Access Guard, and org isolation.",
   },
 ];
 
@@ -56,6 +56,9 @@ export function Landing() {
         <div className="hero__cta">
           <Link className="btn btn--primary btn--lg" to="/signup">
             Start free
+          </Link>
+          <Link className="btn btn--ghost btn--lg" to="/missions">
+            Open console
           </Link>
           <a className="btn btn--ghost btn--lg" href="#pricing">
             See pricing
@@ -129,7 +132,7 @@ export function Landing() {
               <li>AI red-team chat &amp; mission launch</li>
               <li>Full tooling arsenal + wrappers</li>
               <li>Offense + defensive hardening reports</li>
-              <li>Audit trail &amp; RBAC</li>
+              <li>Audit trail &amp; Access Guard</li>
             </ul>
             <Link className="btn btn--primary" to="/signup">
               Start free

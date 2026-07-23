@@ -1,3 +1,4 @@
+import os
 import subprocess
 from urllib.parse import urlparse
 
@@ -5,7 +6,8 @@ from tools.waf_evasion import build_evasion_headers, random_delay
 from tools.wrappers._proxy import merge_env, proxy_meta
 from tools.wrappers._web_url import canonicalize_web_url
 
-DEFAULT_TIMEOUT_SECONDS = 120
+DEFAULT_TIMEOUT_SECONDS = int(os.environ.get("FIREBREAK_NIKTO_TIMEOUT", "180"))
+NIKTO_MAXTIME_SECONDS = int(os.environ.get("FIREBREAK_NIKTO_MAXTIME", "120"))
 
 
 def _url(target: str) -> str:
@@ -36,7 +38,7 @@ def _normalize_args(url: str, args: list[str], evasion=None) -> list[str]:
     if "-maxtime" not in normalized and not any(
         str(arg).startswith("-maxtime=") for arg in normalized
     ):
-        normalized.extend(["-maxtime", "60"])
+        normalized.extend(["-maxtime", str(NIKTO_MAXTIME_SECONDS)])
     if evasion.get("random_headers", False):
         headers = build_evasion_headers(evasion)
         for key, value in headers.items():
@@ -58,7 +60,7 @@ def scan(
     url = _url(target)
     resolved, meta = proxy_meta("nikto", use_proxy, proxy_protocol)
     if args is None:
-        args = ["-maxtime", "60"]
+        args = ["-maxtime", str(NIKTO_MAXTIME_SECONDS)]
     else:
         args = _normalize_args(url, list(args), evasion)
     if evasion.get("random_delay_min", 0) > 0:

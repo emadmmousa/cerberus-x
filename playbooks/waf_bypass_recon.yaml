@@ -1,0 +1,40 @@
+name: WAF Bypass Recon
+description: >-
+  Double-encoding path probes, ffuf/sqlmap WAF bypass tampers, dalfox pipe,
+  CORS/nuclei follow-ups. Authorized targets only.
+evasion: high
+phases:
+  - name: surface_map
+    parallel: true
+    tools:
+      - tool: httpx
+        args: ["-silent", "-status-code", "-title", "-tech-detect"]
+      - tool: whatweb
+        args: ["-a", "3"]
+      - tool: katana
+        args: ["-d", "3", "-silent"]
+  - name: encoded_fuzz
+    parallel: true
+    depends_on: ["surface_map"]
+    tools:
+      - tool: ffuf
+        args: ["-ac", "-mc", "200,301,302,403,406,500"]
+      - tool: feroxbuster
+        args: ["-q"]
+  - name: injection_bypass
+    parallel: false
+    depends_on: ["encoded_fuzz"]
+    tools:
+      - tool: sqlmap
+        args: ["--batch", "--level=5", "--risk=3", "--tamper=space2comment,between,randomcase,percentage"]
+      - tool: dalfox
+        args: ["--silence", "--waf-bypass"]
+      - tool: commix
+        args: ["--batch", "--level=2"]
+  - name: cors_and_templates
+    parallel: true
+    depends_on: ["injection_bypass"]
+    tools:
+      - tool: nuclei
+        args: ["-tags", "cors,misconfig,xss,sqli", "-severity", "critical,high,medium", "-silent"]
+      - tool: scaffold/waf-bypass-strike

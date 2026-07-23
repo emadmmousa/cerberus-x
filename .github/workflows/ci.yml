@@ -56,9 +56,18 @@ jobs:
             tests/test_merge_posture_seeds.py \
             tests/test_training_export_scripts.py \
             tests/test_publish_and_lab_seed.py \
-            tests/test_rbac_missions.py
+            tests/test_rbac_missions.py \
+            tests/test_chat_intent.py \
+            tests/test_chat_cognition.py \
+            tests/test_cerberus_x.py \
+            tests/test_celery_errors.py \
+            tests/test_scaffold_tools.py \
+            tests/test_tools_registry.py \
+            tests/test_osint_seeds.py
 
-      - name: Forbidden brand scan
+      - name: Frontend production build
+        working-directory: frontend
+        run: npm run build
         run: |
           set -euo pipefail
           python - <<'PY'

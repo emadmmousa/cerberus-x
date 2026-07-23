@@ -186,6 +186,49 @@ def test_detect_proposal_no_target_stays_unready():
     assert proposal.get("plan") is None
 
 
+def test_detect_proposal_osint_confirm_keeps_full_name_target():
+    from orchestrator.chat.intake import detect_proposal
+
+    messages = [
+        {
+            "role": "user",
+            "content": (
+                "OSINT-only: theharvester, subfinder, gau, sherlock, katana, httpx, whatweb, "
+                "darkweb, and breach_intel. Wait for my next message with the authorized target."
+            ),
+        },
+        {"role": "user", "content": "عبدالباسط هارون الشهيبي"},
+        {"role": "assistant", "content": "OSINT mission ready for عبدالباسط هارون الشهيبي. Confirm to proceed."},
+        {"role": "user", "content": "Confirmed"},
+    ]
+    proposal = detect_proposal(messages)
+    assert proposal["ready"] is True
+    assert proposal.get("osint_seeds")
+    assert proposal["target"] != "@confirmed"
+    assert "الشهيبي" in proposal["target"]
+    assert proposal.get("auto_execute") is True
+
+
+def test_sanitize_advisor_display_strips_plan_and_thinking():
+    from orchestrator.chat.intake import sanitize_advisor_display
+
+    think_open = "<" + "think" + ">"
+    think_close = "</" + "think" + ">"
+    raw = (
+        "Ready to launch.\n"
+        "```firebreak-plan\n"
+        '{"target":"app.example.com","phases":[]}\n'
+        "```\n"
+        f"{think_open}internal reasoning{think_close}\n"
+        "Operator-facing line."
+    )
+    out = sanitize_advisor_display(raw)
+    assert "firebreak-plan" not in out
+    assert "internal reasoning" not in out
+    assert "Operator-facing line." in out
+    assert "Ready to launch." in out
+
+
 @pytest.fixture(autouse=True)
 def _clean_registry():
     from orchestrator import tools_registry as reg
@@ -197,6 +240,12 @@ def _clean_registry():
             try:
                 r.delete(reg.REGISTRY_KEY)
             except Exception:
+                pass
+        path = reg.custom_tools_file_path()
+        if path.is_file():
+            try:
+                path.unlink()
+            except OSError:
                 pass
 
     wipe()

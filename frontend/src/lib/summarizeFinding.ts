@@ -33,6 +33,7 @@ export const PHASE_LABELS: Record<string, string> = {
   proof_of_impact: "Proof of impact",
   access_gained: "Access gained",
   post_exploitation: "Post-exploitation",
+  attack: "Attack phase",
 };
 
 const TOOL_TITLES: Record<string, string> = {
@@ -40,8 +41,12 @@ const TOOL_TITLES: Record<string, string> = {
   rustscan: "Port scan (rustscan)",
   nmap: "Port scan (nmap)",
   whatweb: "Website fingerprint (whatweb)",
+  httpx: "HTTP probe (httpx)",
   gobuster: "Directory discovery (gobuster)",
   theHarvester: "Public intel (theHarvester)",
+  subfinder: "Subdomain scrape (subfinder)",
+  gau: "Archive URL scrape (gau)",
+  sherlock: "Username scrape (sherlock)",
   ffuf: "Web fuzzing (ffuf)",
   nuclei: "Vulnerability templates (nuclei)",
   nikto: "Web server check (nikto)",
@@ -51,6 +56,7 @@ const TOOL_TITLES: Record<string, string> = {
   john: "Password cracking (john)",
   crackmapexec: "Network auth check (crackmapexec)",
   metasploit: "Impact check (Metasploit)",
+  phase: "Phase orchestration",
 };
 
 const BANNER_EMAILS = new Set([
@@ -273,6 +279,62 @@ function summarizeHarvester(result: unknown): FindingSummary {
   };
 }
 
+function sqlmapReachabilityFailure(result: unknown): boolean {
+  if (isProxyReachabilityFailure(result)) return true;
+  const blob = textBlob(result);
+  return (
+    /\bssl session is not started\b/i.test(blob) ||
+    /\bssl error\b/i.test(blob) ||
+    /\bssl handshake\b/i.test(blob) ||
+    /\bunable to connect\b/i.test(blob) ||
+    /\bcouldn't connect\b/i.test(blob) ||
+    /\bconnection refused\b/i.test(blob)
+  );
+}
+
+function sqlmapRanInjectionTests(blob: string): boolean {
+  return (
+    /testing if the target url/i.test(blob) ||
+    /testing for sql injection/i.test(blob) ||
+    /testing '/i.test(blob) ||
+    /sql injection point/i.test(blob) ||
+    /parameter '/i.test(blob) ||
+    /parameters:/i.test(blob) ||
+    /appears to be injectable/i.test(blob) ||
+    /is vulnerable/i.test(blob) ||
+    /target url is not injectable/i.test(blob) ||
+    /not injectable/i.test(blob) ||
+    /testing connection to the target/i.test(blob) ||
+    /heuristic \(basic\) test shows/i.test(blob)
+  );
+}
+
+function sqlmapNoInjectionSurface(result: unknown): boolean {
+  const obj = asObj(result);
+  if (obj.no_injection_surface === true) return true;
+  const blob = textBlob(result);
+  if (
+    /no usable links found/i.test(blob) ||
+    /no injection point/i.test(blob) ||
+    /no parameter\(s\) found/i.test(blob) ||
+    /does not appear to be dynamic/i.test(blob)
+  ) {
+    return true;
+  }
+  const crawled =
+    /starting crawler/i.test(blob) ||
+    /searching for links with depth/i.test(blob) ||
+    /normalize crawling results/i.test(blob);
+  return crawled && !sqlmapRanInjectionTests(blob);
+}
+
+/** True when sqlmap exited without testing an injectable parameter. */
+export function isSqlmapInconclusive(result: unknown): boolean {
+  const obj = asObj(result);
+  if (obj.vulnerable === true) return false;
+  return sqlmapNoInjectionSurface(result);
+}
+
 function proxyFail(tool: string): FindingSummary {
   return {
     title: titleFor(tool),
@@ -338,8 +400,32 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
         confirmedVulns: 1,
       };
     }
-    if (isProxyReachabilityFailure(result) || blob.includes("ssl") || blob.includes("unable to connect")) {
+    if (sqlmapReachabilityFailure(result)) {
       return reachabilityFail(result, tool);
+    }
+    const noSurface = sqlmapNoInjectionSurface(result);
+    const wafBlocked = obj.waf_blocked === true;
+    const note = typeof obj.note === "string" ? obj.note.trim() : "";
+    if (noSurface || wafBlocked || obj.partial === true) {
+      const crawlOnly =
+        /searching for links with depth/i.test(textBlob(result)) &&
+        !sqlmapRanInjectionTests(textBlob(result));
+      const bullets = [
+        note ||
+          (crawlOnly
+            ? "Crawler finished but sqlmap never reached an injectable parameter — SQLi check inconclusive."
+            : noSurface
+              ? "No injectable parameters or forms found — SQLi check inconclusive."
+              : "SQL injection scan finished without a testable injection point."),
+        wafBlocked
+          ? "Target may be WAF/CDN blocked; enable proxy/evasion and crawl deeper."
+          : "Try katana/ffuf to discover parameterized endpoints before re-running sqlmap.",
+      ];
+      return {
+        title: titleFor(tool),
+        status: "partial",
+        bullets,
+      };
     }
     return {
       title: titleFor(tool),
@@ -351,16 +437,31 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
   if (tool === "nuclei") {
     const findings = Array.isArray(obj.findings) ? obj.findings : [];
     if (findings.length > 0) {
+      const timedOut =
+        obj.partial === true ||
+        (typeof obj.error === "string" && /timed out/i.test(obj.error));
       return {
         title: titleFor(tool),
-        status: "ok",
-        bullets: [`Found ${findings.length} template match(es).`],
+        status: timedOut ? "partial" : "ok",
+        bullets: timedOut
+          ? [
+              `Found ${findings.length} template match(es) before the time limit.`,
+              "Scan stopped early (time limit).",
+            ]
+          : [`Found ${findings.length} template match(es).`],
         confirmedVulns: findings.length,
         possibleIssues: findings.length,
       };
     }
     if (isProxyReachabilityFailure(result)) {
       return reachabilityFail(result, tool);
+    }
+    if (typeof obj.error === "string" && /timed out/i.test(obj.error)) {
+      return {
+        title: titleFor(tool),
+        status: "partial",
+        bullets: ["Vulnerability template scan stopped at the time limit."],
+      };
     }
     if (typeof obj.error === "string" && obj.error.trim()) {
       return {
@@ -372,17 +473,26 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
     return {
       title: titleFor(tool),
       status: "ok",
-      bullets: ["No vulnerability template matches found."],
+      bullets: [
+        "No vulnerability template matches found.",
+        "An empty result does not prove the target is clean — WAF/CDN challenges can block template output.",
+      ],
     };
   }
 
   if (tool === "ffuf") {
     const results = Array.isArray(obj.results) ? obj.results : [];
     if (results.length > 0) {
+      const timedOut = obj.timed_out === true || /maximum running time/i.test(blob);
       return {
         title: titleFor(tool),
-        status: "ok",
-        bullets: [`Found ${results.length} interesting path(s).`],
+        status: timedOut ? "partial" : "ok",
+        bullets: timedOut
+          ? [
+              `Found ${results.length} interesting path(s) before the time limit.`,
+              "Rerun with a smaller wordlist or higher rate for full coverage.",
+            ]
+          : [`Found ${results.length} interesting path(s).`],
       };
     }
     if (obj.stalled === true || /stalled under CDN/i.test(blob)) {
@@ -395,7 +505,29 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
         ],
       };
     }
-    if (blob.includes("errors:") || isProxyReachabilityFailure(result)) {
+    if (
+      obj.timed_out === true ||
+      obj.partial === true ||
+      /maximum running time/i.test(blob)
+    ) {
+      const prog = blob.match(/progress:\s*\[(\d+)\/(\d+)\]/i);
+      const done = prog ? parseInt(prog[1], 10) : 0;
+      return {
+        title: titleFor(tool),
+        status: "partial",
+        bullets:
+          done > 0
+            ? [
+                "Web fuzzing hit the time limit with partial progress.",
+                "Rerun with a smaller wordlist or higher rate for full coverage.",
+              ]
+            : ["Web fuzzing stopped at the time limit with no parsed paths."],
+      };
+    }
+    if (
+      isProxyReachabilityFailure(result) ||
+      /\b(unable to connect|couldn't connect|connection refused)\b/i.test(blob)
+    ) {
       return reachabilityFail(result, tool);
     }
   }
@@ -451,15 +583,55 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
     }
     if (tool === "whatweb") {
       const raw = stripAnsi(typeof obj.raw_output === "string" ? obj.raw_output : blob);
-      if (
+      const techs = Array.isArray(obj.technologies) ? obj.technologies : [];
+      const wafBlocked = obj.waf_blocked === true;
+      const note = typeof obj.note === "string" ? obj.note.trim() : "";
+      const httpStatus = typeof obj.http_status === "string" ? obj.http_status : "";
+      const vendor =
+        typeof obj.waf_vendor === "string" && obj.waf_vendor.trim()
+          ? obj.waf_vendor.trim()
+          : "WAF";
+      const expired =
+        obj.partial === true ||
         /ERROR Opening/i.test(raw) ||
         /execution expired/i.test(raw) ||
-        /timed?\s*out/i.test(raw)
-      ) {
+        /timed?\s*out/i.test(raw);
+
+      if (wafBlocked) {
+        const bullets = [
+          `${vendor} challenge detected${httpStatus ? ` (${httpStatus})` : ""} — app fingerprint limited.`,
+          techs.length > 0
+            ? `Edge signals only: ${techs.slice(0, 3).join(", ")}.`
+            : "Enable proxy/evasion for deeper stack detection.",
+          note || "Downstream scans (nuclei, ffuf) may return empty until bypassed.",
+        ];
         return {
           title: titleFor(tool),
-          status: "failed",
-          bullets: ["Website fingerprint timed out before finishing."],
+          status: "partial",
+          bullets,
+        };
+      }
+
+      if (techs.length > 0) {
+        return {
+          title: titleFor(tool),
+          status: expired ? "partial" : "ok",
+          bullets: expired
+            ? [
+                `Partial fingerprint: ${techs.slice(0, 4).join(", ")}.`,
+                "Scan stopped early (timeout).",
+              ]
+            : [`Stack signals: ${techs.slice(0, 4).join(", ")}.`],
+        };
+      }
+      if (expired) {
+        return {
+          title: titleFor(tool),
+          status: "partial",
+          bullets: [
+            "Website fingerprint hit a timeout before collecting stack signals.",
+            "Later web checks (nuclei, ffuf) may still succeed.",
+          ],
         };
       }
       const stack: string[] = [];
@@ -515,6 +687,16 @@ function summarizeHttpTool(tool: string, result: unknown): FindingSummary {
   }
 
   if (typeof obj.error === "string" && obj.error.trim()) {
+    if (tool === "phase" && obj.partial === true) {
+      return {
+        title: titleFor(tool),
+        status: "partial",
+        bullets: [
+          "This phase hit the orchestrator time limit.",
+          "Individual tool results below may still be usable.",
+        ],
+      };
+    }
     if (isProxyReachabilityFailure(result)) return reachabilityFail(result, tool);
     return {
       title: titleFor(tool),
@@ -550,8 +732,8 @@ function summarizeCred(tool: string, result: unknown): FindingSummary {
   if (typeof obj.error === "string" && obj.error.toLowerCase().includes("timed out")) {
     return {
       title: titleFor(tool),
-      status: "failed",
-      bullets: ["Login guessing timed out before finishing."],
+      status: "partial",
+      bullets: ["Login guessing stopped at the time limit; no credentials found."],
     };
   }
   if (typeof obj.error === "string" && obj.error.trim()) {
@@ -620,10 +802,26 @@ function summarizeMetasploit(result: unknown): FindingSummary {
   const status = typeof obj.status === "string" ? obj.status : "";
   const isPost = isPostModule(module);
 
+  if (code === "invalid_module" || /invalid module/i.test(typeof obj.error === "string" ? obj.error : "")) {
+    return {
+      title: titleFor("metasploit"),
+      status: "failed",
+      bullets: [
+        module
+          ? `Metasploit module not installed: ${module}.`
+          : "Metasploit module not installed in this environment.",
+        "Update Metasploit or pick a module that exists on the RPC worker.",
+      ],
+    };
+  }
+
   if (code === "rpc_error" || (typeof obj.error === "string" && obj.error.trim())) {
+    const err = typeof obj.error === "string" ? obj.error.trim() : "";
     const bullets =
       code === "rpc_error"
-        ? ["Exploitation service unavailable."]
+        ? err
+          ? [`Exploitation service unavailable: ${err}.`]
+          : ["Exploitation service unavailable."]
         : ["Exploitation could not finish successfully."];
     return {
       title: titleFor("metasploit"),

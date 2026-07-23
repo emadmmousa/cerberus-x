@@ -152,6 +152,11 @@ def export_target_reports(
     directory = Path(
         output_dir or os.environ.get("FIREBREAK_OUTPUT_DIR", "/app/output")
     )
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        directory = Path(tempfile.gettempdir()) / "firebreak-output"
+        directory.mkdir(parents=True, exist_ok=True)
     basename = target_filename(target)
     json_path = directory / f"{basename}.json"
     html_path = directory / f"{basename}.html"

@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import type { WorkerReadiness } from "../api/client";
 
-type Mode = "chat" | "prompts" | "manual";
+type Mode = "chat" | "prompts" | "manual" | "osint";
 
 type Props = {
   mode: Mode;
@@ -118,6 +118,15 @@ export function OperationsCommandBar({
             onClick={() => onModeChange("prompts")}
           >
             Prompts
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={mode === "osint"}
+            className={`ops-bar__mode${mode === "osint" ? " ops-bar__mode--active" : ""}`}
+            onClick={() => onModeChange("osint")}
+          >
+            OSINT
           </button>
           <button
             type="button"

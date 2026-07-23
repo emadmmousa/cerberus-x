@@ -106,7 +106,7 @@ def test_generate_actions_dedupes_same_cve_within_job():
     }
     first = eng.generate_post_phase_actions("vulnerability_scan", [])
     assert len(first) == 1
-    assert first[0]["phase"] == "proof_of_impact"
+    assert first[0]["phase"].startswith("proof_of_impact_")
     eng.mark_actions_fired(first)
     second = eng.generate_post_phase_actions("vulnerability_scan", [])
     assert second == []
@@ -228,6 +228,65 @@ def test_defensive_posture_suppresses_offensive_followons():
     tools = {a["tool"] for a in actions}
     assert "sqlmap" not in tools
     assert "metasploit" not in tools
+
+
+def test_waf_blocked_suppresses_blind_metasploit_exploits():
+    eng = DecisionEngine("https://distrokid.com", job_id="waf-1")
+    eng.state = {
+        "waf_blocked": True,
+        "cdn": True,
+        "open_port_numbers": ["8443"],
+        "open_ports": [{"port": "8443", "service": "ssl/https"}],
+        "vulnerabilities": [{"cve": "CVE-2024-3400", "severity": "critical"}],
+    }
+    actions = eng.generate_post_phase_actions("vulnerability_scan", [])
+    exploit_modules = [
+        a["args"][0] for a in actions if a.get("stage") == "exploit"
+    ]
+    assert exploit_modules == []
+
+
+def test_cve_exploit_requires_vendor_fingerprint():
+    eng = DecisionEngine("https://distrokid.com", job_id="fp-1")
+    eng.state = {
+        "vuln_found": True,
+        "open_port_numbers": ["443"],
+        "open_ports": [{"port": "443", "service": "https"}],
+        "technologies": ["Cloudflare", "Next.js"],
+        "vulnerabilities": [
+            {
+                "cve": "CVE-2024-3400",
+                "severity": "critical",
+                "title": "Generic CVE template hit",
+            }
+        ],
+    }
+    actions = eng.generate_post_phase_actions("vulnerability_scan", [])
+    exploit_modules = [
+        a["args"][0] for a in actions if a.get("stage") == "exploit"
+    ]
+    assert exploit_modules == []
+
+
+def test_cve_exploit_runs_when_fingerprint_matches():
+    eng = DecisionEngine("https://vpn.example", job_id="fp-2")
+    eng.state = {
+        "vuln_found": True,
+        "open_port_numbers": ["443"],
+        "open_ports": [{"port": "443", "service": "ssl/http GlobalProtect"}],
+        "vulnerabilities": [
+            {
+                "cve": "CVE-2024-3400",
+                "severity": "critical",
+                "title": "PAN-OS command injection",
+            }
+        ],
+    }
+    actions = eng.generate_post_phase_actions("vulnerability_scan", [])
+    exploit_modules = [
+        a["args"][0] for a in actions if a.get("stage") == "exploit"
+    ]
+    assert any("panos_telemetry_cmd_exec" in m for m in exploit_modules)
 
 
 def test_proposed_actions_published_to_state(monkeypatch):

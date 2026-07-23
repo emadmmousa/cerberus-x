@@ -2,6 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { AuthProvider } from "../providers/AuthProvider";
+import { ShellLayoutProvider } from "../providers/ShellLayoutProvider";
 import { ThemeProvider } from "../providers/ThemeProvider";
 import { AppRoutes } from "../routes";
 
@@ -82,9 +83,11 @@ describe("AppRoutes", () => {
     render(
       <MemoryRouter initialEntries={["/missions"]}>
         <ThemeProvider>
-          <AuthProvider>
-            <AppRoutes />
-          </AuthProvider>
+          <ShellLayoutProvider>
+            <AuthProvider>
+              <AppRoutes />
+            </AuthProvider>
+          </ShellLayoutProvider>
         </ThemeProvider>
       </MemoryRouter>,
     );
@@ -92,7 +95,11 @@ describe("AppRoutes", () => {
     await waitFor(() => {
       expect(screen.getByText(/Firebreak/i)).toBeInTheDocument();
       expect(screen.getByRole("link", { name: /^missions$/i })).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: /^ai lab$/i })).toBeInTheDocument();
+      expect(screen.getAllByRole("link", { name: /^overview$/i }).length).toBeGreaterThanOrEqual(
+        2,
+      );
+      expect(screen.getByRole("link", { name: /model router/i })).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: /^users$/i })).toBeInTheDocument();
     });
   });
 
@@ -101,9 +108,11 @@ describe("AppRoutes", () => {
     render(
       <MemoryRouter initialEntries={["/missions"]}>
         <ThemeProvider>
-          <AuthProvider>
-            <AppRoutes />
-          </AuthProvider>
+          <ShellLayoutProvider>
+            <AuthProvider>
+              <AppRoutes />
+            </AuthProvider>
+          </ShellLayoutProvider>
         </ThemeProvider>
       </MemoryRouter>,
     );
@@ -119,9 +128,11 @@ describe("AppRoutes", () => {
     render(
       <MemoryRouter initialEntries={["/login"]}>
         <ThemeProvider>
-          <AuthProvider>
-            <AppRoutes />
-          </AuthProvider>
+          <ShellLayoutProvider>
+            <AuthProvider>
+              <AppRoutes />
+            </AuthProvider>
+          </ShellLayoutProvider>
         </ThemeProvider>
       </MemoryRouter>,
     );

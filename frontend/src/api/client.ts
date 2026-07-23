@@ -810,6 +810,8 @@ export type MissionChatThread = {
   messages: ChatMessage[];
   draft: MissionProposal | null;
   mission_ids: string[];
+  processing?: boolean;
+  processing_started_at?: number;
 };
 
 export type ChatAgentOptionsPayload = {

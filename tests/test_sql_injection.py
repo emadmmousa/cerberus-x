@@ -80,3 +80,12 @@ def test_follow_on_actions_for_confirmed_sqli():
     assert all(a["tool"] == "sqlmap" for a in actions)
     dumpish = " ".join(" ".join(a["args"]) for a in actions)
     assert "--dump" in dumpish or "--schema" in dumpish
+
+
+def test_next_sqlmap_method_rotates_and_prefers_dbms():
+    first = sqli.next_sqlmap_method(tried=set(), dbms="mysql")
+    assert first is not None
+    assert first["id"] == "mysql_hint"
+    second = sqli.next_sqlmap_method(tried={first["id"]}, dbms="mysql")
+    assert second is not None
+    assert second["id"] != first["id"]

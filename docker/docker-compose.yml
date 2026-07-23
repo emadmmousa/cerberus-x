@@ -229,7 +229,7 @@ services:
       - NET_ADMIN
     deploy:
       replicas: 4
-    command: ["celery", "-A", "orchestrator.tasks", "worker", "--concurrency=8", "--loglevel=info"]
+    command: ["celery", "-A", "orchestrator.tasks", "worker", "--concurrency=8", "--loglevel=info", "--autoreload"]
     networks:
       - firebreak-net
 

@@ -1,5 +1,5 @@
 name: Complete Dark Arsenal
-description: Full-spectrum authorized playbook mapped to all 23 installed wrappers
+description: Full-spectrum authorized playbook with CLI wrappers and scaffold bundles
 evasion: medium
 phases:
   - name: recon
@@ -7,34 +7,87 @@ phases:
       - tool: rustscan
         args: ["--ulimit", "5000", "--top"]
       - tool: masscan
-        args: ["-p80,443,22,8080,8443", "--rate=1000", "--wait=0"]
+        args: ["-p80,443,22,8080,8443,3389,445", "--rate=1000", "--wait=0"]
+      - tool: naabu
+        args: ["-top-ports", "1000", "-silent"]
       - tool: nmap
         args: ["-sV", "-T4"]
       - tool: zmap
-        args: ["-p", "80,443"]
+        args: ["-p", "80,443,22,445"]
       - tool: whatweb
         args: ["-a", "3"]
+      - tool: subfinder
+        args: ["-silent"]
+      - tool: amass
+        args: ["enum", "-passive"]
+      - tool: dnsx
+        args: ["-silent"]
       - tool: theharvester
-        args: ["-b", "bing"]
+        args: ["-b", "crtsh"]
+      - tool: gau
+        args: ["--subs"]
+      - tool: waybackurls
+        args: []
     parallel: true
+  - name: dark_web_intel
+    tools:
+      - tool: darkweb
+        args: ["--method", "full"]
+      - tool: breach_intel
+        args: ["--limit", "25"]
+      - tool: sherlock
+        args: ["--print-found", "--no-color"]
+    parallel: true
+    depends_on: ["recon"]
   - name: discovery
     tools:
+      - tool: httpx
+        args: ["-silent", "-status-code", "-title", "-tech-detect"]
+      - tool: katana
+        args: ["-d", "3", "-jc", "-silent"]
+      - tool: feroxbuster
+        args: ["-q"]
       - tool: gobuster
         args: ["dir", "-w", "/usr/share/dirb/wordlists/common.txt"]
       - tool: ffuf
         args: ["-ac"]
+      - tool: arjun
+        args: ["--stable"]
     parallel: true
-    depends_on: ["recon"]
+    depends_on: ["dark_web_intel"]
   - name: vulnerability_checks
     tools:
+      - tool: sslscan
+        args: ["--no-failed"]
       - tool: nuclei
-        args: ["-severity", "critical,high", "-silent"]
+        args: ["-severity", "critical,high,medium", "-silent"]
       - tool: nikto
-        args: ["-maxtime", "60"]
+        args: ["-maxtime", "120"]
+      - tool: wpscan
+        args: ["--no-update", "--random-user-agent"]
+      - tool: dalfox
+        args: ["--silence"]
       - tool: xsstrike
-        args: ["--timeout", "20", "--skip"]
+        args: ["--timeout", "30", "--skip"]
     parallel: false
     depends_on: ["discovery"]
+  - name: scaffold_offense
+    tools:
+      - tool: scaffold/waf-bypass-strike
+      - tool: scaffold/api-endpoint-strike
+      - tool: scaffold/full-surface-strike
+      - tool: scaffold/sqli-impact-strike
+      - tool: scaffold/xss-chain-strike
+      - tool: scaffold/ssrf-strike-chain
+      - tool: scaffold/ad-domain-strike
+      - tool: scaffold/cloud-misconfig-strike
+      - tool: scaffold/sql-injection
+      - tool: scaffold/xss-hunter
+      - tool: scaffold/metasploit-operator
+      - tool: scaffold/kerberoast
+      - tool: scaffold/cred-spray-strike
+    parallel: true
+    depends_on: ["vulnerability_checks"]
   - name: credential_checks
     tools:
       - tool: hydra
@@ -44,9 +97,11 @@ phases:
       - tool: hashcat
         args: []
     parallel: true
-    depends_on: ["vulnerability_checks"]
+    depends_on: ["scaffold_offense"]
   - name: windows_ad_helpers
     tools:
+      - tool: enum4linux
+        args: ["-A"]
       - tool: crackmapexec
         args: []
       - tool: impacket
@@ -69,8 +124,11 @@ phases:
     depends_on: ["windows_ad_helpers"]
   - name: exploitation_checks
     tools:
+      - tool: commix
+        args: ["--batch", "--level=2"]
       - tool: sqlmap
-        args: ["--batch", "--level=2", "--risk=1"]
+        args: ["--batch", "--forms", "--crawl=3", "--level=5", "--risk=3", "--technique=BEUSTQ"]
       - tool: metasploit
         args: []
+    parallel: false
     depends_on: ["postex_artifacts"]

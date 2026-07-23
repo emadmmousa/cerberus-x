@@ -15,6 +15,8 @@ def register_api_blueprints(app: Flask) -> None:
     from orchestrator.api.dataset import dataset_bp
     from orchestrator.api.edition import edition_bp
     from orchestrator.api.missions import missions_bp
+    from orchestrator.api.osint_breach import osint_breach_bp
+    from orchestrator.api.profile import profile_bp
     from orchestrator.api.proxy import proxy_bp
     from orchestrator.api.results import results_bp
     from orchestrator.api.scaffolds import scaffolds_bp
@@ -33,3 +35,5 @@ def register_api_blueprints(app: Flask) -> None:
     app.register_blueprint(proxy_bp)
     app.register_blueprint(catalog_bp)
     app.register_blueprint(authorized_targets_bp)
+    app.register_blueprint(osint_breach_bp)
+    app.register_blueprint(profile_bp)

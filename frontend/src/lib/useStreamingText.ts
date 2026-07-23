@@ -8,7 +8,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
  * target text and reveal it at ~60fps, draining the backlog proportionally so
  * the writing always flows quickly and smoothly, independent of token cadence.
  */
-export function useStreamingText() {
+type Options = {
+  /** Reveal streamed tokens immediately instead of typewriter animation. */
+  instant?: boolean;
+};
+
+export function useStreamingText(options: Options = {}) {
+  const instant = options.instant ?? false;
   const [text, setText] = useState("");
   const targetRef = useRef("");
   const shownRef = useRef(0);
@@ -46,8 +52,7 @@ export function useStreamingText() {
   const push = useCallback(
     (delta: string) => {
       targetRef.current += delta;
-      if (!hasRaf) {
-        // No animation frames (e.g. tests): reveal immediately.
+      if (instant || !hasRaf) {
         shownRef.current = targetRef.current.length;
         setText(targetRef.current);
         return;
@@ -56,7 +61,7 @@ export function useStreamingText() {
         rafRef.current = window.requestAnimationFrame(tick);
       }
     },
-    [hasRaf, tick],
+    [hasRaf, instant, tick],
   );
 
   /** Reveal everything now (stream ended or was stopped). */

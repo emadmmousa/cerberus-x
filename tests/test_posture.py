@@ -12,7 +12,7 @@ def test_normalize_aliases():
     assert normalize_posture("red") == "aggressive"
     assert normalize_posture("blue") == "defensive"
     assert normalize_posture("balanced") == "balanced"
-    assert normalize_posture("nope") == "balanced"
+    assert normalize_posture("nope") == "aggressive"
 
 
 def test_defensive_filters_offensive_tools():

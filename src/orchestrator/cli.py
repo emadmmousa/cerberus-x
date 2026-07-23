@@ -4,13 +4,17 @@ import yaml
 import sys
 import json
 from celery.result import AsyncResult
+from .celery_errors import format_celery_collect_error
 from .tasks import build_phase_workflow
 from .celery_app import app
 from .database import init_db, save_phase_result, get_results
 from .decision_engine import DecisionEngine
 
 def collect_chain_results(async_result, timeout=600):
-    final_result = async_result.get(timeout=timeout)
+    try:
+        final_result = async_result.get(timeout=timeout)
+    except Exception as exc:
+        raise RuntimeError(format_celery_collect_error(exc)) from exc
     if not async_result.parent:
         return [final_result]
     parent_results = collect_chain_results(async_result.parent, timeout)
@@ -18,8 +22,10 @@ def collect_chain_results(async_result, timeout=600):
     return parent_results
 
 def collect_group_results(async_result, timeout=600):
-    results = async_result.get(timeout=timeout)
-    return results
+    try:
+        return async_result.get(timeout=timeout)
+    except Exception as exc:
+        raise RuntimeError(format_celery_collect_error(exc)) from exc
 
 def main():
     parser = argparse.ArgumentParser(description='Firebreak orchestrator')

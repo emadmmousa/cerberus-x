@@ -10,24 +10,31 @@ import {
 const OXYLABS_PRESETS = [
   {
     id: "residential",
-    label: "Residential",
+    label: "Oxylabs residential",
     host: "pr.oxylabs.io",
     port: "7777",
     hint: "Username must be customer-… (proxy user, not dashboard email)",
   },
   {
     id: "datacenter",
-    label: "Datacenter",
+    label: "Oxylabs datacenter",
     host: "dc.oxylabs.io",
     port: "8000",
     hint: "Username must be user-… (proxy user from Oxylabs dashboard)",
   },
   {
     id: "isp",
-    label: "ISP",
+    label: "Oxylabs ISP",
     host: "isp.oxylabs.io",
     port: "8000",
     hint: "Username must be user-… (proxy user from Oxylabs dashboard)",
+  },
+  {
+    id: "iproyal",
+    label: "IPRoyal residential",
+    host: "geo.iproyal.com",
+    port: "12321",
+    hint: "Use IPRoyal proxy username/password from the dashboard (not your login email)",
   },
 ] as const;
 
@@ -269,10 +276,10 @@ export function ProxyToggle({
         {open && (
           <div className="proxy-settings__body">
             <p className="proxy-settings__msg muted">
-              Use Oxylabs <strong>proxy user</strong> credentials from the
-              dashboard (My Products → Users), not the account email login.
-              Example residential URL:{" "}
-              <code>http://customer-USER:PASS@pr.oxylabs.io:7777</code>
+              Save upstream proxy credentials (Oxylabs, IPRoyal, etc.). Workers
+              route tools through a local forwarder on{" "}
+              <code>127.0.0.1:18080</code> — secrets never appear in tool argv
+              or the browser.
             </p>
             <div className="row" style={{ marginBottom: "0.75rem" }}>
               {OXYLABS_PRESETS.map((preset) => (

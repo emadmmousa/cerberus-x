@@ -11,6 +11,7 @@ import os
 import time
 from typing import Any
 
+from orchestrator.ai.scaffold_catalog import catalog_categories, cyber_scaffold_catalog
 from security.edition import feature_flags, is_pro
 
 MARKET_KEY = "firebreak:scaffold:marketplace"
@@ -18,39 +19,7 @@ MARKET_KEY = "firebreak:scaffold:marketplace"
 
 def builtin_catalog() -> list[dict[str, Any]]:
     """Static catalog of known OpenAI-compatible scaffold recipes."""
-    return [
-        {
-            "id": "ollama-primary",
-            "label": "Firebreak (Ollama)",
-            "kind": "openai_compatible",
-            "model": os.environ.get("FIREBREAK_LLM_MODEL") or "firebreak",
-            "base_url_hint": "http://ollama:11434/v1",
-            "tasks": ["plan", "decide", "harden"],
-            "license": "Apache-2.0",
-            "source": "builtin",
-        },
-        {
-            "id": "ollama-fallback",
-            "label": "Ollama fallback (base)",
-            "kind": "openai_compatible",
-            "model": os.environ.get("FIREBREAK_LLM_BASE_MODEL") or "qwen2.5:7b",
-            "base_url_hint": "http://ollama:11434/v1",
-            "tasks": ["plan", "decide"],
-            "license": "Apache-2.0",
-            "source": "builtin",
-        },
-        {
-            "id": "openai-compat",
-            "label": "Generic OpenAI-compatible",
-            "kind": "openai_compatible",
-            "model": "gpt-4o-mini",
-            "base_url_hint": "https://api.openai.com/v1",
-            "tasks": ["plan", "decide"],
-            "license": "commercial",
-            "source": "builtin",
-            "notes": "Set FIREBREAK_SCAFFOLD_FALLBACK_* or custom env to wire.",
-        },
-    ]
+    return cyber_scaffold_catalog()
 
 
 def _redis():
@@ -106,6 +75,10 @@ def register_scaffold(entry: dict[str, Any]) -> dict[str, Any]:
         "source": "registered",
         "registered_at": time.time(),
     }
+    if entry.get("category"):
+        row["category"] = str(entry.get("category"))[:128]
+    if entry.get("notes"):
+        row["notes"] = str(entry.get("notes"))[:512]
     rows = [r for r in list_registered() if r.get("id") != row["id"]]
     rows.append(row)
     r = _redis()
@@ -144,6 +117,7 @@ def marketplace_status() -> dict[str, Any]:
         "edition": "pro" if is_pro() else "community",
         "can_register": bool(feature_flags().get("scaffold_marketplace")),
         "catalog": catalog,
+        "categories": catalog_categories(catalog),
         "registered": registered,
         "count": len(catalog) + len(registered),
         "notes": (

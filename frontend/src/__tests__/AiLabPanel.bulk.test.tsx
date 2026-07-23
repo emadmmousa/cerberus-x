@@ -30,14 +30,14 @@ import { contributeDataset } from "../api/client";
 
 describe("AiLabPanel bulk", () => {
   it("load all stages examples and submit all contributes each", async () => {
-    render(<AiLabPanel />);
+    render(<AiLabPanel section="dataset" />);
     const loadAll = await screen.findByRole("button", {
-      name: /load all \(posture\)/i,
+      name: /stage all for lens/i,
     });
     fireEvent.click(loadAll);
-    expect(await screen.findByText(/bulk: 2\/2 ready/i)).toBeTruthy();
+    expect(await screen.findByText(/bulk queue · 2 examples staged/i)).toBeTruthy();
     fireEvent.click(
-      screen.getByRole("button", { name: /submit all \(cc-by\)/i }),
+      screen.getByRole("button", { name: /publish selected/i }),
     );
     await waitFor(() => {
       expect(contributeDataset).toHaveBeenCalledTimes(2);

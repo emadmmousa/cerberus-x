@@ -2,6 +2,21 @@
 
 Authorized security testing only.
 
+## Product documentation (what Firebreak does)
+
+Start here for a full picture of the application:
+
+| Doc | Description |
+|-----|-------------|
+| [APP_OVERVIEW.md](APP_OVERVIEW.md) | Product summary, editions, surfaces, quick start |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | Docker stack, data flow, backend/frontend layout |
+| [FEATURES.md](FEATURES.md) | Feature catalog and 30+ tool arsenal |
+| [USER_JOURNEYS.md](USER_JOURNEYS.md) | UI pages and operator workflows |
+| [MISSION_AND_CHAT.md](MISSION_AND_CHAT.md) | Playbooks, AI loop, chat agent lifecycle |
+| [OSINT_INTEL.md](OSINT_INTEL.md) | Seeds, dark web, breach providers |
+| [SECURITY_AND_AUTH.md](SECURITY_AND_AUTH.md) | RBAC, target authz, audit |
+| [OPEN_CORE.md](OPEN_CORE.md) | Community vs Pro packaging |
+
 ## Operator docs
 
 | Doc | Description |

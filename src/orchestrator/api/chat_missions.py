@@ -511,6 +511,7 @@ def get_chat(chat_id: str):
     thread, err = _load_owned(chat_id)
     if err:
         return err
+    thread = chat_store.normalize_processing(thread) or thread
     return jsonify(thread)
 
 
@@ -616,7 +617,13 @@ def post_message(chat_id: str):
     _enrich_chat_seeds(agent_opts, content, history)
 
     failures = int(thread.get("parse_failures") or 0)
-    result = intake.run_intake(history, parse_failures=failures, osint_seeds=agent_opts.osint_seeds)
+    working = chat_store.get_chat(chat_id) or thread
+    chat_store.set_processing(working, processing=True)
+    try:
+        result = intake.run_intake(history, parse_failures=failures, osint_seeds=agent_opts.osint_seeds)
+    finally:
+        working = chat_store.get_chat(chat_id) or working
+        chat_store.set_processing(working, processing=False)
     # Re-evaluate the intake result through the same deterministic proposal
     # compiler used by SSE. This applies Auto Run / Always Run consistently and
     # attaches a concrete executable plan even when the intake model only
@@ -709,6 +716,10 @@ def stream_message(chat_id: str):
         attachments=[a.as_dict() for a in agent_opts.attachments] or None,
         agent_options=agent_opts.as_dict(),
     )
+    working = chat_store.get_chat(chat_id) or thread
+    if working.get("processing"):
+        return jsonify({"error": "chat is still generating a reply", "processing": True}), 409
+    chat_store.set_processing(working, processing=True)
     history = [
         {"role": m["role"], "content": m["content"]}
         for m in thread.get("messages") or []
@@ -721,178 +732,181 @@ def stream_message(chat_id: str):
 
     @stream_with_context
     def generate():
-        cerberus_reply = intake.try_cerberus_command(content, history)
-        if cerberus_reply is not None:
+        try:
+            cerberus_reply = intake.try_cerberus_command(content, history)
+            if cerberus_reply is not None:
+                proposal = intake.detect_proposal(
+                    history,
+                    assistant_reply=cerberus_reply,
+                    default_posture=agent_opts.normalized_posture(),
+                    osint_seeds=agent_opts.osint_seeds,
+                    auto_run=agent_opts.auto_run,
+                    always_run=agent_opts.always_run,
+                )
+                reply = intake.sync_reply_for_proposal(
+                    cerberus_reply,
+                    proposal,
+                    user_text=content,
+                    messages=history,
+                )
+                proposal = _apply_osint_to_proposal(proposal, agent_opts, history)
+                fresh = chat_store.get_chat(chat_id) or thread
+                chat_store.append_message(
+                    fresh,
+                    "assistant",
+                    reply,
+                    proposal=proposal if proposal.get("ready") else None,
+                    thinking_content=cerberus_reply,
+                )
+                fresh = chat_store.get_chat(chat_id) or fresh
+                yield _sse(
+                    {
+                        "done": True,
+                        "reply": reply,
+                        "proposal": proposal if proposal.get("ready") else None,
+                        "tool_proposal": None,
+                        "draft": fresh.get("draft"),
+                        "messages": fresh.get("messages"),
+                        "mission_launched": None,
+                        "launch_error": None,
+                    }
+                )
+                return
+
+            if intake.wants_authorize_targets(content):
+                reply, _added = intake.authorize_chat_targets(
+                    draft=thread.get("draft"),
+                    messages=history,
+                    panel_seeds=panel_seeds,
+                )
+                from orchestrator.osint.seeds import message_scopes_osint_seeds, resolve_osint_seeds_for_chat
+
+                for msg in reversed(history):
+                    if msg.get("role") != "user" or intake.wants_authorize_targets(
+                        str(msg.get("content") or "")
+                    ):
+                        continue
+                    if message_scopes_osint_seeds(str(msg.get("content") or "")):
+                        agent_opts.osint_seeds = resolve_osint_seeds_for_chat(
+                            panel_seeds,
+                            str(msg.get("content") or ""),
+                        )
+                        break
+                proposal = _apply_osint_to_proposal({}, agent_opts, history)
+                fresh = chat_store.get_chat(chat_id) or thread
+                chat_store.append_message(
+                    fresh,
+                    "assistant",
+                    reply,
+                    proposal=proposal,
+                    thinking_content=reply,
+                )
+                fresh = chat_store.get_chat(chat_id) or fresh
+                yield _sse(
+                    {
+                        "done": True,
+                        "reply": reply,
+                        "proposal": proposal,
+                        "tool_proposal": None,
+                        "draft": fresh.get("draft"),
+                        "messages": fresh.get("messages"),
+                        "mission_launched": None,
+                        "launch_error": None,
+                    }
+                )
+                return
+
+            _enrich_chat_seeds(agent_opts, content, history)
+
+            chunks: list[str] = []
+            try:
+                for piece in intake.advisor_stream(history, options=agent_opts):
+                    chunks.append(piece)
+                    yield _sse({"delta": piece})
+            except Exception as exc:  # pragma: no cover - network dependent
+                yield _sse({"error": str(exc)})
+
+            raw_reply = ("".join(chunks)).strip() or intake.SOFT_FALLBACK
             proposal = intake.detect_proposal(
                 history,
-                assistant_reply=cerberus_reply,
+                assistant_reply=raw_reply,
                 default_posture=agent_opts.normalized_posture(),
                 osint_seeds=agent_opts.osint_seeds,
                 auto_run=agent_opts.auto_run,
                 always_run=agent_opts.always_run,
             )
-            reply = intake.sync_reply_for_proposal(
-                cerberus_reply,
-                proposal,
-                user_text=content,
-                messages=history,
-            )
+            reply = intake.sanitize_advisor_display(raw_reply)
             proposal = _apply_osint_to_proposal(proposal, agent_opts, history)
-            fresh = chat_store.get_chat(chat_id) or thread
-            chat_store.append_message(
-                fresh,
-                "assistant",
-                reply,
-                proposal=proposal if proposal.get("ready") else None,
-                thinking_content=cerberus_reply,
-            )
-            fresh = chat_store.get_chat(chat_id) or fresh
-            yield _sse(
-                {
-                    "done": True,
-                    "reply": reply,
-                    "proposal": proposal if proposal.get("ready") else None,
-                    "tool_proposal": None,
-                    "draft": fresh.get("draft"),
-                    "messages": fresh.get("messages"),
-                    "mission_launched": None,
-                    "launch_error": None,
-                }
-            )
-            return
-
-        if intake.wants_authorize_targets(content):
-            reply, _added = intake.authorize_chat_targets(
-                draft=thread.get("draft"),
-                messages=history,
-                panel_seeds=panel_seeds,
-            )
-            from orchestrator.osint.seeds import message_scopes_osint_seeds, resolve_osint_seeds_for_chat
-
-            for msg in reversed(history):
-                if msg.get("role") != "user" or intake.wants_authorize_targets(
-                    str(msg.get("content") or "")
-                ):
-                    continue
-                if message_scopes_osint_seeds(str(msg.get("content") or "")):
-                    agent_opts.osint_seeds = resolve_osint_seeds_for_chat(
-                        panel_seeds,
-                        str(msg.get("content") or ""),
-                    )
-                    break
-            proposal = _apply_osint_to_proposal({}, agent_opts, history)
+            reply = intake.sync_reply_for_proposal(reply, proposal, user_text=content, messages=history)
+            tool_proposal = intake.extract_tool_proposal(reply)
+            if not tool_proposal and isinstance(proposal.get("plan"), dict):
+                pending = proposal["plan"].get("new_tools") or []
+                if pending:
+                    tool_proposal = pending[0]
             fresh = chat_store.get_chat(chat_id) or thread
             chat_store.append_message(
                 fresh,
                 "assistant",
                 reply,
                 proposal=proposal,
-                thinking_content=reply,
+                thinking_content=raw_reply.strip() if raw_reply else "",
             )
+            if proposal.get("ready"):
+                chat_store.set_draft(fresh, proposal)
+                audit_log(
+                    "CHAT_MISSION_PROPOSE",
+                    {"chat_id": chat_id, "target": proposal.get("target"),
+                     "posture": proposal.get("posture")},
+                )
+            else:
+                chat_store.set_draft(fresh, None)
             fresh = chat_store.get_chat(chat_id) or fresh
+            if tool_proposal:
+                audit_log(
+                    "CHAT_TOOL_PROPOSE",
+                    {"chat_id": chat_id, "name": tool_proposal.get("name"),
+                     "binary": tool_proposal.get("binary")},
+                )
+
+            mission_launched = None
+            launch_error = None
+            launch_plan = proposal.get("plan") if isinstance(proposal.get("plan"), dict) else None
+            if tool_proposal and launch_plan:
+                launch_plan = _merge_tool_proposal_into_plan(launch_plan, tool_proposal)
+                proposal = dict(proposal)
+                proposal["plan"] = launch_plan
+            if proposal.get("auto_execute") and proposal.get("ready"):
+                try:
+                    mission_launched = _execute_chat_mission(
+                        chat_id,
+                        fresh,
+                        {**body, "auto_execute": True},
+                        draft=proposal,
+                        tool_proposal=tool_proposal,
+                    )
+                    fresh = chat_store.get_chat(chat_id) or fresh
+                except PermissionError as exc:
+                    launch_error = str(exc)
+                except ValueError as exc:
+                    launch_error = str(exc)
+                except Exception as exc:
+                    launch_error = str(exc)
+
             yield _sse(
                 {
                     "done": True,
                     "reply": reply,
                     "proposal": proposal,
-                    "tool_proposal": None,
+                    "tool_proposal": tool_proposal,
                     "draft": fresh.get("draft"),
                     "messages": fresh.get("messages"),
-                    "mission_launched": None,
-                    "launch_error": None,
+                    "mission_launched": mission_launched,
+                    "launch_error": launch_error,
                 }
             )
-            return
-
-        _enrich_chat_seeds(agent_opts, content, history)
-
-        chunks: list[str] = []
-        try:
-            for piece in intake.advisor_stream(history, options=agent_opts):
-                chunks.append(piece)
-                yield _sse({"delta": piece})
-        except Exception as exc:  # pragma: no cover - network dependent
-            yield _sse({"error": str(exc)})
-
-        raw_reply = ("".join(chunks)).strip() or intake.SOFT_FALLBACK
-        proposal = intake.detect_proposal(
-            history,
-            assistant_reply=raw_reply,
-            default_posture=agent_opts.normalized_posture(),
-            osint_seeds=agent_opts.osint_seeds,
-            auto_run=agent_opts.auto_run,
-            always_run=agent_opts.always_run,
-        )
-        reply = intake.sanitize_advisor_display(raw_reply)
-        proposal = _apply_osint_to_proposal(proposal, agent_opts, history)
-        reply = intake.sync_reply_for_proposal(reply, proposal, user_text=content, messages=history)
-        tool_proposal = intake.extract_tool_proposal(reply)
-        # Prefer a plan-embedded new tool if no standalone firebreak-tool block.
-        if not tool_proposal and isinstance(proposal.get("plan"), dict):
-            pending = proposal["plan"].get("new_tools") or []
-            if pending:
-                tool_proposal = pending[0]
-        fresh = chat_store.get_chat(chat_id) or thread
-        chat_store.append_message(
-            fresh,
-            "assistant",
-            reply,
-            proposal=proposal,
-            thinking_content=raw_reply.strip() if raw_reply else "",
-        )
-        if proposal.get("ready"):
-            chat_store.set_draft(fresh, proposal)
-            audit_log(
-                "CHAT_MISSION_PROPOSE",
-                {"chat_id": chat_id, "target": proposal.get("target"),
-                 "posture": proposal.get("posture")},
-            )
-        else:
-            chat_store.set_draft(fresh, None)
-        fresh = chat_store.get_chat(chat_id) or fresh
-        if tool_proposal:
-            audit_log(
-                "CHAT_TOOL_PROPOSE",
-                {"chat_id": chat_id, "name": tool_proposal.get("name"),
-                 "binary": tool_proposal.get("binary")},
-            )
-
-        mission_launched = None
-        launch_error = None
-        launch_plan = proposal.get("plan") if isinstance(proposal.get("plan"), dict) else None
-        if tool_proposal and launch_plan:
-            launch_plan = _merge_tool_proposal_into_plan(launch_plan, tool_proposal)
-            proposal = dict(proposal)
-            proposal["plan"] = launch_plan
-        if proposal.get("auto_execute") and proposal.get("ready"):
-            try:
-                mission_launched = _execute_chat_mission(
-                    chat_id,
-                    fresh,
-                    {**body, "auto_execute": True},
-                    draft=proposal,
-                    tool_proposal=tool_proposal,
-                )
-                fresh = chat_store.get_chat(chat_id) or fresh
-            except PermissionError as exc:
-                launch_error = str(exc)
-            except ValueError as exc:
-                launch_error = str(exc)
-            except Exception as exc:
-                launch_error = str(exc)
-
-        yield _sse(
-            {
-                "done": True,
-                "reply": reply,
-                "proposal": proposal,
-                "tool_proposal": tool_proposal,
-                "draft": fresh.get("draft"),
-                "messages": fresh.get("messages"),
-                "mission_launched": mission_launched,
-                "launch_error": launch_error,
-            }
-        )
+        finally:
+            fresh = chat_store.get_chat(chat_id) or thread
+            chat_store.set_processing(fresh, processing=False)
 
     return Response(
         generate(),

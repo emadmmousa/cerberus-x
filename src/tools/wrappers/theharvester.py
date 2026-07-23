@@ -4,6 +4,13 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
+from tools.osint_scrape import (
+    parse_seeds,
+    pick_harvest_domain,
+    skip_result,
+    strip_osint_seed_args,
+)
+
 # Banner / author emails that appear in tool stdout, not target intel.
 _BANNER_EMAILS = frozenset(
     {
@@ -28,36 +35,48 @@ def _command() -> list[str]:
 
 
 def scan(target, args=None):
-    domain = _domain(target)
-    if args is None:
-        args = ["-d", domain, "-l", "100", "-b", "crtsh"]
-    else:
-        args = list(args)
-        # Ensure -d gets a cleaned domain if playbook passed a URL.
-        if "-d" in args:
-            idx = args.index("-d")
-            if idx + 1 < len(args):
-                args[idx + 1] = _domain(str(args[idx + 1]).replace("{{target}}", domain))
-        else:
-            args = ["-d", domain, *args]
-        if "-b" in args:
-            idx = args.index("-b")
-            if idx + 1 < len(args) and str(args[idx + 1]).lower() in {
-                "google",
-                "bing",
-                "yahoo",
-            }:
-                args[idx + 1] = "crtsh"
-        elif "--source" in args:
-            idx = args.index("--source")
-            if idx + 1 < len(args) and str(args[idx + 1]).lower() in {
-                "google",
-                "bing",
-                "yahoo",
-            }:
-                args[idx + 1] = "crtsh"
+    seeds = parse_seeds(target, args)
+    cli_args = strip_osint_seed_args(args)
+    domain = pick_harvest_domain(target, seeds)
+    if not domain:
+        return skip_result(
+            "theHarvester",
+            target,
+            seeds=seeds,
+            note=(
+                "Public harvest requires a domain or email domain. "
+                "Person-name seeds are covered by darkweb, sherlock, and breach_intel."
+            ),
+        )
 
-    cmd = [*_command(), *args]
+    if not cli_args:
+        cli_args = ["-d", domain, "-l", "100", "-b", "crtsh"]
+    else:
+        cli_args = list(cli_args)
+        if "-d" in cli_args:
+            idx = cli_args.index("-d")
+            if idx + 1 < len(cli_args):
+                cli_args[idx + 1] = _domain(str(cli_args[idx + 1]).replace("{{target}}", domain))
+        else:
+            cli_args = ["-d", domain, *cli_args]
+        if "-b" in cli_args:
+            idx = cli_args.index("-b")
+            if idx + 1 < len(cli_args) and str(cli_args[idx + 1]).lower() in {
+                "google",
+                "bing",
+                "yahoo",
+            }:
+                cli_args[idx + 1] = "crtsh"
+        elif "--source" in cli_args:
+            idx = cli_args.index("--source")
+            if idx + 1 < len(cli_args) and str(cli_args[idx + 1]).lower() in {
+                "google",
+                "bing",
+                "yahoo",
+            }:
+                cli_args[idx + 1] = "crtsh"
+
+    cmd = [*_command(), *cli_args]
     try:
         output = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
         emails = sorted(
@@ -81,15 +100,25 @@ def scan(target, args=None):
         return {
             "tool": "theHarvester",
             "target": domain,
+            "seeds": seeds,
             "emails": emails,
             "hosts": hosts,
             "raw_output": output,
+            "productive": bool(emails or hosts),
         }
     except FileNotFoundError:
         return {
             "tool": "theHarvester",
             "target": domain,
+            "seeds": seeds,
             "error": "theHarvester is not installed",
+            "productive": False,
         }
     except subprocess.CalledProcessError as e:
-        return {"tool": "theHarvester", "target": domain, "error": str(e.output)}
+        return {
+            "tool": "theHarvester",
+            "target": domain,
+            "seeds": seeds,
+            "error": str(e.output),
+            "productive": False,
+        }

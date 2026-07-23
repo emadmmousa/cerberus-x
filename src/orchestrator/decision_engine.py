@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 
 from .database import load_state, save_state
 
+from orchestrator.ai.posture import DEFAULT_POSTURE, normalize_posture
 from tools.cve_exploit_map import lookup_cve, lookup_port
 from tools.payload_strategy import (
     infer_os,
@@ -29,12 +30,10 @@ class DecisionEngine:
         self,
         target: str,
         job_id: str | None = None,
-        posture: str = "balanced",
+        posture: str = DEFAULT_POSTURE,
     ):
         self.target = target
         self.job_id = job_id
-        from orchestrator.ai.posture import normalize_posture
-
         self.posture = normalize_posture(posture)
         self.state = load_state(target, job_id=job_id) or {}
         self.results_cache = {}
@@ -64,6 +63,8 @@ class DecisionEngine:
                 self._process_gobuster_results(item)
             elif tool == "ffuf":
                 self._process_ffuf_results(item)
+            elif tool == "whatweb":
+                self._process_whatweb_results(item)
 
         save_state(self.target, self.state, job_id=self.job_id)
         self._publish_blackboard(phase_name)
@@ -102,7 +103,10 @@ class DecisionEngine:
         for finding in findings:
             title = finding.get("title", "") or ""
             template_id = str(finding.get("template_id") or finding.get("id") or "")
+            severity = str(finding.get("severity") or "unknown").lower()
             blob = f"{title} {template_id}"
+            if severity in ("critical", "high", "medium"):
+                self.state["vuln_found"] = True
             cve_match = re.search(r"CVE-\d{4}-\d+", blob, re.IGNORECASE)
             if cve_match:
                 cve = cve_match.group(0).upper()
@@ -111,6 +115,7 @@ class DecisionEngine:
                         "cve": cve,
                         "severity": finding.get("severity", "unknown"),
                         "title": title or cve,
+                        "template_id": template_id,
                     }
                 )
             elif re.search(r"\brce\b|remote code|unauth", blob, re.IGNORECASE):
@@ -177,6 +182,46 @@ class DecisionEngine:
             if needle in raw:
                 self.state["sql_dbms"] = name
                 break
+
+    def _process_whatweb_results(self, item):
+        result = _payload(item)
+        if result.get("waf_blocked"):
+            self.state["waf_blocked"] = True
+            self.state["cdn"] = True
+        for tech in result.get("technologies") or []:
+            label = str(tech).strip()
+            if not label:
+                continue
+            self.state.setdefault("technologies", [])
+            if label not in self.state["technologies"]:
+                self.state["technologies"].append(label)
+            if label.lower() == "cloudflare":
+                self.state["cdn"] = True
+
+    def _all_service_names(self) -> list[str]:
+        names: list[str] = []
+        for entry in self.state.get("open_ports") or []:
+            if not isinstance(entry, dict):
+                continue
+            for key in ("service", "name", "product", "version", "extrainfo"):
+                val = entry.get(key)
+                if val:
+                    names.append(str(val))
+        return names
+
+    def _services_for_port(self, port: str) -> list[str]:
+        names: list[str] = []
+        for entry in self.state.get("open_ports") or []:
+            if not isinstance(entry, dict):
+                continue
+            entry_port = str(entry.get("port", "")).split("/")[0]
+            if entry_port != str(port):
+                continue
+            for key in ("service", "name", "product", "version", "extrainfo"):
+                val = entry.get(key)
+                if val:
+                    names.append(str(val))
+        return names
 
     def _process_nmap_results(self, item):
         result = _payload(item)
@@ -294,6 +339,10 @@ class DecisionEngine:
         def _queue_exploit(finding_id: str, module: str, option_stubs: list[str]) -> None:
             # Aux scanners use stage aux; exploits use stage exploit.
             stage = "aux" if module.startswith("auxiliary/") else "exploit"
+            if stage == "exploit" and (
+                self.state.get("waf_blocked") or self.state.get("cdn")
+            ):
+                return
             key = f"{stage}:{finding_id}:{module}"
             if key in proposed_keys or self._action_fired(stage, finding_id, module):
                 return
@@ -307,10 +356,11 @@ class DecisionEngine:
                 args = [module, *resolved]
             else:
                 args = [module, *option_stubs]
+            module_short = module.rsplit("/", 1)[-1]
             actions.append(
                 {
                     "tool": "metasploit",
-                    "phase": "proof_of_impact",
+                    "phase": f"proof_of_impact_{stage}_{finding_id}_{module_short}",
                     "stage": stage,
                     "finding_id": finding_id,
                     "args": args,
@@ -320,18 +370,44 @@ class DecisionEngine:
 
         # CVE-driven exploits (nuclei / mapped findings) — no confirmation.
         if self.state.get("vuln_found") or self.state.get("vulnerabilities"):
+            seen_cves: set[str] = set()
             for vuln in self.state.get("vulnerabilities", []):
                 cve = vuln.get("cve")
-                match = lookup_cve(cve) if cve else None
+                if not cve:
+                    continue
+                cve_key = str(cve).strip().upper()
+                if cve_key in seen_cves:
+                    continue
+                seen_cves.add(cve_key)
+                match = lookup_cve(cve_key)
                 if not match:
                     continue
                 module, option_stubs = match
-                _queue_exploit(cve, module, option_stubs)
+                from tools.cve_exploit_map import module_matches_context
+
+                vuln_blob = " ".join(
+                    str(vuln.get(key) or "")
+                    for key in ("title", "template_id", "cve")
+                )
+                if not module_matches_context(
+                    module,
+                    services=self._all_service_names(),
+                    technologies=self.state.get("technologies") or [],
+                    vuln_blob=vuln_blob,
+                ):
+                    continue
+                _queue_exploit(cve_key, module, option_stubs)
 
         # Aggressive: open-port service exploits even without a CVE hit.
+        seen_ports: set[str] = set()
         for port in self.state.get("open_port_numbers") or []:
-            for module, option_stubs in lookup_port(port):
-                _queue_exploit(f"port-{port}", module, list(option_stubs))
+            port_s = str(port)
+            if port_s in seen_ports:
+                continue
+            seen_ports.add(port_s)
+            services = self._services_for_port(port_s)
+            for module, option_stubs in lookup_port(port_s, services=services):
+                _queue_exploit(f"port-{port_s}", module, list(option_stubs))
 
         if self.state.get("has_session"):
             for session in self.state.get("sessions", []):

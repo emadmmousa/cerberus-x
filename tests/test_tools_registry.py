@@ -17,8 +17,14 @@ def _clean_registry():
                 r.delete(reg.REGISTRY_KEY)
             except Exception:
                 pass
+        path = reg.custom_tools_file_path()
+        if path.is_file():
+            try:
+                path.unlink()
+            except OSError:
+                pass
 
-    # Isolate each test from Redis/in-proc state.
+    # Isolate each test from Redis/in-proc/file state.
     _wipe()
     yield
     _wipe()
@@ -148,3 +154,103 @@ def test_extract_tool_proposal_none_when_absent():
     from orchestrator.chat.intake import extract_tool_proposal
 
     assert extract_tool_proposal("just a normal reply, no tool block") is None
+
+
+def test_register_tool_persists_to_file(tmp_path, monkeypatch):
+    from orchestrator import tools_registry as reg
+
+    path = tmp_path / "custom_tools.json"
+    monkeypatch.setattr(reg, "custom_tools_file_path", lambda: path)
+    monkeypatch.setattr(reg, "_redis", lambda: None)
+
+    reg.register_tool(
+        {
+            "name": "webprobe",
+            "binary": "curl",
+            "args_template": ["-sI", "{url}"],
+            "description": "header probe",
+            "risk": "low",
+        }
+    )
+    assert path.is_file()
+    reg._tools.clear()
+    loaded = reg._load_from_file()
+    assert "webprobe" in loaded
+    assert loaded["webprobe"]["binary"] == "curl"
+
+
+def test_collect_tool_definitions_from_phase_and_new_tools(monkeypatch):
+    from orchestrator.tools_registry import ensure_plan_new_tools
+
+    monkeypatch.setattr(
+        "orchestrator.tools_registry.get_tool",
+        lambda _n: None,
+    )
+    monkeypatch.setattr(
+        "orchestrator.tools_registry.invent_tool",
+        lambda name, **kwargs: {
+            "name": name,
+            "binary": "curl" if name == "curlprobe" else name,
+            "args_template": ["-sI", "{url}"] if name == "curlprobe" else ["{url}"],
+            "description": "test",
+            "risk": "low",
+        },
+    )
+
+    plan = ensure_plan_new_tools(
+        {
+            "phases": [
+                {
+                    "name": "custom",
+                    "parallel": False,
+                    "tools": [{"tool": "curlprobe", "args": []}, {"tool": "httpx", "args": []}],
+                }
+            ],
+            "new_tools": [
+                {
+                    "name": "curlprobe",
+                    "binary": "curl",
+                    "args_template": ["-sI", "{url}"],
+                    "description": "header probe",
+                    "risk": "low",
+                }
+            ],
+        }
+    )
+    names = sorted(t["name"] for t in plan["new_tools"])
+    assert names == ["curlprobe"]
+
+
+def test_register_plan_tools_skips_existing(monkeypatch):
+    from orchestrator.tools_registry import register_plan_tools
+
+    calls: list[str] = []
+
+    def fake_register(raw, **kwargs):
+        calls.append(raw["name"])
+        return {"name": raw["name"], "binary": raw["binary"], "args_template": []}
+
+    monkeypatch.setattr("orchestrator.tools_registry.register_tool", fake_register)
+    monkeypatch.setattr(
+        "orchestrator.tools_registry.get_tool",
+        lambda name: {"name": name} if name == "httpx" else None,
+    )
+    monkeypatch.setattr(
+        "orchestrator.tools_registry.invent_tool",
+        lambda name, **kwargs: {
+            "name": name,
+            "binary": name,
+            "args_template": ["{url}"],
+            "description": "test",
+            "risk": "low",
+        },
+    )
+
+    registered = register_plan_tools(
+        {
+            "phases": [{"name": "x", "tools": [{"tool": "httpx", "args": []}]}],
+            "new_tools": [],
+        }
+    )
+    assert registered == []
+    assert calls == []

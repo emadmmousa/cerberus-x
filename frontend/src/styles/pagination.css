@@ -1,0 +1,159 @@
+.list-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--surface-2) 88%, var(--accent) 12%) 0%,
+    var(--surface-1) 72%
+  );
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--accent) 18%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
+}
+
+.list-pagination__range {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 7rem;
+}
+
+.list-pagination__range-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.list-pagination__range-value {
+  font-family: var(--font-display);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--text-strong);
+}
+
+.list-pagination__controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex: 1;
+  justify-content: center;
+}
+
+.list-pagination__nav,
+.list-pagination__page {
+  min-width: 2rem;
+  height: 2rem;
+  padding: 0 0.45rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-0);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    border-color var(--duration-fast) var(--ease-out),
+    color var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out),
+    transform var(--duration-fast) var(--ease-out);
+}
+
+.list-pagination__nav:hover:not(:disabled),
+.list-pagination__page:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
+  color: var(--text-strong);
+  background: var(--surface-2);
+}
+
+.list-pagination__nav:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.list-pagination__pages {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0 0.15rem;
+}
+
+.list-pagination__page--active {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  background: var(--accent-dim);
+  color: var(--text-strong);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+.list-pagination__ellipsis {
+  min-width: 1.5rem;
+  text-align: center;
+  color: var(--muted);
+  font-size: var(--text-xs);
+  user-select: none;
+}
+
+.list-pagination__size {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.list-pagination__size-label {
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.list-pagination__size-select {
+  min-width: 4.25rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--line);
+  background: var(--bg-0);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+@media (max-width: 720px) {
+  .list-pagination {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .list-pagination__controls {
+    justify-content: space-between;
+  }
+
+  .list-pagination__size {
+    margin-left: 0;
+    justify-content: space-between;
+  }
+
+  .list-pagination__pages {
+    flex: 1;
+    justify-content: center;
+    overflow-x: auto;
+    padding-bottom: 0.15rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-pagination__nav,
+  .list-pagination__page {
+    transition: none;
+  }
+}
