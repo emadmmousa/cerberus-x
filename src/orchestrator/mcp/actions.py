@@ -9,10 +9,16 @@ from celery.result import AsyncResult
 
 from orchestrator.ai.safety import require_confirm_for_tool
 from orchestrator.celery_app import app as celery_app
+from orchestrator.celery_errors import assert_workers_ready
 from orchestrator.database import get_results
 from orchestrator.mcp import sessions
 from orchestrator.mcp.registry import HIGH_RISK, known_tools
 from orchestrator.tasks import _PROXY_TOOLS, _TASK_MAP
+from scanner import enforce_launch_authorization
+
+
+class WorkerPreflightError(RuntimeError):
+    """Requested tool is unavailable on the active workers."""
 
 
 def _normalize_args(args: Any) -> list:
@@ -54,6 +60,12 @@ def enqueue_tool(
         raise PermissionError(
             f"high-risk tool '{tool}' requires confirm=true"
         )
+
+    enforce_launch_authorization(target, path="mcp.run_tool")
+    try:
+        assert_workers_ready([tool])
+    except RuntimeError as exc:
+        raise WorkerPreflightError(str(exc)) from exc
 
     normalized = _normalize_args(args)
     evasion = evasion or {}

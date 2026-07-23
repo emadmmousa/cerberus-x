@@ -147,6 +147,8 @@ def mcp_jsonrpc():
         return _err(-32001, str(exc), req_id, 403)
     except ValueError as exc:
         return _err(-32602, str(exc), req_id, 400)
+    except actions.WorkerPreflightError as exc:
+        return _err(-32000, str(exc), req_id, 503)
     except RuntimeError as exc:
         return _err(-32000, str(exc), req_id, 429)
     except Exception as exc:
