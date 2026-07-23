@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { cancelMission, retryMission } from "../api/client";
 import { BlackboardPanel } from "../components/BlackboardPanel";
 import { MissionActivityPanel } from "../components/MissionActivityPanel";
+import { MissionFindingsPanel } from "../components/MissionFindingsPanel";
 import { MissionPhaseNav } from "../components/MissionPhaseNav";
 import { MissionSummary } from "../components/MissionSummary";
 import { PageHero } from "../components/PageHero";
@@ -228,6 +229,7 @@ export function MissionDetail() {
             posture={status?.ai?.posture}
             jobId={status?.task_id}
           />
+          <MissionFindingsPanel jobId={taskId} target={target} />
           <BlackboardPanel missionId={status?.task_id} />
         </section>
       )}

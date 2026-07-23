@@ -101,10 +101,11 @@ def save_phase_result(target, phase_name, phase_outputs, job_id=None, org_id=Non
     init_db()
     org = (org_id or _default_org()).strip() or "default"
     rows = _normalize_phase_outputs(phase_outputs)
+    inserted: list[dict] = []
     with get_db() as conn:
         for tool_name, payload in rows:
             enriched = enrich_tool_result(tool_name, payload)
-            conn.execute(
+            cursor = conn.execute(
                 "INSERT INTO results (target, phase, tool, result_json, job_id, org_id) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 (target, phase_name, tool_name, json.dumps(enriched), job_id, org),
@@ -112,7 +113,24 @@ def save_phase_result(target, phase_name, phase_outputs, job_id=None, org_id=Non
             _maybe_index_es(
                 target, phase_name, tool_name, enriched, job_id=job_id, org_id=org
             )
+            inserted.append(
+                {
+                    "id": cursor.lastrowid,
+                    "target": target,
+                    "phase": phase_name,
+                    "tool": tool_name,
+                    "result": enriched,
+                    "job_id": job_id,
+                    "org_id": org,
+                }
+            )
         conn.commit()
+    try:
+        from orchestrator.findings import ingest_result_rows
+
+        ingest_result_rows(inserted)
+    except Exception as exc:
+        logger.debug("findings ingest skipped: %s", exc)
     paths = export_target_reports(target, get_results(target, limit=10000, org_id=org))
     print(
         f"[+] Wrote reports for {target}: "

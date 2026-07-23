@@ -343,6 +343,73 @@ export async function getHardeningReport(jobId: string): Promise<{
   return apiJson(`/api/missions/${encodeURIComponent(jobId)}/hardening`);
 }
 
+export type NormalizedFinding = {
+  id: number;
+  fingerprint: string;
+  target: string;
+  job_id?: string | null;
+  org_id?: string | null;
+  title: string;
+  severity: string;
+  confidence?: string;
+  tool?: string | null;
+  template_id?: string | null;
+  endpoint?: string | null;
+  first_seen?: string;
+  last_seen?: string;
+  observation_count?: number;
+  evidence?: Array<{
+    result_id?: number | null;
+    phase?: string;
+    tool?: string;
+    timestamp?: string;
+    available?: boolean;
+  }>;
+};
+
+export async function listFindings(params: {
+  jobId?: string;
+  target?: string;
+  severity?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  count: number;
+  total: number;
+  limit: number;
+  offset: number;
+  findings: NormalizedFinding[];
+}> {
+  const q = new URLSearchParams();
+  if (params.jobId) q.set("job_id", params.jobId);
+  if (params.target) q.set("target", params.target);
+  if (params.severity) q.set("severity", params.severity);
+  if (params.limit != null) q.set("limit", String(params.limit));
+  if (params.offset != null) q.set("offset", String(params.offset));
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return apiJson(`/api/findings${suffix}`);
+}
+
+export async function exportFindingsReport(
+  jobId: string,
+  format: "json" | "markdown" = "json",
+): Promise<
+  | {
+      summary?: string;
+      findings?: NormalizedFinding[];
+      markdown?: string;
+      count?: number;
+    }
+  | string
+> {
+  const url = `/api/missions/${encodeURIComponent(jobId)}/findings/export?format=${format}`;
+  if (format === "markdown") {
+    const resp = await apiFetch(url);
+    return resp.text();
+  }
+  return apiJson(url);
+}
+
 export async function getToolsCatalog(): Promise<ToolsCatalogResponse> {
   return apiJson<ToolsCatalogResponse>("/api/tools");
 }
