@@ -1,4 +1,5 @@
 import { apiFetch, apiJson, ApiError } from "./http";
+import type { ChatAgentConfig } from "../lib/chatAgentOptions";
 
 export { ApiError, apiFetch };
 
@@ -65,6 +66,13 @@ export type MissionSummaryRow = {
   org_id?: string;
   nl_goal?: string;
   error?: string;
+};
+
+export type WorkerReadiness = {
+  status: "ready" | "stale" | "unreachable";
+  expected_count: number;
+  missing_tasks: string[];
+  message?: string;
 };
 
 export type ResultRow = {
@@ -168,6 +176,35 @@ export type RbacMe = {
   sso?: Record<string, unknown>;
 };
 
+export type UserProfile = {
+  username?: string | null;
+  role?: string | null;
+  org_id?: string | null;
+  org_name?: string | null;
+  auth_method?: string | null;
+  disabled?: boolean;
+  has_password?: boolean;
+  created_at?: number | null;
+  updated_at?: number | null;
+  can_edit_username?: boolean;
+  can_edit_password?: boolean;
+  can_edit_org_name?: boolean;
+  managed_externally?: boolean;
+};
+
+export type UsernameCheckResult = {
+  available: boolean;
+  username: string;
+  reason?: string;
+};
+
+export type ProfileUpdateBody = {
+  current_password: string;
+  username?: string;
+  new_password?: string;
+  org_name?: string;
+};
+
 export type AuthStatus = {
   authenticated?: boolean;
   user?: string;
@@ -198,6 +235,10 @@ export async function listMissions(limit = 50): Promise<{
   missions: MissionSummaryRow[];
 }> {
   return apiJson(`/api/missions?limit=${limit}`);
+}
+
+export async function getWorkerReadiness(): Promise<WorkerReadiness> {
+  return apiJson<WorkerReadiness>("/api/workers/readiness");
 }
 
 export async function getStatus(taskId: string): Promise<TaskStatus> {
@@ -328,12 +369,81 @@ export async function logoutSession(): Promise<void> {
   await apiFetch("/auth/logout", { method: "POST", skipAuthRedirect: true });
 }
 
+export async function getProfile(): Promise<UserProfile> {
+  return apiJson<UserProfile>("/api/profile/me");
+}
+
+export async function checkUsernameAvailable(username: string): Promise<UsernameCheckResult> {
+  const params = new URLSearchParams({ username });
+  return apiJson<UsernameCheckResult>(`/api/profile/username/check?${params.toString()}`);
+}
+
+export async function updateProfile(body: ProfileUpdateBody): Promise<UserProfile> {
+  return apiJson<UserProfile>("/api/profile", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
 export async function getAiLabStatus(): Promise<Record<string, unknown>> {
   return apiJson("/api/ai-lab/status");
 }
 
-export async function getEditionStatus(): Promise<Record<string, unknown>> {
-  return apiJson("/api/edition/status");
+export async function getEditionStatus(): Promise<PackagingStatus> {
+  return apiJson<PackagingStatus>("/api/edition/status");
+}
+
+export type ManagedHostingConfig = {
+  enabled?: boolean;
+  app_base_url?: string;
+  control_plane_url?: string | null;
+  health_callback_path?: string;
+  tenant_header?: string;
+};
+
+export type SsoPackagingStatus = {
+  ready?: boolean;
+  preferred?: string | null;
+  auth0?: {
+    configured?: boolean;
+    domain_set?: boolean;
+    client_id_set?: boolean;
+    missing?: string[];
+    login_path?: string;
+    callback_url?: string;
+  };
+  oidc?: {
+    configured?: boolean;
+    issuer?: string;
+    client_id_set?: boolean;
+  };
+};
+
+export type PackagingStatus = {
+  edition?: string;
+  features?: Record<string, boolean | string>;
+  sso?: SsoPackagingStatus;
+  managed_hosting?: ManagedHostingConfig;
+  notes?: string;
+};
+
+export type HeartbeatResult = {
+  ok?: boolean;
+  skipped?: boolean;
+  reason?: string;
+  status?: number;
+  url?: string;
+  error?: string;
+  response?: string;
+  payload?: Record<string, unknown>;
+};
+
+export async function getEditionHeartbeatPayload(): Promise<{ payload: Record<string, unknown> }> {
+  return apiJson("/api/edition/heartbeat");
+}
+
+export async function sendEditionHeartbeat(): Promise<HeartbeatResult> {
+  return apiJson("/api/edition/heartbeat", { method: "POST" });
 }
 
 export async function getAdminSession(): Promise<RbacMe> {
@@ -643,7 +753,9 @@ export type MissionProposal = {
   nl_goal: string;
   stealth?: string | null;
   ready: boolean;
+  auto_execute?: boolean;
   missing?: string[];
+  osint_seeds?: Array<{ kind: string; value: string; display?: string }>;
   plan?: {
     phases: MissionPlanPhase[];
     new_tools?: Array<{
@@ -661,6 +773,7 @@ export type ChatMessage = {
   role: string;
   content: string;
   ts?: number;
+  thinking_content?: string;
   proposal?: MissionProposal;
   mission_card?: { task_id: string; target: string; state?: string };
 };
@@ -673,6 +786,21 @@ export type MissionChatThread = {
   mission_ids: string[];
 };
 
+export type ChatAgentOptionsPayload = {
+  deep_think?: boolean;
+  web_search?: boolean;
+  model?: string;
+  posture?: string;
+  attachments?: Array<{ name: string; content: string; type?: string }>;
+};
+
+export type { ChatAgentConfig };
+export type ChatAgentConfigResponse = ChatAgentConfig;
+
+export async function getChatAgentConfig(): Promise<ChatAgentConfig> {
+  return apiJson("/api/chat/config");
+}
+
 export async function createMissionChat(): Promise<{ chat_id: string }> {
   return apiJson("/api/chat/missions", { method: "POST", body: "{}" });
 }
@@ -684,15 +812,23 @@ export async function getMissionChat(chatId: string): Promise<MissionChatThread>
 export async function postMissionChatMessage(
   chatId: string,
   content: string,
+  options?: ChatAgentOptionsPayload,
 ): Promise<{
   reply: string;
   proposal: MissionProposal;
   draft: MissionProposal | null;
   messages: ChatMessage[];
+  mission_launched?: {
+    task_id: string;
+    target: string;
+    state: string;
+    registered_tools?: string[];
+  } | null;
+  launch_error?: string | null;
 }> {
   return apiJson(`/api/chat/missions/${encodeURIComponent(chatId)}/messages`, {
     method: "POST",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, options }),
   });
 }
 
@@ -713,6 +849,13 @@ export type ChatStreamHandlers = {
     draft: MissionProposal | null;
     toolProposal: CustomToolDraft | null;
     messages: ChatMessage[];
+    mission_launched?: {
+      task_id: string;
+      target: string;
+      state: string;
+      registered_tools?: string[];
+    } | null;
+    launch_error?: string | null;
   }) => void;
   onError?: (message: string) => void;
   signal?: AbortSignal;
@@ -726,12 +869,13 @@ export async function streamMissionChatMessage(
   chatId: string,
   content: string,
   handlers: ChatStreamHandlers,
+  options?: ChatAgentOptionsPayload,
 ): Promise<void> {
   const res = await apiFetch(
     `/api/chat/missions/${encodeURIComponent(chatId)}/stream`,
     {
       method: "POST",
-      body: JSON.stringify({ content }),
+      body: JSON.stringify({ content, options }),
       skipAuthRedirect: true,
       signal: handlers.signal,
     },
@@ -766,6 +910,14 @@ export async function streamMissionChatMessage(
         draft: (evt.draft as MissionProposal) ?? null,
         toolProposal: (evt.tool_proposal as CustomToolDraft) ?? null,
         messages: (evt.messages as ChatMessage[]) ?? [],
+        mission_launched:
+          (evt.mission_launched as {
+            task_id: string;
+            target: string;
+            state: string;
+            registered_tools?: string[];
+          } | null) ?? null,
+        launch_error: typeof evt.launch_error === "string" ? evt.launch_error : null,
       });
     } else if (typeof evt.error === "string") {
       handlers.onError?.(evt.error);
@@ -843,6 +995,8 @@ export async function deleteCustomTool(
 export type AuthorizedTargetRow = {
   target: string;
   host?: string;
+  kind?: string;
+  value?: string;
   authorized?: boolean;
   expiry?: string | null;
   notes?: string | null;
@@ -858,6 +1012,7 @@ export async function listAuthorizedTargets(): Promise<{
 
 export async function addAuthorizedTarget(body: {
   target: string;
+  kind?: string;
   notes?: string;
   expiry?: string;
   authorized?: boolean;
@@ -874,4 +1029,22 @@ export async function deleteAuthorizedTarget(
   return apiJson(`/api/authorized-targets/${encodeURIComponent(target)}`, {
     method: "DELETE",
   });
+}
+
+export type BreachProviderBlock = {
+  configured: boolean;
+  available: boolean;
+  product?: string;
+  account?: Record<string, unknown>;
+};
+
+export type BreachProviderStatus = {
+  enabled: boolean;
+  ready: boolean;
+  breach_vault: BreachProviderBlock;
+  leak_radar: BreachProviderBlock;
+};
+
+export async function fetchBreachIntelStatus(): Promise<BreachProviderStatus> {
+  return apiJson("/api/osint/breach/status");
 }
